@@ -1,6 +1,8 @@
 # Cameleo — Vintage Analog Camera for Android
 
-Cameleo is a premium vintage camera application for Android inspired by the analog photography experience of Dazz Cam, classic 35mm film stocks, early 2000s CCD digicams, party disposable cameras, instant prints, and retro camcorders.
+> **⚠️ In Development** — This is a reverse-engineered Android port of [Dazz Cam](https://apps.apple.com/app/dazz-analog-filter-camera/id1459773543) (iOS), built through clean-room analysis of the app's observable behavior, UI structure, and asset inventory. No proprietary source code was copied. This project is for educational and personal use only.
+
+Cameleo is a premium vintage camera application for Android inspired by Dazz Cam — the beloved iOS analog filter camera. It recreates Dazz Cam's signature film presets, camera model collection, color grading pipeline, and UI experience natively on Android using Jetpack Compose and CameraX.
 
 ---
 
