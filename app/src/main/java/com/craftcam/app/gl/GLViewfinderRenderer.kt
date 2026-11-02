@@ -1,0 +1,312 @@
+package com.craftcam.app.gl
+
+import android.graphics.SurfaceTexture
+import android.opengl.GLES11Ext
+import android.opengl.GLES20
+import android.opengl.GLES30
+import android.opengl.GLSurfaceView
+import android.util.Log
+import com.craftcam.app.gl.shaders.ShaderConstants
+import com.craftcam.app.model.CameraCategory
+import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.presets.PresetCatalog
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
+
+class GLViewfinderRenderer(
+    private val glSurfaceView: GLSurfaceView,
+    private val onSurfaceTextureReady: (SurfaceTexture) -> Unit
+) : GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
+
+    private val TAG = "GLViewfinderRenderer"
+
+    private var programId = 0
+    private var textureId = 0
+    private var surfaceTexture: SurfaceTexture? = null
+
+    private val vertexBuffer: FloatBuffer
+    private val textureCoordBuffer: FloatBuffer
+
+    private val texMatrix = FloatArray(16)
+    private val rotMatrix = FloatArray(16)
+    private val finalTexMatrix = FloatArray(16)
+    private var updateSurface = false
+
+    private var viewportWidth = 1080
+    private var viewportHeight = 1920
+    private var bufferWidth = 1920
+    private var bufferHeight = 1080
+    private var sensorRotation = 90
+    private var isFront = false
+
+    // Uniform locations
+    private var uTexMatrixLoc = -1
+    private var sTextureLoc = -1
+    private var uViewportSizeLoc = -1
+    private var uContrastLoc = -1
+    private var uSaturationLoc = -1
+    private var uTemperatureLoc = -1
+    private var uTintLoc = -1
+    private var uGammaLoc = -1
+    private var uFadeLoc = -1
+    private var uHighlightRollOffLoc = -1
+    private var uShadowTintLoc = -1
+
+    private var uVignetteIntensityLoc = -1
+    private var uVignetteRadiusLoc = -1
+    private var uChromaticAberrationLoc = -1
+    private var uBarrelDistortionLoc = -1
+
+    private var uGrainIntensityLoc = -1
+    private var uGrainScaleLoc = -1
+    private var uIsColorNoiseLoc = -1
+    private var uRandomSeedLoc = -1
+
+    private var uHalationEnabledLoc = -1
+    private var uHalationThresholdLoc = -1
+    private var uHalationIntensityLoc = -1
+    private var uLightLeakEnabledLoc = -1
+    private var uLightLeakIntensityLoc = -1
+    private var uScanlineIntensityLoc = -1
+
+    @Volatile
+    private var activePreset: CameraPreset = PresetCatalog.allPresets.first()
+
+    // Default 1:1 quad
+    private val squareCoords = floatArrayOf(
+        -1.0f,  1.0f, 0.0f,
+        -1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f
+    )
+
+    // Canonical OpenGL texture coordinates (0,0 bottom-left to 1,1 top-right)
+    private val textureCoords = floatArrayOf(
+        0.0f, 1.0f, // Vertex 0: Top-Left
+        0.0f, 0.0f, // Vertex 1: Bottom-Left
+        1.0f, 1.0f, // Vertex 2: Top-Right
+        1.0f, 0.0f  // Vertex 3: Bottom-Right
+    )
+
+    init {
+        vertexBuffer = ByteBuffer.allocateDirect(squareCoords.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .put(squareCoords)
+        vertexBuffer.position(0)
+
+        textureCoordBuffer = ByteBuffer.allocateDirect(textureCoords.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .put(textureCoords)
+        textureCoordBuffer.position(0)
+    }
+
+    fun setCameraOrientation(rotationDegrees: Int, isFrontCamera: Boolean, bufW: Int, bufH: Int) {
+        sensorRotation = rotationDegrees
+        isFront = isFrontCamera
+        bufferWidth = bufW
+        bufferHeight = bufH
+        updateGeometry()
+        glSurfaceView.requestRender()
+    }
+
+    private fun updateGeometry() {
+        // Natural 4:3 camera aspect fit (preserves full optical field of view, no double-crop)
+        val rotW = if (sensorRotation == 90 || sensorRotation == 270) bufferHeight else bufferWidth
+        val rotH = if (sensorRotation == 90 || sensorRotation == 270) bufferWidth else bufferHeight
+
+        if (rotW > 0 && rotH > 0 && viewportWidth > 0 && viewportHeight > 0) {
+            val bufferAspect = rotW.toFloat() / rotH.toFloat()
+            val viewAspect = viewportWidth.toFloat() / viewportHeight.toFloat()
+
+            val scaleX: Float
+            val scaleY: Float
+            if (viewAspect <= bufferAspect) {
+                // Viewport is taller than sensor aspect (standard phone portrait) -> fit width
+                scaleX = 1.0f
+                scaleY = (viewAspect / bufferAspect).coerceAtMost(1.0f)
+            } else {
+                // Viewport is wider than sensor -> fit height
+                scaleX = (bufferAspect / viewAspect).coerceAtMost(1.0f)
+                scaleY = 1.0f
+            }
+
+            val quad = floatArrayOf(
+                -scaleX,  scaleY, 0.0f,
+                -scaleX, -scaleY, 0.0f,
+                 scaleX,  scaleY, 0.0f,
+                 scaleX, -scaleY, 0.0f
+            )
+
+            vertexBuffer.clear()
+            vertexBuffer.put(quad)
+            vertexBuffer.position(0)
+        }
+    }
+
+    fun updatePreset(preset: CameraPreset) {
+        activePreset = preset
+        glSurfaceView.requestRender()
+    }
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        GLES30.glClearColor(0.05f, 0.05f, 0.07f, 1.0f)
+
+        programId = GLShaderHelper.createProgram(
+            ShaderConstants.VERTEX_SHADER_VIEWFINDER,
+            ShaderConstants.FRAGMENT_SHADER_VIEWFINDER
+        )
+
+        if (programId == 0) {
+            Log.e(TAG, "Failed to compile/link viewfinder shader program")
+            return
+        }
+
+        // Cache uniform locations
+        uTexMatrixLoc = GLES30.glGetUniformLocation(programId, "uTexMatrix")
+        sTextureLoc = GLES30.glGetUniformLocation(programId, "sTexture")
+        uViewportSizeLoc = GLES30.glGetUniformLocation(programId, "uViewportSize")
+        uContrastLoc = GLES30.glGetUniformLocation(programId, "uContrast")
+        uSaturationLoc = GLES30.glGetUniformLocation(programId, "uSaturation")
+        uTemperatureLoc = GLES30.glGetUniformLocation(programId, "uTemperature")
+        uTintLoc = GLES30.glGetUniformLocation(programId, "uTint")
+        uGammaLoc = GLES30.glGetUniformLocation(programId, "uGamma")
+        uFadeLoc = GLES30.glGetUniformLocation(programId, "uFade")
+        uHighlightRollOffLoc = GLES30.glGetUniformLocation(programId, "uHighlightRollOff")
+        uShadowTintLoc = GLES30.glGetUniformLocation(programId, "uShadowTint")
+
+        uVignetteIntensityLoc = GLES30.glGetUniformLocation(programId, "uVignetteIntensity")
+        uVignetteRadiusLoc = GLES30.glGetUniformLocation(programId, "uVignetteRadius")
+        uChromaticAberrationLoc = GLES30.glGetUniformLocation(programId, "uChromaticAberration")
+        uBarrelDistortionLoc = GLES30.glGetUniformLocation(programId, "uBarrelDistortion")
+
+        uGrainIntensityLoc = GLES30.glGetUniformLocation(programId, "uGrainIntensity")
+        uGrainScaleLoc = GLES30.glGetUniformLocation(programId, "uGrainScale")
+        uIsColorNoiseLoc = GLES30.glGetUniformLocation(programId, "uIsColorNoise")
+        uRandomSeedLoc = GLES30.glGetUniformLocation(programId, "uRandomSeed")
+
+        uHalationEnabledLoc = GLES30.glGetUniformLocation(programId, "uHalationEnabled")
+        uHalationThresholdLoc = GLES30.glGetUniformLocation(programId, "uHalationThreshold")
+        uHalationIntensityLoc = GLES30.glGetUniformLocation(programId, "uHalationIntensity")
+        uLightLeakEnabledLoc = GLES30.glGetUniformLocation(programId, "uLightLeakEnabled")
+        uLightLeakIntensityLoc = GLES30.glGetUniformLocation(programId, "uLightLeakIntensity")
+        uScanlineIntensityLoc = GLES30.glGetUniformLocation(programId, "uScanlineIntensity")
+
+        // Create OES external texture
+        val textures = IntArray(1)
+        GLES30.glGenTextures(1, textures, 0)
+        textureId = textures[0]
+
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+
+        surfaceTexture = SurfaceTexture(textureId).apply {
+            setOnFrameAvailableListener(this@GLViewfinderRenderer)
+            onSurfaceTextureReady(this)
+        }
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        GLES30.glViewport(0, 0, width, height)
+        viewportWidth = width
+        viewportHeight = height
+        updateGeometry()
+    }
+
+    override fun onDrawFrame(gl: GL10?) {
+        synchronized(this) {
+            if (updateSurface) {
+                surfaceTexture?.updateTexImage()
+                surfaceTexture?.getTransformMatrix(texMatrix)
+                updateSurface = false
+            }
+        }
+
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
+        if (programId == 0) return
+
+        GLES30.glUseProgram(programId)
+
+        // Set vertices
+        GLES30.glEnableVertexAttribArray(0)
+        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 12, vertexBuffer)
+
+        // Set texture coords
+        GLES30.glEnableVertexAttribArray(1)
+        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 8, textureCoordBuffer)
+
+        // Bind OES texture
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        GLES30.glUniform1i(sTextureLoc, 0)
+
+        // Upload transform matrix and viewport size
+        android.opengl.Matrix.setIdentityM(rotMatrix, 0)
+        android.opengl.Matrix.translateM(rotMatrix, 0, 0.5f, 0.5f, 0f)
+        android.opengl.Matrix.rotateM(rotMatrix, 0, -sensorRotation.toFloat(), 0f, 0f, 1f)
+        if (isFront) {
+            android.opengl.Matrix.scaleM(rotMatrix, 0, -1f, 1f, 1f)
+        }
+        android.opengl.Matrix.translateM(rotMatrix, 0, -0.5f, -0.5f, 0f)
+        android.opengl.Matrix.multiplyMM(finalTexMatrix, 0, texMatrix, 0, rotMatrix, 0)
+
+        GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, finalTexMatrix, 0)
+        GLES30.glUniform2f(uViewportSizeLoc, viewportWidth.toFloat(), viewportHeight.toFloat())
+
+        // Upload preset parameters
+        val preset = activePreset
+        val color = preset.colorGrading
+        GLES30.glUniform1f(uContrastLoc, color.contrast)
+        GLES30.glUniform1f(uSaturationLoc, color.saturation)
+        GLES30.glUniform1f(uTemperatureLoc, color.temperature)
+        GLES30.glUniform1f(uTintLoc, color.tint)
+        GLES30.glUniform1f(uGammaLoc, color.gamma)
+        GLES30.glUniform1f(uFadeLoc, color.fade)
+        GLES30.glUniform1f(uHighlightRollOffLoc, color.highlightRollOff)
+        GLES30.glUniform3f(uShadowTintLoc, color.shadowTintR, color.shadowTintG, color.shadowTintB)
+
+        val lens = preset.lens
+        GLES30.glUniform1f(uVignetteIntensityLoc, lens.vignetteIntensity)
+        GLES30.glUniform1f(uVignetteRadiusLoc, lens.vignetteRadius)
+        GLES30.glUniform1f(uChromaticAberrationLoc, lens.chromaticAberration)
+        GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion)
+
+        val grain = preset.grain
+        GLES30.glUniform1f(uGrainIntensityLoc, if (grain.enabled) grain.intensity else 0f)
+        GLES30.glUniform1f(uGrainScaleLoc, grain.scale)
+        GLES30.glUniform1i(uIsColorNoiseLoc, if (grain.isColorNoise) 1 else 0)
+        GLES30.glUniform1f(uRandomSeedLoc, (System.currentTimeMillis() % 10000).toFloat() / 1000f)
+
+        val halation = preset.halation
+        GLES30.glUniform1i(uHalationEnabledLoc, if (halation?.enabled == true) 1 else 0)
+        GLES30.glUniform1f(uHalationThresholdLoc, halation?.threshold ?: 0.85f)
+        GLES30.glUniform1f(uHalationIntensityLoc, halation?.intensity ?: 0f)
+
+        val leak = preset.lightLeak
+        GLES30.glUniform1i(uLightLeakEnabledLoc, if (leak?.enabled == true) 1 else 0)
+        GLES30.glUniform1f(uLightLeakIntensityLoc, leak?.intensity ?: 0f)
+
+        val isCamcorder = preset.category == CameraCategory.CAMCORDER
+        GLES30.glUniform1f(uScanlineIntensityLoc, if (isCamcorder) 0.6f else 0f)
+
+        // Draw quad
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+
+        GLES30.glDisableVertexAttribArray(0)
+        GLES30.glDisableVertexAttribArray(1)
+    }
+
+    override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
+        synchronized(this) {
+            updateSurface = true
+        }
+        glSurfaceView.requestRender()
+    }
+}

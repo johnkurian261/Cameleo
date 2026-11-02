@@ -1,0 +1,68 @@
+package com.craftcam.app.ui.navigation
+
+import androidx.compose.runtime.*
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.craftcam.app.camera.CameraManager
+import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.presets.PresetCatalog
+import com.craftcam.app.ui.collection.CollectionScreen
+import com.craftcam.app.ui.gallery.GalleryScreen
+import com.craftcam.app.ui.settings.SettingsScreen
+import com.craftcam.app.ui.viewfinder.ViewfinderScreen
+
+sealed class Screen(val route: String) {
+    object Viewfinder : Screen("viewfinder")
+    object Collection : Screen("collection")
+    object Gallery : Screen("gallery")
+    object Settings : Screen("settings")
+}
+
+@Composable
+fun CraftCamNavHost(
+    cameraManager: CameraManager,
+    navController: NavHostController = rememberNavController()
+) {
+    var selectedPreset by remember { mutableStateOf(PresetCatalog.allPresets.first()) }
+
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Viewfinder.route
+    ) {
+        composable(Screen.Viewfinder.route) {
+            ViewfinderScreen(
+                cameraManager = cameraManager,
+                selectedPreset = selectedPreset,
+                onPresetChange = { selectedPreset = it },
+                onNavigateToCollection = { navController.navigate(Screen.Collection.route) },
+                onNavigateToGallery = { navController.navigate(Screen.Gallery.route) },
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+            )
+        }
+
+        composable(Screen.Collection.route) {
+            CollectionScreen(
+                currentPreset = selectedPreset,
+                onSelectPreset = { preset ->
+                    selectedPreset = preset
+                },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Gallery.route) {
+            GalleryScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+    }
+}
+

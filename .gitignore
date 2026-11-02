@@ -1,0 +1,42 @@
+# ===== Android / Gradle =====
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ===== Signing keys =====
+*.jks
+*.keystore
+release/
+
+# ===== DazzCam IPA & extracted contents (proprietary, do not ship) =====
+DazzCam.ipa
+Payload/
+META-INF/
+iTunesArtwork
+iTunesMetadata.plist
+
+# ===== Camera icon source screenshots =====
+camera_icons/
+
+# ===== Research docs (optional — remove this line to include them) =====
+# research/
+
+# ===== Scratch / brain temp files =====
+brain/
+scratch/
+
+# ===== Windows =====
+Thumbs.db
+ehthumbs.db
+Desktop.ini
