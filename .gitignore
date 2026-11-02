@@ -35,6 +35,13 @@ camera_icons/
 # ===== Scratch / brain temp files =====
 brain/
 scratch/
+__pycache__/
+*.pyc
+
+# ===== Temporary Build Scripts =====
+convert_cgbi.py
+copy_textures.py
+generate_luts.py
 
 # ===== Windows =====
 Thumbs.db
