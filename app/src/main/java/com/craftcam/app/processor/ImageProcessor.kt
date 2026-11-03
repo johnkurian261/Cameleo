@@ -18,7 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
@@ -43,7 +42,7 @@ object ImageProcessor {
         saveNegative: Boolean
     ): Uri? = withContext(Dispatchers.Default) {
         try {
-            // 1. Convert ImageProxy -> Bitmap
+            // 1. Convert ImageProxy -> Bitmap (robust multi-format support)
             val rawBitmap = imageProxyToBitmap(imageProxy)
             val rotation = imageProxy.imageInfo.rotationDegrees
 
@@ -276,7 +275,7 @@ object ImageProcessor {
             if (isCamcorder) {
                 val yCoord = i / width
                 val scanline = (sin(yCoord.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
-                val sf = 0.88f + 0.12f * scanline
+                val sf = 0.90f + 0.10f * scanline
                 r *= sf; g *= sf; b *= sf
             }
 
@@ -286,102 +285,165 @@ object ImageProcessor {
             pixels[i] = (0xFF shl 24) or (ir2 shl 16) or (ig2 shl 8) or ib2
         }
 
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        result.setPixels(pixels, 0, width, 0, 0, width, height)
-
-        // ── Step 2: High-Performance Canvas Blending with Real Dazz Cam Textures ─
-        val canvas = Canvas(result)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // 2a. Real Photographic Vignette (Multiply blend)
+        // ── Step 2: In-Memory Optical Vignette (Correct Photographic Shading) ─
         val vigAsset = selectVignetteForPreset(preset.id)
         val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
         if (vigIntensity > 0.03f) {
-            if (vigAsset != null) {
-                loadTexture(context, vigAsset)?.let { tex ->
-                    val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                    paint.reset()
-                    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
-                    paint.alpha = (vigIntensity * 255.0f).toInt().coerceIn(0, 255)
-                    canvas.drawBitmap(scaled, 0f, 0f, paint)
-                }
+            val vigTex = vigAsset?.let { loadTexture(context, it) }
+            if (vigTex != null) {
+                applyTextureVignette(pixels, width, height, vigTex, vigIntensity)
             } else {
-                applyMathVignette(result, vigIntensity, lens.vignetteRadius)
+                applyMathVignetteToPixels(pixels, width, height, vigIntensity, lens.vignetteRadius)
             }
         }
 
-        // 2b. Real Scanned Silver Halide Grain Texture (Screen / Soft Light Overlay)
+        // ── Step 3: In-Memory Scanned Silver Halide Grain (Subtle Midtone Texture)
         val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
         val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
         if (grain.enabled && effectiveGrain > 0.01f && grainAsset != null) {
             loadTexture(context, grainAsset)?.let { tex ->
-                val tilePaint = Paint()
-                tilePaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-                // Opacity tuned to authentic Dazz Cam grain subtlety
-                tilePaint.alpha = (effectiveGrain * 120.0f).toInt().coerceIn(15, 130)
-
-                var ty = 0
-                while (ty < height) {
-                    var tx = 0
-                    while (tx < width) {
-                        canvas.drawBitmap(tex, tx.toFloat(), ty.toFloat(), tilePaint)
-                        tx += tex.width
-                    }
-                    ty += tex.height
-                }
+                applyGrainTexture(pixels, width, height, tex, effectiveGrain)
             }
         }
 
-        // 2c. Real Scanned Dust & Scratches Overlay
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        result.setPixels(pixels, 0, width, 0, 0, width, height)
+
+        // ── Step 4: Canvas Layer Overlays (Dust, Light Leaks, Flash) ─────────
+        val canvas = Canvas(result)
+
+        // 4a. Real Scanned Dust & Scratches (Transparent PNG with SRC_OVER blend)
         val dustAsset = selectDustForPreset(preset.id)
         if (dustAsset != null) {
             loadTexture(context, dustAsset)?.let { tex ->
                 val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                paint.reset()
-                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
-                paint.alpha = 32 // ~12% opacity
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    alpha = 180 // Authentic subtle dust
+                }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
             }
         }
 
-        // 2d. Real Photographic Light Leaks (Screen blend)
+        // 4b. Real Photographic Light Leaks (Screen blend)
         val leakEnabled = tuning.lightLeakEnabled && leak?.enabled == true && leak.intensity > 0.01f
         if (leakEnabled) {
             val leakAsset = selectLightLeakForPreset(preset.id)
             loadTexture(context, leakAsset)?.let { tex ->
                 val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                paint.reset()
-                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-                paint.alpha = ((leak!!.intensity * 0.40f) * 255.0f).toInt().coerceIn(0, 180)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+                    alpha = ((leak.intensity * 0.65f) * 255.0f).toInt().coerceIn(0, 255)
+                }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
             }
         }
 
-        // 2e. Real Paper Fade Texture (Multiply blend)
-        val fadeAsset = selectFadeForPreset(preset.id)
-        if (fadeAsset != null) {
-            loadTexture(context, fadeAsset)?.let { tex ->
-                val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                paint.reset()
-                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
-                paint.alpha = 50
-                canvas.drawBitmap(scaled, 0f, 0f, paint)
-            }
-        }
-
-        // 2f. Direct Flash Party Illumination Overlay
+        // 4c. Direct Flash Illumination Overlay
         val flashAsset = selectFlashForPreset(preset.id)
         if (flashAsset != null) {
             loadTexture(context, flashAsset)?.let { tex ->
                 val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                paint.reset()
-                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-                paint.alpha = 55
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+                    alpha = 55
+                }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
             }
         }
 
         return result
+    }
+
+    // ─── Optical Vignette Shading ────────────────────────────────────────────
+    private fun applyTextureVignette(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        vigTex: Bitmap,
+        intensity: Float
+    ) {
+        val scaled = Bitmap.createScaledBitmap(vigTex, width, height, true)
+        val vigPixels = IntArray(width * height)
+        scaled.getPixels(vigPixels, 0, width, 0, 0, width, height)
+
+        for (i in pixels.indices) {
+            val vp = vigPixels[i]
+            val vl = (((vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f) / 255.0f)
+            // Normalized: Center is near 1.0, corners fall off to 0.4..0.6
+            val factor = (1.0f - intensity * (1.0f - vl)).coerceIn(0.20f, 1.0f)
+
+            val cp = pixels[i]
+            val a = cp ushr 24
+            val r = (((cp shr 16 and 0xFF) * factor).toInt()).coerceIn(0, 255)
+            val g = (((cp shr 8 and 0xFF) * factor).toInt()).coerceIn(0, 255)
+            val b = (((cp and 0xFF) * factor).toInt()).coerceIn(0, 255)
+            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+    }
+
+    private fun applyMathVignetteToPixels(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        intensity: Float,
+        radius: Float
+    ) {
+        val cx = width * 0.5f
+        val cy = height * 0.5f
+        val maxD = sqrt(cx * cx + cy * cy)
+
+        for (y in 0 until height) {
+            val dy = y - cy
+            val row = y * width
+            for (x in 0 until width) {
+                val dx = x - cx
+                val dn = (sqrt(dx * dx + dy * dy) / maxD) / radius
+                val v = (1.0f - intensity * dn * dn).coerceIn(0.25f, 1.0f)
+
+                val i = row + x
+                val cp = pixels[i]
+                val a = cp ushr 24
+                val r = (((cp shr 16 and 0xFF) * v).toInt()).coerceIn(0, 255)
+                val g = (((cp shr 8 and 0xFF) * v).toInt()).coerceIn(0, 255)
+                val b = (((cp and 0xFF) * v).toInt()).coerceIn(0, 255)
+                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
+        }
+    }
+
+    // ─── Scanned Film Halide Grain Texture ───────────────────────────────────
+    private fun applyGrainTexture(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        grainTex: Bitmap,
+        intensity: Float
+    ) {
+        val gw = grainTex.width
+        val gh = grainTex.height
+        val grainPixels = IntArray(gw * gh)
+        grainTex.getPixels(grainPixels, 0, gw, 0, 0, gw, gh)
+
+        val strength = intensity * 40.0f
+
+        for (y in 0 until height) {
+            val gy = (y % gh) * gw
+            val row = y * width
+            for (x in 0 until width) {
+                val gx = x % gw
+                val gp = grainPixels[gy + gx]
+                val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) / 128f
+                val delta = (gl * strength).toInt()
+
+                val i = row + x
+                val cp = pixels[i]
+                val a = cp ushr 24
+                val r = ((cp shr 16 and 0xFF) + delta).coerceIn(0, 255)
+                val g = ((cp shr 8 and 0xFF) + delta).coerceIn(0, 255)
+                val b = ((cp and 0xFF) + delta).coerceIn(0, 255)
+                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
+        }
     }
 
     // ─── Hald CLUT Sampling Math ─────────────────────────────────────────────
@@ -474,12 +536,6 @@ object ImageProcessor {
         else                                   -> null
     }
 
-    private fun selectFadeForPreset(presetId: String): String? = when (presetId) {
-        "analog_vintage_color" -> "fade_dexp.jpg"
-        "analog_faded_film"    -> "fade_nt16.jpg"
-        else                   -> null
-    }
-
     private fun selectFlashForPreset(presetId: String): String? = when (presetId) {
         "disp_flash", "ccd_flash" -> "flashc_01.jpg"
         else                      -> null
@@ -495,30 +551,6 @@ object ImageProcessor {
         }
     }
 
-    // ─── Mathematical Fallbacks ──────────────────────────────────────────────
-    private fun applyMathVignette(bmp: Bitmap, intensity: Float, radius: Float) {
-        val w = bmp.width; val h = bmp.height
-        val cx = w * 0.5f; val cy = h * 0.5f
-        val maxD = sqrt(cx * cx + cy * cy)
-        val px = IntArray(w * h)
-        bmp.getPixels(px, 0, w, 0, 0, w, h)
-        for (y in 0 until h) {
-            val dy = y - cy
-            for (x in 0 until w) {
-                val dx = x - cx
-                val dn = (sqrt(dx * dx + dy * dy) / maxD) / radius
-                val v = (1.0f - intensity * dn * dn).coerceIn(0.2f, 1.0f)
-                val i = y * w + x
-                val c = px[i]
-                val r = ((c shr 16 and 0xFF) * v).toInt()
-                val g = ((c shr 8 and 0xFF) * v).toInt()
-                val b = ((c and 0xFF) * v).toInt()
-                px[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-            }
-        }
-        bmp.setPixels(px, 0, w, 0, 0, w, h)
-    }
-
     private fun applyFilmicCurve(v: Float, contrast: Float, fade: Float): Float {
         val x = v.coerceIn(0.0f, 1.0f)
         val s = if (x < 0.5f) 0.5f * (2.0f * x).pow(contrast)
@@ -531,21 +563,31 @@ object ImageProcessor {
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
+        try {
+            return image.toBitmap()
+        } catch (e: Throwable) {
+            Log.w(TAG, "image.toBitmap() failed, falling back to planes buffer decode", e)
+        }
         val buffer: ByteBuffer = image.planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            ?: throw IllegalStateException("Failed to decode ImageProxy to Bitmap")
     }
 
     private fun cropToAspectRatio(bitmap: Bitmap, mode: AspectRatioMode): Bitmap {
-        val srcW = bitmap.width; val srcH = bitmap.height
+        val srcW = bitmap.width
+        val srcH = bitmap.height
         val srcRatio = srcW.toFloat() / srcH
         val targetRatio = if (srcW > srcH) mode.ratio else (1.0f / mode.ratio)
-        val cropW: Int; val cropH: Int
+        val cropW: Int
+        val cropH: Int
         if (srcRatio > targetRatio) {
-            cropH = srcH; cropW = (srcH * targetRatio).toInt().coerceAtMost(srcW)
+            cropH = srcH
+            cropW = (srcH * targetRatio).toInt().coerceIn(1, srcW)
         } else {
-            cropW = srcW; cropH = (srcW / targetRatio).toInt().coerceAtMost(srcH)
+            cropW = srcW
+            cropH = (srcW / targetRatio).toInt().coerceIn(1, srcH)
         }
         val startX = (srcW - cropW) / 2
         val startY = (srcH - cropH) / 2

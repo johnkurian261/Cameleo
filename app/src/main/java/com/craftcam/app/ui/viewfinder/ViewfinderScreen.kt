@@ -62,6 +62,10 @@ fun ViewfinderScreen(
 
     val uiState by cameraManager.uiState.collectAsState()
 
+    LaunchedEffect(selectedPreset) {
+        cameraManager.setPreset(selectedPreset)
+    }
+
     var showTuningSheet by remember { mutableStateOf(false) }
     var countdown by remember { mutableStateOf<Int?>(null) }
     var switchRotation by remember { mutableStateOf(0f) }

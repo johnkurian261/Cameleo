@@ -19,6 +19,8 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.presets.PresetCatalog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,8 +48,18 @@ class CameraManager(private val context: Context) {
 
     private var currentPreviewView: PreviewView? = null
     private var currentLifecycleOwner: LifecycleOwner? = null
+    private var currentPreset: CameraPreset = PresetCatalog.allPresets[0]
 
     var onCameraOrientationChanged: ((rotationDegrees: Int, isFront: Boolean, width: Int, height: Int) -> Unit)? = null
+
+    fun setPreset(preset: CameraPreset) {
+        if (currentPreset.id != preset.id) {
+            currentPreset = preset
+            if (_uiState.value.captureMode == CaptureMode.VIDEO) {
+                bindCameraUseCases()
+            }
+        }
+    }
 
     fun initialize(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
         currentLifecycleOwner = lifecycleOwner
@@ -106,18 +118,28 @@ class CameraManager(private val context: Context) {
                     imageCapture
                 )
             } else {
-                // 2B. High-definition VideoCapture Use Case
+                // 2B. High-definition VideoCapture Use Case with vintage film overlay effects
                 val recorder = Recorder.Builder()
                     .setQualitySelector(QualitySelector.from(Quality.HD))
                     .build()
                 videoCapture = VideoCapture.withOutput(recorder)
 
-                camera = provider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    preview,
-                    videoCapture
-                )
+                val prev = preview
+                val vc = videoCapture
+                if (prev != null && vc != null) {
+                    val effect = VideoEffectManager.createVideoOverlayEffect(context, currentPreset)
+                    val useCaseGroup = UseCaseGroup.Builder()
+                        .addUseCase(prev)
+                        .addUseCase(vc)
+                        .addEffect(effect)
+                        .build()
+
+                    camera = provider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        useCaseGroup
+                    )
+                }
             }
 
             // Update Zoom and Exposure capabilities

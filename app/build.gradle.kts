@@ -60,12 +60,13 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // CameraX
-    val cameraVersion = "1.3.4"
+    val cameraVersion = "1.4.0"
     implementation("androidx.camera:camera-core:$cameraVersion")
     implementation("androidx.camera:camera-camera2:$cameraVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
     implementation("androidx.camera:camera-video:$cameraVersion")
+    implementation("androidx.camera:camera-effects:$cameraVersion")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
