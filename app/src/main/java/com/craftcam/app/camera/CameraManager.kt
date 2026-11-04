@@ -13,6 +13,9 @@ import android.util.Log
 import android.util.Size
 import android.view.Surface
 import androidx.camera.core.*
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.video.VideoCapture
@@ -92,9 +95,13 @@ class CameraManager(private val context: Context) {
             .requireLensFacing(_uiState.value.lensFacing)
             .build()
 
-        // 1. Clean, 100% native 4:3 optical viewfinder (zero distortion, full FOV)
+        // 1. High-resolution 4:3 optical viewfinder
+        val previewResolutionSelector = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .build()
+
         preview = Preview.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .setResolutionSelector(previewResolutionSelector)
             .build()
             .also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -102,10 +109,16 @@ class CameraManager(private val context: Context) {
 
         try {
             if (_uiState.value.captureMode == CaptureMode.PHOTO) {
-                // 2A. Zero-lag instant shutter ImageCapture Use Case (4:3 full sensor)
+                // 2A. Full native sensor resolution with hardware ISP multi-frame HDR & noise reduction
+                val photoResolutionSelector = ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    .build()
+
                 imageCapture = ImageCapture.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setResolutionSelector(photoResolutionSelector)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setJpegQuality(100)
                     .setFlashMode(_uiState.value.flashMode)
                     .build()
 

@@ -50,6 +50,7 @@ object ImageProcessor {
             imageProxy.close()
         }
 
+        Log.i(TAG, "Native full-sensor photo captured: ${rawBitmap.width}x${rawBitmap.height}, rotation=$rotation, preset=${preset.id}")
         var workingBitmap: Bitmap = rawBitmap
         try {
             // 1. Maintain full native camera sensor resolution (cap at 4096px only for ultra-high megapixel sensors to protect heap)
@@ -340,19 +341,13 @@ object ImageProcessor {
             }.awaitAll()
         }
 
-        // ── Step 2: Optical Vignette Shading ─────────────────────────────────
-        val vigAsset = selectVignetteForPreset(preset.id)
+        // ── Step 2: Optical Lens Vignette Shading (Clean Mathematical Falloff) ─
         val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
         if (vigIntensity > 0.03f) {
-            val vigTex = vigAsset?.let { loadTexture(context, it) }
-            if (vigTex != null) {
-                applyTextureVignette(pixels, width, height, vigTex, vigIntensity)
-            } else {
-                applyMathVignetteToPixels(pixels, width, height, vigIntensity, lens.vignetteRadius)
-            }
+            applyMathVignetteToPixels(pixels, width, height, vigIntensity, lens.vignetteRadius)
         }
 
-        // ── Step 3: Scanned Film Halide Grain Texture ────────────────────────
+        // ── Step 3: Scanned Film Halide Grain Texture (Subtle Organic Emulsion) ─
         val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
         val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
         if (grain.enabled && effectiveGrain > 0.01f) {
@@ -375,13 +370,13 @@ object ImageProcessor {
             applyAuthenticHalation(pixels, width, height, canvas, halationThresh, halationInt)
         }
 
-        // 4b. Real Scanned Dust & Scratches
+        // 4b. Real Scanned Dust & Scratches (Subtle Film Patina for Distressed Cameras)
         val dustAsset = selectDustForPreset(preset.id)
         if (dustAsset != null) {
             loadTexture(context, dustAsset)?.let { tex ->
                 val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    alpha = 180
+                    alpha = 28 // Delicate organic film patina, NEVER opaque black spots
                 }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
                 if (scaled != tex) scaled.recycle()
@@ -611,7 +606,8 @@ object ImageProcessor {
         val grainPixels = IntArray(gw * gh)
         grainTex.getPixels(grainPixels, 0, gw, 0, 0, gw, gh)
 
-        val strength = intensity * 85.0f
+        // Delicate organic silver halide variation (+/- 3-4 levels in midtones, never coarse noise)
+        val strength = intensity * 24.0f
 
         for (y in 0 until height) {
             val gy = (y % gh) * gw
@@ -725,16 +721,12 @@ object ImageProcessor {
         else                                      -> null
     }
 
-    private fun selectDustForPreset(presetId: String): String? = when {
-        presetId.startsWith("inst")               -> "dust_instc.png"
-        presetId == "ccd_classic" ||
-        presetId == "analog_35mm_classic" ||
-        presetId == "analog_cinema_film" ||
-        presetId == "disp_warm"                   -> "135_dust.png"
-        presetId.startsWith("cam")                -> "8mm_dust.png"
-        presetId.startsWith("analog")             -> "dust_black.png"
-        presetId.startsWith("disp")               -> "dust_black.png"
-        else                                      -> "dust_black.png"
+    private fun selectDustForPreset(presetId: String): String? = when (presetId) {
+        "inst_vintage"      -> "dust_instc.png"
+        "cam_retro_vhs"     -> "8mm_dust.png"
+        "cam_analog_video"  -> "8mm_dust.png"
+        "analog_faded_film" -> "135_dust.png"
+        else                -> null // All standard portrait and classic cameras stay clean & pristine
     }
 
     private fun selectFlashForPreset(presetId: String): String? = when (presetId) {
@@ -823,7 +815,7 @@ object ImageProcessor {
         if (uri != null) {
             try {
                 context.contentResolver.openOutputStream(uri)?.use {
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 96, it)
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 98, it)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     contentValues.clear()
