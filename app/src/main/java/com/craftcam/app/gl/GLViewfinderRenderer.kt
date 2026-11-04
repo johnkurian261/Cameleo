@@ -8,6 +8,8 @@ import android.opengl.GLES20
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.craftcam.app.camera.UserTuningConfig
 import com.craftcam.app.gl.shaders.ShaderConstants
@@ -35,9 +37,10 @@ class GLViewfinderRenderer(
     private val vertexBuffer: FloatBuffer
     private val textureCoordBuffer: FloatBuffer
 
-    private val texMatrix = FloatArray(16)
-    private val rotMatrix = FloatArray(16)
-    private val finalTexMatrix = FloatArray(16)
+    private val texMatrix = FloatArray(16).apply { android.opengl.Matrix.setIdentityM(this, 0) }
+    private val rotMatrix = FloatArray(16).apply { android.opengl.Matrix.setIdentityM(this, 0) }
+    private val finalTexMatrix = FloatArray(16).apply { android.opengl.Matrix.setIdentityM(this, 0) }
+    @Volatile
     private var updateSurface = false
 
     private var viewportWidth = 1080
@@ -186,30 +189,8 @@ class GLViewfinderRenderer(
         requestRenderSafe()
     }
 
-    private fun getLutAssetForPreset(presetId: String): String = when (presetId) {
-        "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
-        "analog_warm_film"     -> "lut_analog_warm_film.png"
-        "analog_soft_film"     -> "lut_analog_soft_film.png"
-        "analog_vintage_color" -> "lut_analog_vintage_color.png"
-        "analog_faded_film"    -> "lut_analog_faded_film.png"
-        "analog_cinema_film"   -> "lut_analog_cinema_film.png"
-        "ccd_classic"          -> "lut_ccd_classic.png"
-        "ccd_flash"            -> "lut_ccd_flash.png"
-        "ccd_cool_digital"     -> "lut_ccd_cool_digital.png"
-        "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
-        "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
-        "disp_classic"         -> "lut_disp_classic.png"
-        "disp_flash"           -> "lut_disp_flash.png"
-        "disp_warm"            -> "lut_disp_warm.png"
-        "disp_night"           -> "lut_disp_night.png"
-        "inst_classic"         -> "lut_inst_classic.png"
-        "inst_soft_polaroid"   -> "lut_inst_soft_polaroid.png"
-        "inst_vintage"         -> "lut_inst_vintage.png"
-        "cam_retro_vhs"        -> "lut_cam_retro_vhs.png"
-        "cam_analog_video"     -> "lut_cam_analog_video.png"
-        "cam_90s_camcorder"    -> "lut_cam_90s_camcorder.png"
-        else                   -> "lut_analog_35mm_classic.png"
-    }
+    private fun getLutAssetForPreset(presetId: String): String =
+        ShaderConstants.getLutAssetForPreset(presetId)
 
     private fun getOrLoadLutTexture(lutAsset: String): Int {
         lutTextureCache[lutAsset]?.let { return it }
@@ -292,8 +273,9 @@ class GLViewfinderRenderer(
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
 
+        val mainHandler = Handler(Looper.getMainLooper())
         surfaceTexture = SurfaceTexture(textureId).apply {
-            setOnFrameAvailableListener(this@GLViewfinderRenderer)
+            setOnFrameAvailableListener(this@GLViewfinderRenderer, mainHandler)
             onSurfaceTextureReady(this)
         }
     }
@@ -310,8 +292,12 @@ class GLViewfinderRenderer(
 
         synchronized(this) {
             if (updateSurface) {
-                surfaceTexture?.updateTexImage()
-                surfaceTexture?.getTransformMatrix(texMatrix)
+                try {
+                    surfaceTexture?.updateTexImage()
+                    surfaceTexture?.getTransformMatrix(texMatrix)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Error updating viewfinder surface texture", t)
+                }
                 updateSurface = false
             }
         }
@@ -348,17 +334,21 @@ class GLViewfinderRenderer(
         }
 
         // Upload transform matrix and viewport size
-        android.opengl.Matrix.setIdentityM(rotMatrix, 0)
-        android.opengl.Matrix.translateM(rotMatrix, 0, 0.5f, 0.5f, 0f)
-        android.opengl.Matrix.rotateM(rotMatrix, 0, -sensorRotation.toFloat(), 0f, 0f, 1f)
         if (isFront) {
+            android.opengl.Matrix.setIdentityM(rotMatrix, 0)
+            android.opengl.Matrix.translateM(rotMatrix, 0, 0.5f, 0.5f, 0f)
             android.opengl.Matrix.scaleM(rotMatrix, 0, -1f, 1f, 1f)
+            android.opengl.Matrix.translateM(rotMatrix, 0, -0.5f, -0.5f, 0f)
+            android.opengl.Matrix.multiplyMM(finalTexMatrix, 0, texMatrix, 0, rotMatrix, 0)
+            GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, finalTexMatrix, 0)
+        } else {
+            GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, texMatrix, 0)
         }
-        android.opengl.Matrix.translateM(rotMatrix, 0, -0.5f, -0.5f, 0f)
-        android.opengl.Matrix.multiplyMM(finalTexMatrix, 0, texMatrix, 0, rotMatrix, 0)
-
-        GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, finalTexMatrix, 0)
         GLES30.glUniform2f(uViewportSizeLoc, viewportWidth.toFloat(), viewportHeight.toFloat())
+
+        if (frameCount % 60 == 0) {
+            Log.d(TAG, "RenderFrame: fps=$currentFps rot=$sensorRotation isFront=$isFront\ntexM = ${texMatrix.joinToString(" ")}\nfinalM = ${finalTexMatrix.joinToString(" ")}")
+        }
 
         // Upload preset parameters combined with live user tuning offsets
         val tuning = currentTuning
@@ -428,9 +418,7 @@ class GLViewfinderRenderer(
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
-        synchronized(this) {
-            updateSurface = true
-        }
+        updateSurface = true
         requestRenderSafe()
     }
 }

@@ -37,6 +37,7 @@ brain/
 scratch/
 __pycache__/
 *.pyc
+.agent_*
 
 # ===== Temporary Build Scripts =====
 convert_cgbi.py

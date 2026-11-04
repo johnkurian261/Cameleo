@@ -110,7 +110,7 @@ fun ViewfinderScreen(
                     rendererRef = renderer
                     setRenderer(renderer)
                     cameraManager.setGLRenderer(renderer)
-                    renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+                    renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
                 }
             }
         )

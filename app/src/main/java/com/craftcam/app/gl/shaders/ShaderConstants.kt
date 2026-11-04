@@ -84,8 +84,8 @@ vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     float px0_y = s0_row * 64.0 + 0.5 + rgb.g * 63.0;
     float px1_y = s1_row * 64.0 + 0.5 + rgb.g * 63.0;
     
-    vec2 uv0 = vec2(px0_x / 512.0, 1.0 - (px0_y / 512.0));
-    vec2 uv1 = vec2(px1_x / 512.0, 1.0 - (px1_y / 512.0));
+    vec2 uv0 = vec2(px0_x / 512.0, px0_y / 512.0);
+    vec2 uv1 = vec2(px1_x / 512.0, px1_y / 512.0);
     
     vec3 col0 = texture(lut, uv0).rgb;
     vec3 col1 = texture(lut, uv1).rgb;
@@ -101,24 +101,22 @@ void main() {
     // 1. Lens Distortion (Barrel/Pincushion)
     if (abs(uBarrelDistortion) > 0.001) {
         uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
-        uv = clamp(uv, vec2(0.001), vec2(0.999));
     }
 
     // 2. Transverse Chromatic Aberration
     vec4 srcColor;
     if (uChromaticAberration > 0.0001) {
-        vec2 caOffset = p * (uChromaticAberration * r2 * 0.5);
-        vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
-        vec2 uvB = clamp(uv - caOffset, vec2(0.001), vec2(0.999));
-        float r = texture(sTexture, uvR).r;
+        vec2 caOffset = p * (uChromaticAberration * r2 * 0.2);
+        float r = texture(sTexture, uv + caOffset).r;
         float g = texture(sTexture, uv).g;
-        float b = texture(sTexture, uvB).b;
+        float b = texture(sTexture, uv - caOffset).b;
         srcColor = vec4(r, g, b, 1.0);
     } else {
         srcColor = texture(sTexture, uv);
     }
 
     vec3 color = srcColor.rgb;
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
     // 2b. Photochemical 3D Film Emulsion LUT
     if (uLutEnabled) {
@@ -137,9 +135,10 @@ void main() {
         if (abs(uContrast - 1.0) > 0.01) {
             color = (color - 0.5) * uContrast + 0.5;
         }
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         if (abs(uSaturation - 1.0) > 0.01) {
-            float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
             color = mix(vec3(luma), color, uSaturation);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
     } else {
         // Fallback analytical color grading when LUT is unavailable
@@ -150,7 +149,7 @@ void main() {
         color.b -= 0.05 * uTint;
 
         color = (color - 0.5) * uContrast + 0.5;
-        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         color = mix(vec3(luma), color, uSaturation);
         color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
         color = color * (1.0 - uFade) + uFade;
@@ -162,6 +161,7 @@ void main() {
             float excess = luma - uHighlightRollOff;
             color -= vec3(excess * 0.25);
         }
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
 
     // 9. Halation (Film red glow around high-contrast speculars)
@@ -180,12 +180,12 @@ void main() {
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
-    // 11. Lens Vignette
+    // 11. Lens Vignette (matches ImageProcessor.kt quadratic falloff)
     if (uVignetteIntensity > 0.01) {
-        vec2 screenP = (gl_FragCoord.xy / uViewportSize) - 0.5;
-        screenP.x *= (uViewportSize.x / uViewportSize.y);
-        float dist = length(screenP) * 1.8;
-        float vignette = smoothstep(uVignetteRadius, uVignetteRadius - uVignetteIntensity, dist);
+        vec2 screenP = (gl_FragCoord.xy - 0.5 * uViewportSize) / (0.5 * length(uViewportSize));
+        float dist = length(screenP);
+        float dn = dist / uVignetteRadius;
+        float vignette = clamp(1.0 - uVignetteIntensity * dn * dn, 0.25, 1.0);
         color *= vignette;
     }
 
@@ -291,8 +291,8 @@ vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     float px0_y = s0_row * 64.0 + 0.5 + rgb.g * 63.0;
     float px1_y = s1_row * 64.0 + 0.5 + rgb.g * 63.0;
     
-    vec2 uv0 = vec2(px0_x / 512.0, 1.0 - (px0_y / 512.0));
-    vec2 uv1 = vec2(px1_x / 512.0, 1.0 - (px1_y / 512.0));
+    vec2 uv0 = vec2(px0_x / 512.0, px0_y / 512.0);
+    vec2 uv1 = vec2(px1_x / 512.0, px1_y / 512.0);
     
     vec3 col0 = texture(lut, uv0).rgb;
     vec3 col1 = texture(lut, uv1).rgb;
@@ -375,10 +375,11 @@ void main() {
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
-    // 11. Lens Vignette
+    // 11. Lens Vignette (matches ImageProcessor.kt quadratic falloff)
     if (uVignetteIntensity > 0.01) {
-        float dist = length(p);
-        float vignette = smoothstep(uVignetteRadius, uVignetteRadius - uVignetteIntensity, dist);
+        float dist = length(p) / 0.7071068;
+        float dn = dist / uVignetteRadius;
+        float vignette = clamp(1.0 - uVignetteIntensity * dn * dn, 0.25, 1.0);
         color *= vignette;
     }
 
@@ -408,5 +409,30 @@ void main() {
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
 """
+
+    fun getLutAssetForPreset(presetId: String): String = when (presetId) {
+        "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
+        "analog_warm_film"     -> "lut_analog_warm_film.png"
+        "analog_soft_film"     -> "lut_analog_soft_film.png"
+        "analog_vintage_color" -> "lut_analog_vintage_color.png"
+        "analog_faded_film"    -> "lut_analog_faded_film.png"
+        "analog_cinema_film"   -> "lut_analog_cinema_film.png"
+        "ccd_classic"          -> "lut_ccd_classic.png"
+        "ccd_flash"            -> "lut_ccd_flash.png"
+        "ccd_cool_digital"     -> "lut_ccd_cool_digital.png"
+        "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
+        "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
+        "disp_classic"         -> "lut_disp_classic.png"
+        "disp_flash"           -> "lut_disp_flash.png"
+        "disp_warm"            -> "lut_disp_warm.png"
+        "disp_night"           -> "lut_disp_night.png"
+        "inst_classic"         -> "lut_inst_classic.png"
+        "inst_soft_polaroid"   -> "lut_inst_soft_polaroid.png"
+        "inst_vintage"         -> "lut_inst_vintage.png"
+        "cam_retro_vhs"        -> "lut_cam_retro_vhs.png"
+        "cam_analog_video"     -> "lut_cam_analog_video.png"
+        "cam_90s_camcorder"    -> "lut_cam_90s_camcorder.png"
+        else                   -> "lut_analog_35mm_classic.png"
+    }
 }
 

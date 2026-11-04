@@ -24,6 +24,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.craftcam.app.gl.GLViewfinderRenderer
+import com.craftcam.app.gl.GPUVideoProcessor
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
@@ -87,7 +88,11 @@ class CameraManager(private val context: Context) {
     ) {
         val effectiveOwner = (context as? LifecycleOwner) ?: lifecycleOwner
         currentLifecycleOwner = effectiveOwner
-        glSurfaceTexture = surfaceTexture
+        if (glSurfaceTexture != surfaceTexture) {
+            previewSurface?.release()
+            previewSurface = null
+            glSurfaceTexture = surfaceTexture
+        }
         onCameraOrientationChanged = onOrientationUpdate
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -166,12 +171,14 @@ class CameraManager(private val context: Context) {
                         prev.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { request ->
                             val res = request.resolution
                             surfaceTex.setDefaultBufferSize(res.width, res.height)
-                            previewSurface?.release()
-                            val surface = Surface(surfaceTex)
-                            previewSurface = surface
-                            request.provideSurface(surface, ContextCompat.getMainExecutor(context)) {
-                                surface.release()
-                                if (previewSurface == surface) previewSurface = null
+                            var currentSurface = previewSurface
+                            if (currentSurface == null || !currentSurface.isValid) {
+                                currentSurface?.release()
+                                currentSurface = Surface(surfaceTex)
+                                previewSurface = currentSurface
+                            }
+                            request.provideSurface(currentSurface, ContextCompat.getMainExecutor(context)) {
+                                // Do not release the underlying Surface here; it belongs to GLSurfaceView
                             }
                             val rot = camera?.cameraInfo?.sensorRotationDegrees ?: 90
                             val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
@@ -216,24 +223,36 @@ class CameraManager(private val context: Context) {
                 val prev = preview
                 val vc = videoCapture
                 if (prev != null && vc != null) {
-                    val effect = VideoEffectManager.createLiveOverlayEffect(
-                        context = context,
-                        preset = currentPreset,
-                        isPhotoMode = false,
-                        isRecordingProvider = { _uiState.value.isRecording },
-                        recordingDurationSecProvider = { _uiState.value.recordingSeconds }
-                    )
-                    val useCaseGroup = UseCaseGroup.Builder()
-                        .addUseCase(prev)
-                        .addUseCase(vc)
-                        .addEffect(effect)
-                        .build()
+                    try {
+                        val effect = GPUVideoProcessor.createCameraEffect(
+                            context = context,
+                            presetProvider = { currentPreset },
+                            tuningProvider = { _uiState.value.tuning },
+                            onError = { t ->
+                                Log.w(TAG, "GPU video processing issue reported", t)
+                            }
+                        )
+                        val useCaseGroup = UseCaseGroup.Builder()
+                            .addUseCase(prev)
+                            .addUseCase(vc)
+                            .addEffect(effect)
+                            .build()
 
-                    camera = provider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        useCaseGroup
-                    )
+                        camera = provider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            useCaseGroup
+                        )
+                        Log.d(TAG, "Bound VideoCapture with GPU 3D LUT effect successfully")
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "Failed to bind GPU video effect, falling back to clean video pipeline", t)
+                        camera = provider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            prev,
+                            vc
+                        )
+                    }
                 }
             }
 
