@@ -41,48 +41,88 @@ object ImageProcessor {
         mirrorFrontCamera: Boolean,
         saveNegative: Boolean
     ): Uri? = withContext(Dispatchers.Default) {
+        val rawBitmap: Bitmap
+        val rotation: Int
         try {
-            // 1. Convert ImageProxy -> Bitmap (robust multi-format support)
-            val rawBitmap = imageProxyToBitmap(imageProxy)
-            val rotation = imageProxy.imageInfo.rotationDegrees
+            rotation = imageProxy.imageInfo.rotationDegrees
+            rawBitmap = imageProxyToBitmap(imageProxy)
+        } finally {
+            // Instantly free the hardware buffer so CameraX never drops subsequent shots
+            imageProxy.close()
+        }
+
+        var workingBitmap: Bitmap = rawBitmap
+        try {
+            // 1. Downscale to max 2560px on long edge for optimal vintage resolution & low memory footprint
+            if (workingBitmap.width > 2560 || workingBitmap.height > 2560) {
+                val scale = 2560f / maxOf(workingBitmap.width, workingBitmap.height)
+                val targetW = (workingBitmap.width * scale).toInt().coerceAtLeast(1)
+                val targetH = (workingBitmap.height * scale).toInt().coerceAtLeast(1)
+                val scaled = Bitmap.createScaledBitmap(workingBitmap, targetW, targetH, true)
+                if (scaled != workingBitmap) {
+                    workingBitmap.recycle()
+                    workingBitmap = scaled
+                }
+            }
 
             // 2. Rotate & mirror to produce upright photo
             val matrix = Matrix()
             if (rotation != 0) matrix.postRotate(rotation.toFloat())
             if (mirrorFrontCamera) matrix.postScale(-1f, 1f)
-            val orientedBitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+            if (rotation != 0 || mirrorFrontCamera) {
+                val oriented = Bitmap.createBitmap(workingBitmap, 0, 0, workingBitmap.width, workingBitmap.height, matrix, true)
+                if (oriented != workingBitmap) {
+                    workingBitmap.recycle()
+                    workingBitmap = oriented
+                }
+            }
 
             // 3. Aspect Ratio Cropping
-            val croppedBitmap = cropToAspectRatio(orientedBitmap, aspectRatio)
+            val cropped = cropToAspectRatio(workingBitmap, aspectRatio)
+            if (cropped != workingBitmap) {
+                workingBitmap.recycle()
+                workingBitmap = cropped
+            }
 
             if (saveNegative) {
-                saveNegativeToCache(context, croppedBitmap)
+                saveNegativeToCache(context, workingBitmap)
             }
 
             // 4. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
-            val processedBitmap = applyPresetEffects(context, croppedBitmap, preset, tuning)
+            val processed = applyPresetEffects(context, workingBitmap, preset, tuning)
+            if (processed != workingBitmap) {
+                workingBitmap.recycle()
+                workingBitmap = processed
+            }
 
             // 5. Apply Retro Date Stamp
-            val stampedBitmap = if (tuning.dateStampEnabled) {
-                preset.dateStamp?.let {
-                    DateStampRenderer.applyDateStamp(processedBitmap, it, tuning.customYear)
-                } ?: processedBitmap
-            } else {
-                processedBitmap
+            if (tuning.dateStampEnabled && preset.dateStamp != null) {
+                val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear)
+                if (stamped != workingBitmap) {
+                    workingBitmap.recycle()
+                    workingBitmap = stamped
+                }
             }
 
             // 6. Apply Analog Film Border
-            val borderedBitmap = preset.border?.let {
-                BorderRenderer.applyBorder(stampedBitmap, it, context)
-            } ?: stampedBitmap
+            if (preset.border != null) {
+                val bordered = BorderRenderer.applyBorder(workingBitmap, preset.border, context)
+                if (bordered != workingBitmap) {
+                    workingBitmap.recycle()
+                    workingBitmap = bordered
+                }
+            }
 
             // 7. Save to MediaStore (DCIM/Cameleo)
-            saveToGallery(context, borderedBitmap, preset.name)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in image processing pipeline", e)
+            val uri = saveToGallery(context, workingBitmap, preset.name)
+            workingBitmap.recycle()
+            uri
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error in image processing pipeline", t)
+            if (!workingBitmap.isRecycled) {
+                workingBitmap.recycle()
+            }
             null
-        } finally {
-            imageProxy.close()
         }
     }
 
@@ -175,64 +215,16 @@ object ImageProcessor {
             var b: Float
 
             if (lut != null) {
-                // Trilinear sampling in 512x512 Hald CLUT 8
-                val bScaled = bi * 63.0f / 255.0f
-                val b0 = bScaled.toInt().coerceIn(0, 63)
-                val b1 = (b0 + 1).coerceIn(0, 63)
-                val bFrac = bScaled - b0
-
-                val rScaled = ri * 63.0f / 255.0f
-                val r0 = rScaled.toInt().coerceIn(0, 63)
-                val r1 = (r0 + 1).coerceIn(0, 63)
-                val rFrac = rScaled - r0
-
-                val gScaled = gi * 63.0f / 255.0f
-                val g0 = gScaled.toInt().coerceIn(0, 63)
-                val g1 = (g0 + 1).coerceIn(0, 63)
-                val gFrac = gScaled - g0
-
-                val c000 = sampleLut(lut, r0, g0, b0)
-                val c100 = sampleLut(lut, r1, g0, b0)
-                val c010 = sampleLut(lut, r0, g1, b0)
-                val c110 = sampleLut(lut, r1, g1, b0)
-                val c001 = sampleLut(lut, r0, g0, b1)
-                val c101 = sampleLut(lut, r1, g0, b1)
-                val c011 = sampleLut(lut, r0, g1, b1)
-                val c111 = sampleLut(lut, r1, g1, b1)
-
-                r = trilinear(
-                    ((c000 shr 16) and 0xFF) / 255.0f,
-                    ((c100 shr 16) and 0xFF) / 255.0f,
-                    ((c010 shr 16) and 0xFF) / 255.0f,
-                    ((c110 shr 16) and 0xFF) / 255.0f,
-                    ((c001 shr 16) and 0xFF) / 255.0f,
-                    ((c101 shr 16) and 0xFF) / 255.0f,
-                    ((c011 shr 16) and 0xFF) / 255.0f,
-                    ((c111 shr 16) and 0xFF) / 255.0f,
-                    rFrac, gFrac, bFrac
-                )
-                g = trilinear(
-                    ((c000 shr 8) and 0xFF) / 255.0f,
-                    ((c100 shr 8) and 0xFF) / 255.0f,
-                    ((c010 shr 8) and 0xFF) / 255.0f,
-                    ((c110 shr 8) and 0xFF) / 255.0f,
-                    ((c001 shr 8) and 0xFF) / 255.0f,
-                    ((c101 shr 8) and 0xFF) / 255.0f,
-                    ((c011 shr 8) and 0xFF) / 255.0f,
-                    ((c111 shr 8) and 0xFF) / 255.0f,
-                    rFrac, gFrac, bFrac
-                )
-                b = trilinear(
-                    (c000 and 0xFF) / 255.0f,
-                    (c100 and 0xFF) / 255.0f,
-                    (c010 and 0xFF) / 255.0f,
-                    (c110 and 0xFF) / 255.0f,
-                    (c001 and 0xFF) / 255.0f,
-                    (c101 and 0xFF) / 255.0f,
-                    (c011 and 0xFF) / 255.0f,
-                    (c111 and 0xFF) / 255.0f,
-                    rFrac, gFrac, bFrac
-                )
+                // High-performance direct 3D LUT sampling (64x64x64 Hald CLUT)
+                val b64 = (bi * 63 + 127) / 255
+                val g64 = (gi * 63 + 127) / 255
+                val r64 = (ri * 63 + 127) / 255
+                val tileX = (b64 % 8) * 64
+                val tileY = (b64 / 8) * 64
+                val c = lut[(tileY + g64) * 512 + tileX + r64]
+                r = ((c shr 16) and 0xFF) * (1.0f / 255.0f)
+                g = ((c shr 8) and 0xFF) * (1.0f / 255.0f)
+                b = (c and 0xFF) * (1.0f / 255.0f)
             } else {
                 r = applyFilmicCurve(ri / 255.0f, contBoost, fade)
                 g = applyFilmicCurve(gi / 255.0f, contBoost, fade)
@@ -345,6 +337,7 @@ object ImageProcessor {
                     alpha = 180 // Authentic subtle dust
                 }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
+                if (scaled != tex) scaled.recycle()
             }
         }
 
@@ -359,6 +352,7 @@ object ImageProcessor {
                     alpha = ((leak.intensity * 0.65f) * 255.0f).toInt().coerceIn(0, 255)
                 }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
+                if (scaled != tex) scaled.recycle()
             }
         }
 
@@ -372,6 +366,7 @@ object ImageProcessor {
                     alpha = 55
                 }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
+                if (scaled != tex) scaled.recycle()
             }
         }
 
@@ -386,35 +381,40 @@ object ImageProcessor {
         vigTex: Bitmap,
         intensity: Float
     ) {
-        val scaled = Bitmap.createScaledBitmap(vigTex, width, height, true)
-        val vigPixels = IntArray(width * height)
-        scaled.getPixels(vigPixels, 0, width, 0, 0, width, height)
+        val vw = vigTex.width
+        val vh = vigTex.height
+        val vigPixels = IntArray(vw * vh)
+        vigTex.getPixels(vigPixels, 0, vw, 0, 0, vw, vh)
 
-        // Dynamically find min and max luminance of the texture mask for proper photographic normalization
+        // Find min and max luminance of the texture mask for proper photographic normalization
         var minL = 255f
         var maxL = 0f
-        val step = (width * height / 1000).coerceAtLeast(1)
-        for (i in 0 until (width * height) step step) {
-            val vp = vigPixels[i]
+        for (vp in vigPixels) {
             val l = (vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f
             if (l < minL) minL = l
             if (l > maxL) maxL = l
         }
         val range = (maxL - minL).coerceAtLeast(1.0f)
 
-        for (i in pixels.indices) {
-            val vp = vigPixels[i]
-            val vl = (vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f
-            val norm = ((vl - minL) / range).coerceIn(0.0f, 1.0f)
-            // Optical lens falloff: 1.0 (unattenuated) at center, falling off toward corners
-            val factor = (1.0f - intensity * (1.0f - norm)).coerceIn(0.20f, 1.0f)
+        for (y in 0 until height) {
+            val vy = (y * vh) / height
+            val vRow = vy * vw
+            val row = y * width
+            for (x in 0 until width) {
+                val vx = (x * vw) / width
+                val vp = vigPixels[vRow + vx]
+                val vl = (vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f
+                val norm = ((vl - minL) / range).coerceIn(0.0f, 1.0f)
+                val factor = (1.0f - intensity * (1.0f - norm)).coerceIn(0.20f, 1.0f)
 
-            val cp = pixels[i]
-            val a = cp ushr 24
-            val r = (((cp shr 16 and 0xFF) * factor).toInt()).coerceIn(0, 255)
-            val g = (((cp shr 8 and 0xFF) * factor).toInt()).coerceIn(0, 255)
-            val b = (((cp and 0xFF) * factor).toInt()).coerceIn(0, 255)
-            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+                val i = row + x
+                val cp = pixels[i]
+                val a = cp ushr 24
+                val r = (((cp shr 16 and 0xFF) * factor).toInt()).coerceIn(0, 255)
+                val g = (((cp shr 8 and 0xFF) * factor).toInt()).coerceIn(0, 255)
+                val b = (((cp and 0xFF) * factor).toInt()).coerceIn(0, 255)
+                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
         }
     }
 

@@ -43,6 +43,8 @@ import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
 import com.craftcam.app.util.SoundManager
 import com.craftcam.app.ui.components.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.craftcam.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -324,7 +326,7 @@ fun ViewfinderScreen(
 
                                 cameraManager.capturePhoto(
                                     onImageCaptured = { imageProxy ->
-                                        scope.launch {
+                                        scope.launch(Dispatchers.IO) {
                                             val uri = ImageProcessor.processAndSaveImage(
                                                 context = context,
                                                 imageProxy = imageProxy,
@@ -334,13 +336,17 @@ fun ViewfinderScreen(
                                                 mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
                                                 saveNegative = true
                                             )
-                                            if (uri != null) {
-                                                Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            withContext(Dispatchers.Main) {
+                                                if (uri != null) {
+                                                    Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         }
                                     },
                                     onError = { exc ->
-                                        Toast.makeText(context, "Capture failed: ${exc.message}", Toast.LENGTH_SHORT).show()
+                                        scope.launch(Dispatchers.Main) {
+                                            Toast.makeText(context, "Capture failed: ${exc.message}", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 )
                             }

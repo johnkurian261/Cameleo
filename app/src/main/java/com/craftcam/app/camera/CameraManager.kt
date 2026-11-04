@@ -104,10 +104,10 @@ class CameraManager(private val context: Context) {
 
         try {
             if (_uiState.value.captureMode == CaptureMode.PHOTO) {
-                // 2A. High-resolution ImageCapture Use Case (4:3 full sensor)
+                // 2A. Zero-lag instant shutter ImageCapture Use Case (4:3 full sensor)
                 imageCapture = ImageCapture.Builder()
                     .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .setFlashMode(_uiState.value.flashMode)
                     .build()
 
