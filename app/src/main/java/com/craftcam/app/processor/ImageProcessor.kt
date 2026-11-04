@@ -73,7 +73,7 @@ object ImageProcessor {
 
             // 6. Apply Analog Film Border
             val borderedBitmap = preset.border?.let {
-                BorderRenderer.applyBorder(stampedBitmap, it)
+                BorderRenderer.applyBorder(stampedBitmap, it, context)
             } ?: stampedBitmap
 
             // 7. Save to MediaStore (DCIM/Cameleo)
@@ -480,60 +480,68 @@ object ImageProcessor {
         "ccd_classic"          -> "lut_135ne.png"
         "ccd_flash"            -> "lut_dfuns.png"
         "ccd_cool_digital"     -> "lut_ir.png"
-        "ccd_cyber_y2k"        -> "lut_135ne.png"
-        "disp_waterproof"      -> "lut_dfuns.png"
-        "disp_half_frame"      -> "lut_dclassic.png"
-        "disp_instant_party"   -> "lut_dfuns.png"
+        "ccd_y2k_digital"      -> "lut_135ne.png"
+        "ccd_retro_compact"    -> "lut_dfuns.png"
+        "disp_classic"         -> "lut_dfuns.png"
         "disp_flash"           -> "lut_dfuns.png"
-        "inst_square"          -> "lut_instant.png"
-        "inst_mini"            -> "lut_instant.png"
-        "inst_wide"            -> "lut_instant.png"
-        "cam_hi8"              -> "lut_vhs.png"
-        "cam_vhs_c"            -> "lut_vhs.png"
-        "cam_mini_dv"          -> "lut_vhs.png"
-        "cam_retro_8mm"        -> "lut_vhs.png"
+        "disp_warm"            -> "lut_dclassic.png"
+        "disp_night"           -> "lut_dclassic.png"
+        "inst_classic"         -> "lut_instant.png"
+        "inst_soft_polaroid"   -> "lut_instant.png"
+        "inst_vintage"         -> "lut_instant.png"
+        "cam_retro_vhs"        -> "lut_vhs.png"
+        "cam_analog_video"     -> "lut_vhs.png"
+        "cam_90s_camcorder"    -> "lut_vhs.png"
         else                   -> "lut_dclassic.png"
     }
 
     private fun selectGrainForPreset(presetId: String, isCamcorder: Boolean): String = when {
         isCamcorder                            -> "vhs_grain01.jpg"
         presetId == "analog_35mm_classic"      -> "grain_dclassic.jpg"
-        presetId == "ccd_cyber_y2k"            -> "grain_classicu.jpg"
-        presetId == "analog_vintage_color"     -> "grain_dexp.jpg"
-        presetId == "disp_flash"               -> "grain_cpm35.jpg"
-        presetId == "inst_square"              -> "grain_135sr.jpg"
-        presetId == "ccd_flash"                -> "grain_dfuns.jpg"
-        presetId == "disp_waterproof"          -> "grain_dqs.jpg"
-        presetId == "ccd_cool_digital"         -> "grain_IR.jpg"
-        presetId.startsWith("inst")            -> "grain_instc.jpg"
-        presetId == "analog_cinema_film"       -> "grain_d3d1.jpg"
-        presetId.startsWith("ccd")             -> "grain_ccdr.jpg"
-        presetId.startsWith("disp")            -> "grain540_01.jpg"
+        presetId == "analog_warm_film"         -> "grain_dclassic.jpg"
         presetId == "analog_soft_film"         -> "grain_s67.jpg"
+        presetId == "analog_vintage_color"     -> "grain_dexp.jpg"
         presetId == "analog_faded_film"        -> "grain_dexp2.jpg"
+        presetId == "analog_cinema_film"       -> "grain_d3d1.jpg"
+        presetId == "ccd_classic"              -> "grain_ccdr.jpg"
+        presetId == "ccd_flash"                -> "grain_dfuns.jpg"
+        presetId == "ccd_cool_digital"         -> "grain_IR.jpg"
+        presetId == "ccd_y2k_digital"          -> "grain_classicu.jpg"
+        presetId == "ccd_retro_compact"        -> "grain_dqs.jpg"
+        presetId == "disp_classic"             -> "grain540_01.jpg"
+        presetId == "disp_flash"               -> "grain_cpm35.jpg"
+        presetId == "disp_warm"                -> "grain540_01.jpg"
+        presetId == "disp_night"               -> "half_grain.jpg"
+        presetId == "inst_classic"             -> "grain_instc.jpg"
+        presetId == "inst_soft_polaroid"       -> "grain_instc.jpg"
+        presetId == "inst_vintage"             -> "grain_135sr.jpg"
         else                                   -> "grain_dclassic.jpg"
     }
 
     private fun selectVignetteForPreset(presetId: String): String? = when (presetId) {
-        "analog_35mm_classic"  -> "vignette_dclassic.jpg"
-        "analog_soft_film"     -> "vignette_ct2f.jpg"
-        "analog_vintage_color" -> "vignette_dexp.jpg"
-        "analog_faded_film"    -> "vignette_nt16.jpg"
-        "disp_flash"           -> "vignette_cpm35.jpg"
-        "inst_square"          -> "135sr_vig.jpg"
-        "ccd_flash"            -> "sclassic_vintage.jpg"
-        else                   -> null
+        "analog_35mm_classic", "analog_warm_film" -> "vignette_dclassic.jpg"
+        "analog_soft_film"                        -> "vignette_ct2f.jpg"
+        "analog_vintage_color"                    -> "vignette_dexp.jpg"
+        "analog_faded_film"                       -> "vignette_nt16.jpg"
+        "analog_cinema_film"                      -> "vignette_dclassic.jpg"
+        "disp_flash"                              -> "vignette_cpm35.jpg"
+        "disp_warm"                               -> "135sr_vig.jpg"
+        "inst_classic", "inst_vintage"            -> "135sr_vig.jpg"
+        "inst_soft_polaroid"                      -> "vignette_ct2f.jpg"
+        "ccd_flash", "ccd_y2k_digital"            -> "sclassic_vintage.jpg"
+        else                                      -> null
     }
 
     private fun selectDustForPreset(presetId: String): String? = when {
-        presetId.startsWith("inst")            -> "dust_instc.png"
+        presetId.startsWith("inst")               -> "dust_instc.png"
         presetId == "ccd_classic" ||
-        presetId == "inst_square" ||
-        presetId == "analog_35mm_classic"      -> "135_dust.png"
-        presetId.startsWith("cam")             -> "8mm_dust.png"
-        presetId.startsWith("analog")          -> "dust_black.png"
-        presetId.startsWith("disp")            -> "dust_black.png"
-        else                                   -> null
+        presetId == "analog_35mm_classic" ||
+        presetId == "analog_cinema_film" ||
+        presetId == "disp_warm"                   -> "135_dust.png"
+        presetId.startsWith("cam")                -> "8mm_dust.png"
+        presetId.startsWith("analog")             -> "dust_black.png"
+        presetId.startsWith("disp")               -> "dust_black.png"
+        else                                      -> "dust_black.png"
     }
 
     private fun selectFlashForPreset(presetId: String): String? = when (presetId) {

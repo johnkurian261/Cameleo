@@ -41,6 +41,7 @@ import com.craftcam.app.gl.GLViewfinderRenderer
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
+import com.craftcam.app.util.SoundManager
 import com.craftcam.app.ui.components.*
 import com.craftcam.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -64,6 +65,10 @@ fun ViewfinderScreen(
 
     LaunchedEffect(selectedPreset) {
         cameraManager.setPreset(selectedPreset)
+    }
+
+    LaunchedEffect(Unit) {
+        SoundManager.initialize(context)
     }
 
     var showTuningSheet by remember { mutableStateOf(false) }
@@ -317,8 +322,10 @@ fun ViewfinderScreen(
                                     countdown = null
                                 }
 
+                                SoundManager.playShutterSound()
                                 cameraManager.capturePhoto(
                                     onImageCaptured = { imageProxy ->
+                                        SoundManager.playFilmAdvanceSound()
                                         scope.launch {
                                             val uri = ImageProcessor.processAndSaveImage(
                                                 context = context,
