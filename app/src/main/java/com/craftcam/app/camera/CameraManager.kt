@@ -198,8 +198,8 @@ class CameraManager(private val context: Context) {
 
                 imageCapture = ImageCapture.Builder()
                     .setResolutionSelector(photoResolutionSelector)
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                    .setJpegQuality(100)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setJpegQuality(95)
                     .setFlashMode(_uiState.value.flashMode)
                     .build()
 
@@ -386,6 +386,9 @@ class CameraManager(private val context: Context) {
             cameraExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
+                    // Instantly release the shutter button so the user can immediately take another photo
+                    _uiState.update { it.copy(isCapturing = false) }
+
                     // Application-level coroutine scope: never aborted if user navigates to gallery
                     processingScope.launch {
                         try {
@@ -411,8 +414,6 @@ class CameraManager(private val context: Context) {
                             withContext(Dispatchers.Main) {
                                 onError(t.message ?: "Image processing failed")
                             }
-                        } finally {
-                            _uiState.update { it.copy(isCapturing = false) }
                         }
                     }
                 }

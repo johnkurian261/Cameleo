@@ -193,7 +193,29 @@ object ImageProcessor {
         val satBoost  = (1.0f + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
         val contBoost = (1.0f + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
 
-        // ── Step 1: High-Performance Parallel 3D Trilinear LUT Interpolation ──
+        // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
+        val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
+        val hasVig = vigIntensity > 0.03f
+        val cx = width * 0.5f
+        val cy = height * 0.5f
+        val maxD2 = cx * cx + cy * cy
+        val rad = lens.vignetteRadius
+        val vigDenom = maxD2 * rad * rad
+
+        val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
+        val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
+        val hasGrain = grain.enabled && effectiveGrain > 0.01f
+        val grainTex = if (hasGrain) loadTexture(context, grainAsset) else null
+        val gw = grainTex?.width ?: 1
+        val gh = grainTex?.height ?: 1
+        val grainPixels: IntArray? = if (grainTex != null) {
+            val gp = IntArray(gw * gh)
+            grainTex.getPixels(gp, 0, gw, 0, 0, gw, gh)
+            gp
+        } else null
+        val grainStrength = effectiveGrain * 24.0f
+
+        // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
         val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
         val chunkSize = (pixels.size + numCores - 1) / numCores
 
@@ -319,12 +341,35 @@ object ImageProcessor {
                             b = newLuma + satBoost * (b - newLuma)
                         }
 
+                        val pxX = i % width
+                        val pxY = i / width
+
                         // Camcorder CRT scanline modulation
                         if (isCamcorder) {
-                            val yCoord = i / width
-                            val scanline = (sin(yCoord.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
+                            val scanline = (sin(pxY.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
                             val sf = 0.90f + 0.10f * scanline
                             r *= sf; g *= sf; b *= sf
+                        }
+
+                        // Fused Lens Vignette Shading (Zero-sqrt quadratic distance)
+                        if (hasVig) {
+                            val dx = pxX - cx
+                            val dy = pxY - cy
+                            val dn2 = (dx * dx + dy * dy) / vigDenom
+                            val v = (1.0f - vigIntensity * dn2).coerceIn(0.25f, 1.0f)
+                            r *= v; g *= v; b *= v
+                        }
+
+                        // Fused Film Halide Grain Texture (Organic midtone emulsion)
+                        if (grainPixels != null) {
+                            val gx = pxX % gw
+                            val gy = (pxY % gh) * gw
+                            val gp = grainPixels[gy + gx]
+                            val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) * (1.0f / 128f)
+                            val luma = r * 0.299f + g * 0.587f + b * 0.114f
+                            val midWeight = 1.0f - (abs(luma - 0.5f) * 1.7f).coerceIn(0.0f, 0.85f)
+                            val delta = (gl * grainStrength * midWeight) * (1.0f / 255.0f)
+                            r += delta; g += delta; b += delta
                         }
 
                         val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
@@ -334,21 +379,6 @@ object ImageProcessor {
                     }
                 }
             }.awaitAll()
-        }
-
-        // ── Step 2: Optical Lens Vignette Shading (Clean Mathematical Falloff) ─
-        val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
-        if (vigIntensity > 0.03f) {
-            applyMathVignetteToPixels(pixels, width, height, vigIntensity, lens.vignetteRadius)
-        }
-
-        // ── Step 3: Scanned Film Halide Grain Texture (Subtle Organic Emulsion) ─
-        val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
-        val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
-        if (grain.enabled && effectiveGrain > 0.01f) {
-            loadTexture(context, grainAsset)?.let { tex ->
-                applyGrainTexture(pixels, width, height, tex, effectiveGrain)
-            }
         }
 
         val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -799,7 +829,7 @@ object ImageProcessor {
         if (uri != null) {
             try {
                 context.contentResolver.openOutputStream(uri)?.use {
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 98, it)
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 94, it)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     contentValues.clear()
