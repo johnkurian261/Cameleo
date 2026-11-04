@@ -127,7 +127,12 @@ class CameraManager(private val context: Context) {
                 val prev = preview
                 val vc = videoCapture
                 if (prev != null && vc != null) {
-                    val effect = VideoEffectManager.createVideoOverlayEffect(context, currentPreset)
+                    val effect = VideoEffectManager.createVideoOverlayEffect(
+                        context = context,
+                        preset = currentPreset,
+                        isRecordingProvider = { _uiState.value.isRecording },
+                        recordingDurationSecProvider = { _uiState.value.recordingSeconds }
+                    )
                     val useCaseGroup = UseCaseGroup.Builder()
                         .addUseCase(prev)
                         .addUseCase(vc)
