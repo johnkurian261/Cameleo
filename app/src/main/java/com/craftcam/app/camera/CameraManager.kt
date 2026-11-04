@@ -55,9 +55,7 @@ class CameraManager(private val context: Context) {
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
             currentPreset = preset
-            if (_uiState.value.captureMode == CaptureMode.VIDEO) {
-                bindCameraUseCases()
-            }
+            bindCameraUseCases()
         }
     }
 
@@ -111,12 +109,26 @@ class CameraManager(private val context: Context) {
                     .setFlashMode(_uiState.value.flashMode)
                     .build()
 
-                camera = provider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    preview,
-                    imageCapture
-                )
+                val prev = preview
+                val ic = imageCapture
+                if (prev != null && ic != null) {
+                    val effect = VideoEffectManager.createLiveOverlayEffect(
+                        context = context,
+                        preset = currentPreset,
+                        isPhotoMode = true
+                    )
+                    val useCaseGroup = UseCaseGroup.Builder()
+                        .addUseCase(prev)
+                        .addUseCase(ic)
+                        .addEffect(effect)
+                        .build()
+
+                    camera = provider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        useCaseGroup
+                    )
+                }
             } else {
                 // 2B. High-definition VideoCapture Use Case with vintage film overlay effects
                 val recorder = Recorder.Builder()
@@ -127,9 +139,10 @@ class CameraManager(private val context: Context) {
                 val prev = preview
                 val vc = videoCapture
                 if (prev != null && vc != null) {
-                    val effect = VideoEffectManager.createVideoOverlayEffect(
+                    val effect = VideoEffectManager.createLiveOverlayEffect(
                         context = context,
                         preset = currentPreset,
+                        isPhotoMode = false,
                         isRecordingProvider = { _uiState.value.isRecording },
                         recordingDurationSecProvider = { _uiState.value.recordingSeconds }
                     )

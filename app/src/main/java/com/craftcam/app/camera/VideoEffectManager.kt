@@ -14,17 +14,18 @@ import java.util.*
 
 object VideoEffectManager {
 
-    fun createVideoOverlayEffect(
+    fun createLiveOverlayEffect(
         context: Context,
         preset: CameraPreset,
+        isPhotoMode: Boolean = false,
         isRecordingProvider: () -> Boolean = { false },
         recordingDurationSecProvider: () -> Int = { 0 }
     ): OverlayEffect {
-        // Target BOTH live preview viewfinder and recorded video stream
-        val targets = CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE
+        // Target live preview viewfinder in Photo mode, and both preview + video stream in Video mode
+        val targets = if (isPhotoMode) CameraEffect.PREVIEW else (CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE)
         val handler = Handler(Looper.getMainLooper())
         val errorListener = Consumer<Throwable> { throwable ->
-            android.util.Log.e("VideoEffectManager", "Error in video overlay effect", throwable)
+            android.util.Log.e("VideoEffectManager", "Error in live overlay effect", throwable)
         }
 
         val isCamcorder = preset.category == CameraCategory.CAMCORDER
@@ -125,13 +126,13 @@ object VideoEffectManager {
                 canvas.drawPath(outerPath, gatePaint)
             }
 
-            // 4. Live Recording Status & Timecode
-            val isRecording = isRecordingProvider()
-            val elapsedSec = recordingDurationSecProvider()
-            val minutes = elapsedSec / 60
-            val seconds = elapsedSec % 60
+            // 4. Mode-Specific On-Screen Display (OSD)
+            if (!isPhotoMode && isCamcorder) {
+                val isRecording = isRecordingProvider()
+                val elapsedSec = recordingDurationSecProvider()
+                val minutes = elapsedSec / 60
+                val seconds = elapsedSec % 60
 
-            if (isCamcorder) {
                 // Blinking REC dot when recording, or STBY when standby
                 if (isRecording) {
                     val blink = (System.currentTimeMillis() / 500) % 2 == 0L
