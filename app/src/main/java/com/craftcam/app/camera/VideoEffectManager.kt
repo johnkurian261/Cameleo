@@ -21,8 +21,8 @@ object VideoEffectManager {
         isRecordingProvider: () -> Boolean = { false },
         recordingDurationSecProvider: () -> Int = { 0 }
     ): OverlayEffect {
-        // Target live preview viewfinder in Photo mode, and both preview + video stream in Video mode
-        val targets = if (isPhotoMode) CameraEffect.PREVIEW else (CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE)
+        // Target VIDEO_CAPTURE stream only so Preview surface remains clean, fast, and crash-free
+        val targets = CameraEffect.VIDEO_CAPTURE
         val handler = Handler(Looper.getMainLooper())
         val errorListener = Consumer<Throwable> { throwable ->
             android.util.Log.e("VideoEffectManager", "Error in live overlay effect", throwable)
@@ -96,95 +96,98 @@ object VideoEffectManager {
         val overlay = OverlayEffect(targets, 0, handler, errorListener)
 
         overlay.setOnDrawListener { frame ->
-            val canvas = frame.overlayCanvas
-            val w = canvas.width.toFloat()
-            val h = canvas.height.toFloat()
+            try {
+                val canvas = frame.overlayCanvas
+                val w = canvas.width.toFloat()
+                val h = canvas.height.toFloat()
 
-            // 1. Film / Vintage Color Tone Wash
-            canvas.drawRect(0f, 0f, w, h, tintPaint)
+                // 1. Film / Vintage Color Tone Wash
+                canvas.drawRect(0f, 0f, w, h, tintPaint)
 
-            // 2. Optical Lens Vignette Shading
-            if (vigPaint.shader == null) {
-                val cx = w / 2f
-                val cy = h / 2f
-                val radius = Math.max(w, h) * (if (isDisposable || is8mm) 0.65f else 0.72f)
-                val edgeAlpha = if (isDisposable || is8mm) 190 else 145
-                vigPaint.shader = RadialGradient(
-                    cx, cy, radius,
-                    intArrayOf(Color.TRANSPARENT, Color.argb(40, 0, 0, 0), Color.argb(edgeAlpha, 0, 0, 0)),
-                    floatArrayOf(0.0f, 0.55f, 1.0f),
-                    Shader.TileMode.CLAMP
-                )
-            }
-            canvas.drawRect(0f, 0f, w, h, vigPaint)
-
-            // 3. 8mm / 16mm Projector Rounded Film Gate
-            if (is8mm) {
-                val cornerRadius = w * 0.065f
-                val gatePath = Path().apply {
-                    addRoundRect(RectF(0f, 0f, w, h), cornerRadius, cornerRadius, Path.Direction.CW)
+                // 2. Optical Lens Vignette Shading
+                if (vigPaint.shader == null) {
+                    val cx = w / 2f
+                    val cy = h / 2f
+                    val radius = Math.max(w, h) * (if (isDisposable || is8mm) 0.65f else 0.72f)
+                    val edgeAlpha = if (isDisposable || is8mm) 190 else 145
+                    vigPaint.shader = RadialGradient(
+                        cx, cy, radius,
+                        intArrayOf(Color.TRANSPARENT, Color.argb(40, 0, 0, 0), Color.argb(edgeAlpha, 0, 0, 0)),
+                        floatArrayOf(0.0f, 0.55f, 1.0f),
+                        Shader.TileMode.CLAMP
+                    )
                 }
-                val outerPath = Path().apply {
-                    addRect(0f, 0f, w, h, Path.Direction.CW)
-                    op(gatePath, Path.Op.DIFFERENCE)
-                }
-                canvas.drawPath(outerPath, gatePaint)
-            }
+                canvas.drawRect(0f, 0f, w, h, vigPaint)
 
-            // 4. Mode-Specific On-Screen Display (OSD)
-            if (!isPhotoMode && isCamcorder) {
-                val isRecording = isRecordingProvider()
-                val elapsedSec = recordingDurationSecProvider()
-                val minutes = elapsedSec / 60
-                val seconds = elapsedSec % 60
-
-                // Blinking REC dot when recording, or STBY when standby
-                if (isRecording) {
-                    val blink = (System.currentTimeMillis() / 500) % 2 == 0L
-                    if (blink) {
-                        canvas.drawCircle(60f, 65f, 13f, recPaint)
+                // 3. 8mm / 16mm Projector Rounded Film Gate
+                if (is8mm) {
+                    val cornerRadius = w * 0.065f
+                    val gatePath = Path().apply {
+                        addRoundRect(RectF(0f, 0f, w, h), cornerRadius, cornerRadius, Path.Direction.CW)
                     }
-                    canvas.drawText("REC", 86f, 78f, osdPaint)
-                } else {
-                    canvas.drawText("STBY", 60f, 78f, osdPaint)
+                    val outerPath = Path().apply {
+                        addRect(0f, 0f, w, h, Path.Direction.CW)
+                        op(gatePath, Path.Op.DIFFERENCE)
+                    }
+                    canvas.drawPath(outerPath, gatePaint)
                 }
 
-                canvas.drawText("SP", w - 120f, 78f, osdPaint)
-                canvas.drawText("[■■■]", w - 240f, 78f, osdPaint)
+                // 4. Mode-Specific On-Screen Display (OSD)
+                if (!isPhotoMode && isCamcorder) {
+                    val isRecording = isRecordingProvider()
+                    val elapsedSec = recordingDurationSecProvider()
+                    val minutes = elapsedSec / 60
+                    val seconds = elapsedSec % 60
 
-                // Running Timecode
-                val tc = String.format(Locale.US, "%02d:%02d:%02d", minutes / 60, minutes % 60, seconds)
-                canvas.drawText(tc, 60f, h - 60f, osdPaint)
+                    // Blinking REC dot when recording, or STBY when standby
+                    if (isRecording) {
+                        val blink = (System.currentTimeMillis() / 500) % 2 == 0L
+                        if (blink) {
+                            canvas.drawCircle(60f, 65f, 13f, recPaint)
+                        }
+                        canvas.drawText("REC", 86f, 78f, osdPaint)
+                    } else {
+                        canvas.drawText("STBY", 60f, 78f, osdPaint)
+                    }
 
-                // Vintage Date Stamp
-                val dateStr = SimpleDateFormat("MMM. dd yyyy", Locale.US).format(Date()).uppercase(Locale.US)
-                canvas.drawText(dateStr, w - 380f, h - 60f, datePaint)
+                    canvas.drawText("SP", w - 120f, 78f, osdPaint)
+                    canvas.drawText("[■■■]", w - 240f, 78f, osdPaint)
 
-                // CRT Scanlines
-                var y = 0f
-                while (y < h) {
-                    canvas.drawLine(0f, y, w, y, scanlinePaint)
-                    y += 5f
+                    // Running Timecode
+                    val tc = String.format(Locale.US, "%02d:%02d:%02d", minutes / 60, minutes % 60, seconds)
+                    canvas.drawText(tc, 60f, h - 60f, osdPaint)
+
+                    // Vintage Date Stamp
+                    val dateStr = SimpleDateFormat("MMM. dd yyyy", Locale.US).format(Date()).uppercase(Locale.US)
+                    canvas.drawText(dateStr, w - 380f, h - 60f, datePaint)
+
+                    // CRT Scanlines
+                    var y = 0f
+                    while (y < h) {
+                        canvas.drawLine(0f, y, w, y, scanlinePaint)
+                        y += 5f
+                    }
+                } else if (is8mm) {
+                    // Amber 7-Segment LED Date Stamp for 8mm / 16mm
+                    val cal = Calendar.getInstance()
+                    val yy = (cal.get(Calendar.YEAR) - 30) % 100
+                    val mm = cal.get(Calendar.MONTH) + 1
+                    val dd = cal.get(Calendar.DAY_OF_MONTH)
+                    val dateStr = String.format(Locale.US, "'%02d  %2d  %2d", yy, mm, dd)
+                    canvas.drawText(dateStr, w - 320f, h - 55f, datePaint)
+                } else if (preset.dateStamp?.enabled == true) {
+                    // Photochemically imprinted orange date stamp for Analog / CCD / Disposable
+                    val cal = Calendar.getInstance()
+                    val offset = preset.dateStamp?.customYearOffset ?: 0
+                    val yy = (cal.get(Calendar.YEAR) + offset) % 100
+                    val mm = cal.get(Calendar.MONTH) + 1
+                    val dd = cal.get(Calendar.DAY_OF_MONTH)
+                    val dateStr = String.format(Locale.US, "'%02d  %2d  %2d", yy, mm, dd)
+                    canvas.drawText(dateStr, w - 320f, h - 55f, datePaint)
                 }
-            } else if (is8mm) {
-                // Amber 7-Segment LED Date Stamp for 8mm / 16mm
-                val cal = Calendar.getInstance()
-                val yy = (cal.get(Calendar.YEAR) - 30) % 100
-                val mm = cal.get(Calendar.MONTH) + 1
-                val dd = cal.get(Calendar.DAY_OF_MONTH)
-                val dateStr = String.format(Locale.US, "'%02d  %2d  %2d", yy, mm, dd)
-                canvas.drawText(dateStr, w - 320f, h - 55f, datePaint)
-            } else if (preset.dateStamp?.enabled == true) {
-                // Photochemically imprinted orange date stamp for Analog / CCD / Disposable
-                val cal = Calendar.getInstance()
-                val offset = preset.dateStamp?.customYearOffset ?: 0
-                val yy = (cal.get(Calendar.YEAR) + offset) % 100
-                val mm = cal.get(Calendar.MONTH) + 1
-                val dd = cal.get(Calendar.DAY_OF_MONTH)
-                val dateStr = String.format(Locale.US, "'%02d  %2d  %2d", yy, mm, dd)
-                canvas.drawText(dateStr, w - 320f, h - 55f, datePaint)
+            } catch (t: Throwable) {
+                android.util.Log.w("VideoEffectManager", "Error drawing video overlay frame", t)
             }
-
             true
         }
 

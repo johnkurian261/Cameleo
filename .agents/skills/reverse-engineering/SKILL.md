@@ -159,3 +159,4 @@ When documenting reverse-engineering findings for CAMELEO, adhere strictly to th
 
 - **Stripped Symbols**: Release builds often strip Objective-C / Swift symbol names. Cross-reference string literals with cross-references (XRefs) in Ghidra.
 - **Dynamic Swizzling**: Behavior altered at runtime via Objective-C runtime method swizzling cannot be fully resolved statically; document as hypothesis until verified.
+

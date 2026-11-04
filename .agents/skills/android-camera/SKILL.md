@@ -170,3 +170,4 @@ fun setManualExposure(
 1. **Capability Matrix Output**: Structured report or log entry specifying device hardware level, supported resolutions, and sensor limits.
 2. **Zero-Lag Shutter**: Measured latency between tap and capture callback under 300ms on `FULL` hardware devices.
 3. **Full Native Resolution**: Output JPEG/Bitmap dimensions matching max physical sensor pixels (e.g., $4000 \times 3000$ for 12MP).
+

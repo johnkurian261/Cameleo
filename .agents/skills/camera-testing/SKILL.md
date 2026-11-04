@@ -156,3 +156,4 @@ Execute this 10-point checklist prior to every milestone release:
 
 - **Emulator Constraints**: Android Studio Virtual Devices (AVD) do not simulate physical Camera2 sensor characteristics (e.g. manual ISO, real lens vignetting, raw sensor bayer patterns). Always validate color science and performance on physical hardware.
 - **Vendor OEM Quirks**: Samsung, Xiaomi, and MediaTek devices may report non-standard exposure compensation steps; always clamp exposure adjustments to device-reported ranges.
+

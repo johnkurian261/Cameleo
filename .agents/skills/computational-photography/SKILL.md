@@ -224,3 +224,4 @@ fun fuseBracketedExposureSequence(bracketedBitmaps: List<Bitmap>): Bitmap {
 - **Color Accuracy**: Verify dynamic range and color rendition with test charts (e.g., Macbeth ColorChecker 24).
 - **Smoothness**: Delta-E gradients must exhibit zero stepped contouring in 10-bit and 8-bit displays.
 - **Artifact-Free Output**: Fusion algorithms must display zero edge haloing or motion ghosting.
+

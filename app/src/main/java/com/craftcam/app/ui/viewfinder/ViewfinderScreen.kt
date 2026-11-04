@@ -62,6 +62,7 @@ fun ViewfinderScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
+    val processingScope = remember { kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob()) }
 
     val uiState by cameraManager.uiState.collectAsState()
 
@@ -100,13 +101,14 @@ fun ViewfinderScreen(
             }
         )
 
-        // 2. Viewfinder Overlay (Letterboxing, Grid, Tap-To-Focus)
+        // 2. Viewfinder Overlay (Vintage Simulation, Matte, Grid, Tap-To-Focus)
         ViewfinderOverlay(
             modifier = Modifier.fillMaxSize(),
+            preset = selectedPreset,
             aspectRatio = uiState.aspectRatio,
             showGrid = uiState.showGrid,
-            onTapFocus = { _, xNorm, yNorm ->
-                cameraManager.tapToFocus(xNorm, yNorm)
+            onTapFocus = { tapX, tapY ->
+                cameraManager.tapToFocus(tapX, tapY)
             }
         )
 
@@ -326,7 +328,7 @@ fun ViewfinderScreen(
 
                                 cameraManager.capturePhoto(
                                     onImageCaptured = { imageProxy ->
-                                        scope.launch(Dispatchers.IO) {
+                                        processingScope.launch {
                                             val uri = ImageProcessor.processAndSaveImage(
                                                 context = context,
                                                 imageProxy = imageProxy,

@@ -1,10 +1,7 @@
 package com.craftcam.app.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -12,22 +9,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.craftcam.app.camera.AspectRatioMode
+import com.craftcam.app.model.CameraCategory
+import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.ui.theme.CameraBlack
 import com.craftcam.app.ui.theme.VintageAmber
 import kotlinx.coroutines.launch
+import java.util.*
 
 @Composable
 fun ViewfinderOverlay(
     modifier: Modifier = Modifier,
+    preset: CameraPreset,
     aspectRatio: AspectRatioMode,
     showGrid: Boolean,
-    onTapFocus: (Offset, Float, Float) -> Unit
+    onTapFocus: (Float, Float) -> Unit
 ) {
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
     val focusScale = remember { Animatable(1.5f) }
@@ -40,9 +44,7 @@ fun ViewfinderOverlay(
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     focusPoint = offset
-                    val xNorm = offset.x / size.width
-                    val yNorm = offset.y / size.height
-                    onTapFocus(offset, xNorm, yNorm)
+                    onTapFocus(offset.x, offset.y)
 
                     scope.launch {
                         focusScale.snapTo(1.5f)
@@ -75,7 +77,129 @@ fun ViewfinderOverlay(
             val right = left + frameW
             val bottom = top + frameH
 
-            // 2. Draw Matte / Letterboxing Bars
+            // 2. Film Tone Color Wash (Simulates authentic analog emulsion warmth in real-time)
+            val is8mm = preset.id.contains("8mm") || preset.id.contains("16mm")
+            val isCamcorder = preset.category == CameraCategory.CAMCORDER
+            val tintColor = when {
+                isCamcorder                                          -> Color(0xFFF5F0DA) // NTSC warm phosphor
+                is8mm                                                -> Color(0xFFFFE1B4) // 8mm Kodachrome
+                preset.category == CameraCategory.CCD_DIGITAL        -> Color(0xFFDCEEFF) // Cool crisp CCD
+                preset.category == CameraCategory.DISPOSABLE         -> Color(0xFFFFDEAF) // Warm flash disposable
+                preset.id == "analog_soft_film"                      -> Color(0xFFEEFCF6) // Pastel Fuji mint
+                preset.id == "analog_cinema_film"                    -> Color(0xFFDEF2FC) // 35mm Hollywood cine
+                preset.id == "analog_vintage_color"                  -> Color(0xFFFFE8CD) // 70s Kodachrome
+                preset.id == "ccd_cool_digital"                      -> Color(0xFFD2EBFF) // Cyber cool
+                preset.id == "ccd_y2k_digital"                       -> Color(0xFFFFE1F2) // Magenta-pink Y2K
+                else                                                 -> Color(0xFFFFF2E2) // Kodak Portra warm ivory
+            }
+            drawRect(
+                color = tintColor,
+                topLeft = Offset(left, top),
+                size = Size(frameW, frameH),
+                blendMode = BlendMode.Multiply
+            )
+
+            // 3. Optical Lens Radial Vignette Shading
+            val vigRadius = maxOf(frameW, frameH) * (if (preset.category == CameraCategory.DISPOSABLE) 0.65f else 0.75f)
+            val vigBrush = Brush.radialGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.Black.copy(alpha = 0.15f),
+                    Color.Black.copy(alpha = if (preset.category == CameraCategory.DISPOSABLE) 0.70f else 0.52f)
+                ),
+                center = Offset(left + frameW / 2f, top + frameH / 2f),
+                radius = vigRadius
+            )
+            drawRect(
+                brush = vigBrush,
+                topLeft = Offset(left, top),
+                size = Size(frameW, frameH)
+            )
+
+            // 4. 8mm / 16mm Projector Rounded Film Gate
+            if (is8mm) {
+                val cornerRadius = frameW * 0.08f
+                val gatePath = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            left = left,
+                            top = top,
+                            right = right,
+                            bottom = bottom,
+                            radiusX = cornerRadius,
+                            radiusY = cornerRadius
+                        )
+                    )
+                }
+                val outerPath = Path().apply {
+                    addRect(Rect(left, top, right, bottom))
+                    op(this, gatePath, PathOperation.Difference)
+                }
+                drawPath(outerPath, Color(0xFF0A0A0C))
+            }
+
+            // 5. Authentic Live Date Stamp in Viewfinder
+            if (preset.dateStamp?.enabled == true) {
+                val cal = Calendar.getInstance()
+                val offset = preset.dateStamp.customYearOffset
+                val yy = (cal.get(Calendar.YEAR) + offset) % 100
+                val mm = cal.get(Calendar.MONTH) + 1
+                val dd = cal.get(Calendar.DAY_OF_MONTH)
+                val dateStr = String.format(Locale.US, "'%02d  %2d  %2d", yy, mm, dd)
+
+                val dateColor = when {
+                    isCamcorder                                   -> android.graphics.Color.rgb(80, 255, 120)
+                    is8mm                                         -> android.graphics.Color.rgb(255, 140, 20)
+                    preset.category == CameraCategory.CCD_DIGITAL -> android.graphics.Color.rgb(255, 180, 30)
+                    else                                          -> android.graphics.Color.rgb(255, 130, 20)
+                }
+
+                drawContext.canvas.nativeCanvas.drawText(
+                    dateStr,
+                    right - 20.dp.toPx(),
+                    bottom - 18.dp.toPx(),
+                    android.graphics.Paint().apply {
+                        color = dateColor
+                        textSize = 14.sp.toPx()
+                        textAlign = android.graphics.Paint.Align.RIGHT
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.MONOSPACE
+                        setShadowLayer(5f, 0f, 0f, android.graphics.Color.argb(180, 200, 40, 0))
+                    }
+                )
+            }
+
+            // 6. Camcorder OSD & Scanlines
+            if (isCamcorder) {
+                val cal = Calendar.getInstance()
+                val dateStr = java.text.SimpleDateFormat("MMM. dd yyyy", Locale.US).format(cal.time).uppercase(Locale.US)
+                drawContext.canvas.nativeCanvas.drawText(
+                    dateStr,
+                    right - 20.dp.toPx(),
+                    bottom - 18.dp.toPx(),
+                    android.graphics.Paint().apply {
+                        color = android.graphics.Color.rgb(80, 255, 120)
+                        textSize = 14.sp.toPx()
+                        textAlign = android.graphics.Paint.Align.RIGHT
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.MONOSPACE
+                    }
+                )
+                drawContext.canvas.nativeCanvas.drawText(
+                    "SP  [■■■]",
+                    right - 20.dp.toPx(),
+                    top + 28.dp.toPx(),
+                    android.graphics.Paint().apply {
+                        color = android.graphics.Color.rgb(80, 255, 120)
+                        textSize = 13.sp.toPx()
+                        textAlign = android.graphics.Paint.Align.RIGHT
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.MONOSPACE
+                    }
+                )
+            }
+
+            // 7. Draw Matte / Letterboxing Bars
             if (top > 0) {
                 drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(canvasW, top))
                 drawRect(color = CameraBlack, topLeft = Offset(0f, bottom), size = Size(canvasW, canvasH - bottom))
@@ -85,7 +209,7 @@ fun ViewfinderOverlay(
                 drawRect(color = CameraBlack, topLeft = Offset(right, 0f), size = Size(canvasW - right, canvasH))
             }
 
-            // 3. Draw Rule of Thirds Grid if enabled
+            // 8. Draw Rule of Thirds Grid if enabled
             if (showGrid) {
                 val gridColor = Color.White.copy(alpha = 0.22f)
                 val strokeWidth = 1.dp.toPx()
@@ -103,7 +227,7 @@ fun ViewfinderOverlay(
                 drawLine(gridColor, Offset(left, row2), Offset(right, row2), strokeWidth)
             }
 
-            // 4. Draw Viewfinder Frame Border
+            // 9. Draw Viewfinder Frame Border
             drawRect(
                 color = Color.White.copy(alpha = 0.15f),
                 topLeft = Offset(left, top),
@@ -111,7 +235,7 @@ fun ViewfinderOverlay(
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // 5. Draw Tap-to-Focus Reticle
+            // 10. Draw Tap-to-Focus Reticle
             focusPoint?.let { pt ->
                 val ringRadius = 32.dp.toPx() * focusScale.value
                 drawCircle(

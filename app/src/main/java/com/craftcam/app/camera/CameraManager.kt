@@ -58,7 +58,10 @@ class CameraManager(private val context: Context) {
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
             currentPreset = preset
-            bindCameraUseCases()
+            // If in video mode, re-bind overlay effect for the active preset's video recording profile
+            if (_uiState.value.captureMode == CaptureMode.VIDEO) {
+                bindCameraUseCases()
+            }
         }
     }
 
@@ -89,25 +92,30 @@ class CameraManager(private val context: Context) {
         val lifecycleOwner = currentLifecycleOwner ?: return
         val previewView = currentPreviewView ?: return
 
-        provider.unbindAll()
-
         val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(_uiState.value.lensFacing)
             .build()
 
-        // 1. High-resolution 4:3 optical viewfinder
-        val previewResolutionSelector = ResolutionSelector.Builder()
-            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-            .build()
-
-        preview = Preview.Builder()
-            .setResolutionSelector(previewResolutionSelector)
-            .build()
-            .also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+        if (!provider.hasCamera(cameraSelector)) {
+            Log.w(TAG, "Requested lens facing ${_uiState.value.lensFacing} not available on this device")
+            return
+        }
 
         try {
+            provider.unbindAll()
+
+            // 1. High-resolution 4:3 optical viewfinder
+            val previewResolutionSelector = ResolutionSelector.Builder()
+                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                .build()
+
+            preview = Preview.Builder()
+                .setResolutionSelector(previewResolutionSelector)
+                .build()
+                .also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
             if (_uiState.value.captureMode == CaptureMode.PHOTO) {
                 // 2A. Full native sensor resolution with hardware ISP multi-frame HDR & noise reduction
                 val photoResolutionSelector = ResolutionSelector.Builder()
@@ -125,21 +133,11 @@ class CameraManager(private val context: Context) {
                 val prev = preview
                 val ic = imageCapture
                 if (prev != null && ic != null) {
-                    val effect = VideoEffectManager.createLiveOverlayEffect(
-                        context = context,
-                        preset = currentPreset,
-                        isPhotoMode = true
-                    )
-                    val useCaseGroup = UseCaseGroup.Builder()
-                        .addUseCase(prev)
-                        .addUseCase(ic)
-                        .addEffect(effect)
-                        .build()
-
                     camera = provider.bindToLifecycle(
                         lifecycleOwner,
                         cameraSelector,
-                        useCaseGroup
+                        prev,
+                        ic
                     )
                 }
             } else {
@@ -245,9 +243,10 @@ class CameraManager(private val context: Context) {
         _uiState.update { it.copy(tuning = UserTuningConfig()) }
     }
 
-    fun tapToFocus(xNorm: Float, yNorm: Float) {
-        val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
-        val point = factory.createPoint(xNorm, yNorm)
+    fun tapToFocus(tapX: Float, tapY: Float) {
+        val previewView = currentPreviewView ?: return
+        val factory = previewView.meteringPointFactory
+        val point = factory.createPoint(tapX, tapY)
         val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
             .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
             .build()
