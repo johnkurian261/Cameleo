@@ -74,15 +74,20 @@ object VideoEffectManager {
             style = Paint.Style.FILL
         }
 
-        // Subtle non-destructive photographic color wash (preserves contrast & deep blacks)
+        // Photographic color grade wash using MULTIPLY blending (preserves punchy contrast & deep rich blacks)
         val tintPaint = Paint().apply {
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
             color = when {
-                isCamcorder  -> Color.argb(28, 255, 215, 105) // Warm analog NTSC tape
-                is8mm        -> Color.argb(32, 250, 195, 80)  // Golden Kodachrome 8mm
-                isCcd        -> Color.argb(22, 50, 110, 190)  // Cool metallic CCD
-                isDisposable -> Color.argb(30, 255, 185, 90)  // Warm flash disposable
-                isBw         -> Color.argb(30, 20, 20, 25)    // Contrast B&W shading
-                else         -> Color.argb(25, 255, 220, 140) // Warm 35mm Portra gold
+                isCamcorder  -> Color.rgb(245, 240, 218) // Analog NTSC tape warm phosphor
+                is8mm        -> Color.rgb(255, 225, 180) // 8mm Golden Kodachrome
+                isCcd        -> Color.rgb(220, 238, 255) // Cool crisp CCD digital
+                isDisposable -> Color.rgb(255, 222, 175) // Warm flash disposable
+                preset.id == "analog_soft_film"     -> Color.rgb(238, 252, 246) // Pastel Fuji mint-cyan
+                preset.id == "analog_cinema_film"   -> Color.rgb(222, 242, 252) // 35mm Hollywood cine
+                preset.id == "analog_vintage_color" -> Color.rgb(255, 232, 205) // 70s Kodachrome
+                preset.id == "ccd_cool_digital"     -> Color.rgb(210, 235, 255) // Cyber cool
+                preset.id == "ccd_y2k_digital"      -> Color.rgb(255, 225, 242) // Magenta-pink Y2K glamour
+                else         -> Color.rgb(255, 242, 226) // Kodak Portra 35mm classic warm ivory
             }
         }
 

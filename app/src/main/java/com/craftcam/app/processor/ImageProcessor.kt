@@ -14,8 +14,7 @@ import com.craftcam.app.camera.AspectRatioMode
 import com.craftcam.app.camera.UserTuningConfig
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -53,9 +52,9 @@ object ImageProcessor {
 
         var workingBitmap: Bitmap = rawBitmap
         try {
-            // 1. Downscale to max 2560px on long edge for optimal vintage resolution & low memory footprint
-            if (workingBitmap.width > 2560 || workingBitmap.height > 2560) {
-                val scale = 2560f / maxOf(workingBitmap.width, workingBitmap.height)
+            // 1. Maintain full native camera sensor resolution (cap at 4096px only for ultra-high megapixel sensors to protect heap)
+            if (workingBitmap.width > 4096 || workingBitmap.height > 4096) {
+                val scale = 4096f / maxOf(workingBitmap.width, workingBitmap.height)
                 val targetW = (workingBitmap.width * scale).toInt().coerceAtLeast(1)
                 val targetH = (workingBitmap.height * scale).toInt().coerceAtLeast(1)
                 val scaled = Bitmap.createScaledBitmap(workingBitmap, targetW, targetH, true)
@@ -170,7 +169,7 @@ object ImageProcessor {
     }
 
     // ─── True Film Emulsion & Dazz Cam Processing Engine ─────────────────────
-    private fun applyPresetEffects(
+    private suspend fun applyPresetEffects(
         context: Context,
         source: Bitmap,
         preset: CameraPreset,
@@ -192,116 +191,156 @@ object ImageProcessor {
         val lutFile = selectLutForPreset(preset.id)
         val lut = getOrLoadLut(context, lutFile)
 
-        // Micro-tuning offsets
-        val tempShift = (grading.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
-        val tintShift = (grading.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
-        val satBoost  = (grading.saturation + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
-        val contBoost = (grading.contrast + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
-        val fade      = grading.fade
+        // Micro-tuning user offsets
+        val tempShift = tuning.temperatureOffset.coerceIn(-1.0f, 1.0f)
+        val tintShift = tuning.tintOffset.coerceIn(-1.0f, 1.0f)
+        val satBoost  = (1.0f + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
+        val contBoost = (1.0f + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
 
-        val halationEnabled = tuning.halationEnabled && halation?.enabled == true && halation.intensity > 0.01f
-        val halationThresh = halation?.threshold ?: 0.80f
-        val halationInt = halation?.intensity ?: 0.35f
+        // ── Step 1: High-Performance Parallel 3D Trilinear LUT Interpolation ──
+        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+        val chunkSize = (pixels.size + numCores - 1) / numCores
 
-        // ── Step 1: Pixel Color Grading via Hald CLUT with Trilinear Sampling ──
-        for (i in pixels.indices) {
-            val px = pixels[i]
-            val ri = (px shr 16) and 0xFF
-            val gi = (px shr 8) and 0xFF
-            val bi = px and 0xFF
+        coroutineScope {
+            (0 until numCores).map { coreIndex ->
+                async(Dispatchers.Default) {
+                    val start = coreIndex * chunkSize
+                    val end = minOf(pixels.size, start + chunkSize)
 
-            var r: Float
-            var g: Float
-            var b: Float
+                    for (i in start until end) {
+                        val px = pixels[i]
+                        val ri = (px shr 16) and 0xFF
+                        val gi = (px shr 8) and 0xFF
+                        val bi = px and 0xFF
 
-            if (lut != null) {
-                // High-performance direct 3D LUT sampling (64x64x64 Hald CLUT)
-                val b64 = (bi * 63 + 127) / 255
-                val g64 = (gi * 63 + 127) / 255
-                val r64 = (ri * 63 + 127) / 255
-                val tileX = (b64 % 8) * 64
-                val tileY = (b64 / 8) * 64
-                val c = lut[(tileY + g64) * 512 + tileX + r64]
-                r = ((c shr 16) and 0xFF) * (1.0f / 255.0f)
-                g = ((c shr 8) and 0xFF) * (1.0f / 255.0f)
-                b = (c and 0xFF) * (1.0f / 255.0f)
-            } else {
-                r = applyFilmicCurve(ri / 255.0f, contBoost, fade)
-                g = applyFilmicCurve(gi / 255.0f, contBoost, fade)
-                b = applyFilmicCurve(bi / 255.0f, contBoost, fade)
-            }
+                        var r: Float
+                        var g: Float
+                        var b: Float
 
-            // Preset contrast fine-tuning on top of base film response
-            if (abs(contBoost - 1.0f) > 0.02f) {
-                r = applyFilmicCurve(r, contBoost, 0.0f)
-                g = applyFilmicCurve(g, contBoost, 0.0f)
-                b = applyFilmicCurve(b, contBoost, 0.0f)
-            }
+                        if (lut != null) {
+                            // Smooth 3D trilinear sampling (continuous floating coordinates in 64^3 cube)
+                            val rf = ri * (63.0f / 255.0f)
+                            val gf = gi * (63.0f / 255.0f)
+                            val bf = bi * (63.0f / 255.0f)
 
-            // Preset fade (milky black lift)
-            if (fade > 0.005f) {
-                val lift = fade * 0.15f
-                r = r * (1.0f - lift) + lift
-                g = g * (1.0f - lift) + lift
-                b = b * (1.0f - lift) + lift
-            }
+                            val r0 = rf.toInt()
+                            val r1 = if (r0 < 63) r0 + 1 else 63
+                            val rx = rf - r0
 
-            // Preset shadow dye tinting
-            if (abs(grading.shadowTintR) > 0.005f || abs(grading.shadowTintG) > 0.005f || abs(grading.shadowTintB) > 0.005f) {
-                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                val shFactor = (1.0f - luma * 2.5f).coerceIn(0.0f, 1.0f)
-                r = (r + grading.shadowTintR * shFactor).coerceIn(0.0f, 1.0f)
-                g = (g + grading.shadowTintG * shFactor).coerceIn(0.0f, 1.0f)
-                b = (b + grading.shadowTintB * shFactor).coerceIn(0.0f, 1.0f)
-            }
+                            val g0 = gf.toInt()
+                            val g1 = if (g0 < 63) g0 + 1 else 63
+                            val gy = gf - g0
 
-            // User temperature / tint fine adjustment
-            if (abs(tempShift) > 0.01f || abs(tintShift) > 0.01f) {
-                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                val midW = (1.0f - abs(luma - 0.5f) * 2.2f).coerceIn(0.0f, 1.0f)
-                r += 0.06f * tempShift * midW
-                g += 0.02f * tempShift * midW
-                b -= 0.05f * tempShift * midW
+                            val b0 = bf.toInt()
+                            val b1 = if (b0 < 63) b0 + 1 else 63
+                            val bz = bf - b0
 
-                g += 0.04f * tintShift * midW
-                r -= 0.02f * tintShift * midW
-                b -= 0.02f * tintShift * midW
-            }
+                            val tX0 = (b0 and 7) shl 6
+                            val tY0 = (b0 shr 3) shl 6
+                            val tX1 = (b1 and 7) shl 6
+                            val tY1 = (b1 shr 3) shl 6
 
-            // User saturation fine adjustment
-            if (abs(satBoost - 1.0f) > 0.01f) {
-                val newLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                r = newLuma + satBoost * (r - newLuma)
-                g = newLuma + satBoost * (g - newLuma)
-                b = newLuma + satBoost * (b - newLuma)
-            }
+                            val row0_0 = (tY0 + g0) * 512 + tX0
+                            val row0_1 = (tY0 + g1) * 512 + tX0
+                            val row1_0 = (tY1 + g0) * 512 + tX1
+                            val row1_1 = (tY1 + g1) * 512 + tX1
 
-            // Film halation bloom around specular highlights
-            if (halationEnabled) {
-                val origLuma = (0.2126f * ri + 0.7152f * gi + 0.0722f * bi) / 255.0f
-                if (origLuma > halationThresh) {
-                    val halo = ((origLuma - halationThresh) / (1.0f - halationThresh)) * halationInt
-                    r += 1.0f * halo
-                    g += 0.20f * halo
-                    b += 0.03f * halo
+                            val c000 = lut[row0_0 + r0]
+                            val c100 = lut[row0_0 + r1]
+                            val c010 = lut[row0_1 + r0]
+                            val c110 = lut[row0_1 + r1]
+                            val c001 = lut[row1_0 + r0]
+                            val c101 = lut[row1_0 + r1]
+                            val c011 = lut[row1_1 + r0]
+                            val c111 = lut[row1_1 + r1]
+
+                            // R Channel Trilinear Lerp
+                            val r00 = ((c000 shr 16) and 0xFF) * (1f - rx) + ((c100 shr 16) and 0xFF) * rx
+                            val r10 = ((c010 shr 16) and 0xFF) * (1f - rx) + ((c110 shr 16) and 0xFF) * rx
+                            val r01 = ((c001 shr 16) and 0xFF) * (1f - rx) + ((c101 shr 16) and 0xFF) * rx
+                            val r11 = ((c011 shr 16) and 0xFF) * (1f - rx) + ((c111 shr 16) and 0xFF) * rx
+                            val r0_y = r00 * (1f - gy) + r10 * gy
+                            val r1_y = r01 * (1f - gy) + r11 * gy
+                            r = (r0_y * (1f - bz) + r1_y * bz) * (1.0f / 255.0f)
+
+                            // G Channel Trilinear Lerp
+                            val g00 = ((c000 shr 8) and 0xFF) * (1f - rx) + ((c100 shr 8) and 0xFF) * rx
+                            val g10 = ((c010 shr 8) and 0xFF) * (1f - rx) + ((c110 shr 8) and 0xFF) * rx
+                            val g01 = ((c001 shr 8) and 0xFF) * (1f - rx) + ((c101 shr 8) and 0xFF) * rx
+                            val g11 = ((c011 shr 8) and 0xFF) * (1f - rx) + ((c111 shr 8) and 0xFF) * rx
+                            val g0_y = g00 * (1f - gy) + g10 * gy
+                            val g1_y = g01 * (1f - gy) + g11 * gy
+                            g = (g0_y * (1f - bz) + g1_y * bz) * (1.0f / 255.0f)
+
+                            // B Channel Trilinear Lerp
+                            val b00 = (c000 and 0xFF) * (1f - rx) + (c100 and 0xFF) * rx
+                            val b10 = (c010 and 0xFF) * (1f - rx) + (c110 and 0xFF) * rx
+                            val b01 = (c001 and 0xFF) * (1f - rx) + (c101 and 0xFF) * rx
+                            val b11 = (c011 and 0xFF) * (1f - rx) + (c111 and 0xFF) * rx
+                            val b0_y = b00 * (1f - gy) + b10 * gy
+                            val b1_y = b01 * (1f - gy) + b11 * gy
+                            b = (b0_y * (1f - bz) + b1_y * bz) * (1.0f / 255.0f)
+                        } else {
+                            r = applyFilmicCurve(ri / 255.0f, grading.contrast, grading.fade)
+                            g = applyFilmicCurve(gi / 255.0f, grading.contrast, grading.fade)
+                            b = applyFilmicCurve(bi / 255.0f, grading.contrast, grading.fade)
+                        }
+
+                        // Flattering Skin Tone Radiance (Dazz Cam HighPassSkinSmoothing parity)
+                        if (r > g && g > b && r > 0.22f && r < 0.90f) {
+                            val skinFactor = ((r - b) * 2.2f).coerceIn(0.0f, 1.0f)
+                            val midLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b)
+                            val peachWeight = (1.0f - abs(midLuma - 0.55f) * 2.2f).coerceIn(0.0f, 1.0f) * skinFactor
+                            r = (r + 0.025f * peachWeight).coerceIn(0f, 1f)
+                            g = (g + 0.010f * peachWeight).coerceIn(0f, 1f)
+                        }
+
+                        // User contrast fine-tuning (if slider moved)
+                        if (abs(contBoost - 1.0f) > 0.02f) {
+                            r = applyFilmicCurve(r, contBoost, 0.0f)
+                            g = applyFilmicCurve(g, contBoost, 0.0f)
+                            b = applyFilmicCurve(b, contBoost, 0.0f)
+                        }
+
+                        // User temperature / tint fine adjustment (if slider moved)
+                        if (abs(tempShift) > 0.01f || abs(tintShift) > 0.01f) {
+                            val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            val midW = (1.0f - abs(luma - 0.5f) * 2.2f).coerceIn(0.0f, 1.0f)
+                            r += 0.06f * tempShift * midW
+                            g += 0.02f * tempShift * midW
+                            b -= 0.05f * tempShift * midW
+
+                            g += 0.04f * tintShift * midW
+                            r -= 0.02f * tintShift * midW
+                            b -= 0.02f * tintShift * midW
+                        }
+
+                        // User saturation fine adjustment (if slider moved)
+                        if (abs(satBoost - 1.0f) > 0.01f) {
+                            val newLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            r = newLuma + satBoost * (r - newLuma)
+                            g = newLuma + satBoost * (g - newLuma)
+                            b = newLuma + satBoost * (b - newLuma)
+                        }
+
+                        // Camcorder CRT scanline modulation
+                        if (isCamcorder) {
+                            val yCoord = i / width
+                            val scanline = (sin(yCoord.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
+                            val sf = 0.90f + 0.10f * scanline
+                            r *= sf; g *= sf; b *= sf
+                        }
+
+                        val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                        val ig2 = (g.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                        val ib2 = (b.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                        pixels[i] = (0xFF shl 24) or (ir2 shl 16) or (ig2 shl 8) or ib2
+                    }
                 }
-            }
-
-            // Camcorder scanline modulation
-            if (isCamcorder) {
-                val yCoord = i / width
-                val scanline = (sin(yCoord.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
-                val sf = 0.90f + 0.10f * scanline
-                r *= sf; g *= sf; b *= sf
-            }
-
-            val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-            val ig2 = (g.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-            val ib2 = (b.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-            pixels[i] = (0xFF shl 24) or (ir2 shl 16) or (ig2 shl 8) or ib2
+            }.awaitAll()
         }
 
-        // ── Step 2: In-Memory Optical Vignette (Correct Photographic Shading) ─
+        // ── Step 2: Optical Vignette Shading ─────────────────────────────────
         val vigAsset = selectVignetteForPreset(preset.id)
         val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
         if (vigIntensity > 0.03f) {
@@ -313,10 +352,10 @@ object ImageProcessor {
             }
         }
 
-        // ── Step 3: In-Memory Scanned Silver Halide Grain (Subtle Midtone Texture)
+        // ── Step 3: Scanned Film Halide Grain Texture ────────────────────────
         val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
         val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
-        if (grain.enabled && effectiveGrain > 0.01f && grainAsset != null) {
+        if (grain.enabled && effectiveGrain > 0.01f) {
             loadTexture(context, grainAsset)?.let { tex ->
                 applyGrainTexture(pixels, width, height, tex, effectiveGrain)
             }
@@ -325,23 +364,31 @@ object ImageProcessor {
         val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         result.setPixels(pixels, 0, width, 0, 0, width, height)
 
-        // ── Step 4: Canvas Layer Overlays (Dust, Light Leaks, Flash) ─────────
+        // ── Step 4: Canvas Layer Overlays ────────────────────────────────────
         val canvas = Canvas(result)
 
-        // 4a. Real Scanned Dust & Scratches (Transparent PNG with SRC_OVER blend)
+        // 4a. Authentic Optical Halation (Red-Orange Photochemical Highlight Bloom)
+        val halationEnabled = tuning.halationEnabled && halation?.enabled == true && halation.intensity > 0.01f
+        if (halationEnabled) {
+            val halationThresh = halation?.threshold ?: 0.80f
+            val halationInt = halation?.intensity ?: 0.35f
+            applyAuthenticHalation(pixels, width, height, canvas, halationThresh, halationInt)
+        }
+
+        // 4b. Real Scanned Dust & Scratches
         val dustAsset = selectDustForPreset(preset.id)
         if (dustAsset != null) {
             loadTexture(context, dustAsset)?.let { tex ->
                 val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    alpha = 180 // Authentic subtle dust
+                    alpha = 180
                 }
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
                 if (scaled != tex) scaled.recycle()
             }
         }
 
-        // 4b. Real Photographic Light Leaks (Screen blend)
+        // 4c. Real Photographic Light Leaks
         val leakEnabled = tuning.lightLeakEnabled && leak?.enabled == true && leak.intensity > 0.01f
         if (leakEnabled) {
             val leakAsset = selectLightLeakForPreset(preset.id)
@@ -356,7 +403,7 @@ object ImageProcessor {
             }
         }
 
-        // 4c. Direct Flash Illumination Overlay
+        // 4d. Direct Flash Illumination Overlay
         val flashAsset = selectFlashForPreset(preset.id)
         if (flashAsset != null) {
             loadTexture(context, flashAsset)?.let { tex ->
@@ -371,6 +418,109 @@ object ImageProcessor {
         }
 
         return result
+    }
+
+    // ─── Authentic Optical Film Halation Bloom ───────────────────────────────
+    private fun applyAuthenticHalation(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        canvas: Canvas,
+        threshold: Float,
+        intensity: Float
+    ) {
+        val bw = maxOf(1, width / 4)
+        val bh = maxOf(1, height / 4)
+        val bloomPixels = IntArray(bw * bh)
+
+        val thresh255 = (threshold * 255f).toInt()
+        val range = (255 - thresh255).coerceAtLeast(1)
+
+        for (by in 0 until bh) {
+            val sy = (by * height) / bh
+            val sRow = sy * width
+            val bRow = by * bw
+            for (bx in 0 until bw) {
+                val sx = (bx * width) / bw
+                val px = pixels[sRow + sx]
+                val r = (px shr 16) and 0xFF
+                val g = (px shr 8) and 0xFF
+                val b = px and 0xFF
+                val luma = (54 * r + 183 * g + 19 * b) shr 8
+                if (luma > thresh255) {
+                    val excess = (luma - thresh255).toFloat() / range
+                    val a = (excess * intensity * 255f).toInt().coerceIn(0, 255)
+                    val hr = 255
+                    val hg = (65 * excess).toInt().coerceIn(0, 120)
+                    val hb = (15 * excess).toInt().coerceIn(0, 40)
+                    bloomPixels[bRow + bx] = (a shl 24) or (hr shl 16) or (hg shl 8) or hb
+                } else {
+                    bloomPixels[bRow + bx] = 0
+                }
+            }
+        }
+
+        fastBoxBlur(bloomPixels, bw, bh, 8)
+
+        val bloomBitmap = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+        bloomBitmap.setPixels(bloomPixels, 0, bw, 0, 0, bw, bh)
+
+        val scaledBloom = Bitmap.createScaledBitmap(bloomBitmap, width, height, true)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+            alpha = 255
+        }
+        canvas.drawBitmap(scaledBloom, 0f, 0f, paint)
+
+        bloomBitmap.recycle()
+        if (scaledBloom != bloomBitmap) scaledBloom.recycle()
+    }
+
+    private fun fastBoxBlur(pixels: IntArray, w: Int, h: Int, r: Int) {
+        val temp = IntArray(w * h)
+        val div = 2 * r + 1
+
+        for (y in 0 until h) {
+            val row = y * w
+            var aSum = 0; var rSum = 0; var gSum = 0; var bSum = 0
+            for (i in -r..r) {
+                val px = pixels[row + i.coerceIn(0, w - 1)]
+                aSum += (px ushr 24)
+                rSum += (px shr 16 and 0xFF)
+                gSum += (px shr 8 and 0xFF)
+                bSum += (px and 0xFF)
+            }
+            for (x in 0 until w) {
+                temp[row + x] = ((aSum / div) shl 24) or ((rSum / div) shl 16) or ((gSum / div) shl 8) or (bSum / div)
+                val leftPx = pixels[row + (x - r).coerceIn(0, w - 1)]
+                val rightPx = pixels[row + (x + r + 1).coerceIn(0, w - 1)]
+                aSum += (rightPx ushr 24) - (leftPx ushr 24)
+                rSum += (rightPx shr 16 and 0xFF) - (leftPx shr 16 and 0xFF)
+                gSum += (rightPx shr 8 and 0xFF) - (leftPx shr 8 and 0xFF)
+                bSum += (rightPx and 0xFF) - (leftPx and 0xFF)
+            }
+        }
+
+        for (x in 0 until w) {
+            var aSum = 0; var rSum = 0; var gSum = 0; var bSum = 0
+            for (i in -r..r) {
+                val px = temp[i.coerceIn(0, h - 1) * w + x]
+                aSum += (px ushr 24)
+                rSum += (px shr 16 and 0xFF)
+                gSum += (px shr 8 and 0xFF)
+                bSum += (px and 0xFF)
+            }
+            for (y in 0 until h) {
+                val idx = y * w + x
+                pixels[idx] = ((aSum / div) shl 24) or ((rSum / div) shl 16) or ((gSum / div) shl 8) or (bSum / div)
+                val topPx = temp[(y - r).coerceIn(0, h - 1) * w + x]
+                val btmPx = temp[(y + r + 1).coerceIn(0, h - 1) * w + x]
+                aSum += (btmPx ushr 24) - (topPx ushr 24)
+                rSum += (btmPx shr 16 and 0xFF) - (topPx shr 16 and 0xFF)
+                gSum += (btmPx shr 8 and 0xFF) - (topPx shr 8 and 0xFF)
+                bSum += (btmPx and 0xFF) - (topPx and 0xFF)
+            }
+        }
     }
 
     // ─── Optical Vignette Shading ────────────────────────────────────────────
