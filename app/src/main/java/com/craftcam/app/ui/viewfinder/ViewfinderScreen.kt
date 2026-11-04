@@ -62,7 +62,6 @@ fun ViewfinderScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
-    val processingScope = remember { kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob()) }
 
     val uiState by cameraManager.uiState.collectAsState()
 
@@ -326,29 +325,15 @@ fun ViewfinderScreen(
                                     countdown = null
                                 }
 
-                                cameraManager.capturePhoto(
-                                    onImageCaptured = { imageProxy ->
-                                        processingScope.launch {
-                                            val uri = ImageProcessor.processAndSaveImage(
-                                                context = context,
-                                                imageProxy = imageProxy,
-                                                preset = selectedPreset,
-                                                tuning = uiState.tuning,
-                                                aspectRatio = uiState.aspectRatio,
-                                                mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
-                                                saveNegative = true
-                                            )
-                                            withContext(Dispatchers.Main) {
-                                                if (uri != null) {
-                                                    Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
+                                cameraManager.captureAndProcessPhoto(
+                                    preset = selectedPreset,
+                                    aspectRatio = uiState.aspectRatio,
+                                    mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
+                                    onPhotoSaved = { uri ->
+                                        Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
                                     },
                                     onError = { exc ->
-                                        scope.launch(Dispatchers.Main) {
-                                            Toast.makeText(context, "Capture failed: ${exc.message}", Toast.LENGTH_SHORT).show()
-                                        }
+                                        Toast.makeText(context, "Capture failed: $exc", Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }

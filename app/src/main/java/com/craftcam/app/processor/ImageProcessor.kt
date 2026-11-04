@@ -37,8 +37,7 @@ object ImageProcessor {
         preset: CameraPreset,
         tuning: UserTuningConfig = UserTuningConfig(),
         aspectRatio: AspectRatioMode,
-        mirrorFrontCamera: Boolean,
-        saveNegative: Boolean
+        mirrorFrontCamera: Boolean
     ): Uri? = withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
@@ -82,10 +81,6 @@ object ImageProcessor {
             if (cropped != workingBitmap) {
                 workingBitmap.recycle()
                 workingBitmap = cropped
-            }
-
-            if (saveNegative) {
-                saveNegativeToCache(context, workingBitmap)
             }
 
             // 4. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
@@ -374,12 +369,12 @@ object ImageProcessor {
         val dustAsset = selectDustForPreset(preset.id)
         if (dustAsset != null) {
             loadTexture(context, dustAsset)?.let { tex ->
-                val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                val srcRect = Rect(0, 0, tex.width, tex.height)
+                val dstRect = Rect(0, 0, width, height)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
                     alpha = 28 // Delicate organic film patina, NEVER opaque black spots
                 }
-                canvas.drawBitmap(scaled, 0f, 0f, paint)
-                if (scaled != tex) scaled.recycle()
+                canvas.drawBitmap(tex, srcRect, dstRect, paint)
             }
         }
 
@@ -388,13 +383,13 @@ object ImageProcessor {
         if (leakEnabled) {
             val leakAsset = selectLightLeakForPreset(preset.id)
             loadTexture(context, leakAsset)?.let { tex ->
-                val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                val srcRect = Rect(0, 0, tex.width, tex.height)
+                val dstRect = Rect(0, 0, width, height)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
                     alpha = ((leak.intensity * 0.65f) * 255.0f).toInt().coerceIn(0, 255)
                 }
-                canvas.drawBitmap(scaled, 0f, 0f, paint)
-                if (scaled != tex) scaled.recycle()
+                canvas.drawBitmap(tex, srcRect, dstRect, paint)
             }
         }
 
@@ -402,13 +397,13 @@ object ImageProcessor {
         val flashAsset = selectFlashForPreset(preset.id)
         if (flashAsset != null) {
             loadTexture(context, flashAsset)?.let { tex ->
-                val scaled = Bitmap.createScaledBitmap(tex, width, height, true)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                val srcRect = Rect(0, 0, tex.width, tex.height)
+                val dstRect = Rect(0, 0, width, height)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
                     alpha = 55
                 }
-                canvas.drawBitmap(scaled, 0f, 0f, paint)
-                if (scaled != tex) scaled.recycle()
+                canvas.drawBitmap(tex, srcRect, dstRect, paint)
             }
         }
 
@@ -460,15 +455,15 @@ object ImageProcessor {
         val bloomBitmap = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
         bloomBitmap.setPixels(bloomPixels, 0, bw, 0, 0, bw, bh)
 
-        val scaledBloom = Bitmap.createScaledBitmap(bloomBitmap, width, height, true)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val srcRect = Rect(0, 0, bw, bh)
+        val dstRect = Rect(0, 0, width, height)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
             alpha = 255
         }
-        canvas.drawBitmap(scaledBloom, 0f, 0f, paint)
+        canvas.drawBitmap(bloomBitmap, srcRect, dstRect, paint)
 
         bloomBitmap.recycle()
-        if (scaledBloom != bloomBitmap) scaledBloom.recycle()
     }
 
     private fun fastBoxBlur(pixels: IntArray, w: Int, h: Int, r: Int) {
@@ -785,17 +780,6 @@ object ImageProcessor {
         val startX = (srcW - cropW) / 2
         val startY = (srcH - cropH) / 2
         return Bitmap.createBitmap(bitmap, startX, startY, cropW, cropH)
-    }
-
-    private fun saveNegativeToCache(context: Context, bitmap: Bitmap) {
-        try {
-            val cacheDir = File(context.cacheDir, "cameleo_negatives")
-            if (!cacheDir.exists()) cacheDir.mkdirs()
-            val file = File(cacheDir, "NEG_${System.currentTimeMillis()}.jpg")
-            FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to save negative", e)
-        }
     }
 
     private fun saveToGallery(context: Context, bitmap: Bitmap, cameraName: String): Uri? {

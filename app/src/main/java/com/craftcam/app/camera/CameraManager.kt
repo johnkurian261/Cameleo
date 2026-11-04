@@ -24,6 +24,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
+import com.craftcam.app.processor.ImageProcessor
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +47,7 @@ class CameraManager(private val context: Context) {
     private var activeRecording: Recording? = null
 
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val processingScope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val _uiState = MutableStateFlow(CameraUIState())
     val uiState: StateFlow<CameraUIState> = _uiState.asStateFlow()
@@ -66,7 +69,12 @@ class CameraManager(private val context: Context) {
     }
 
     fun initialize(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
-        currentLifecycleOwner = lifecycleOwner
+        // Bind to Activity lifecycle so screen navigation (e.g. opening Gallery) does not abort in-flight capture
+        val effectiveOwner = (context as? LifecycleOwner) ?: lifecycleOwner
+        if (currentPreviewView == previewView && currentLifecycleOwner == effectiveOwner && camera != null) {
+            return
+        }
+        currentLifecycleOwner = effectiveOwner
         currentPreviewView = previewView
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -98,6 +106,11 @@ class CameraManager(private val context: Context) {
 
         if (!provider.hasCamera(cameraSelector)) {
             Log.w(TAG, "Requested lens facing ${_uiState.value.lensFacing} not available on this device")
+            return
+        }
+
+        if (_uiState.value.isCapturing) {
+            Log.d(TAG, "Hardware photo capture in progress, skipping use-case unbind")
             return
         }
 
@@ -253,6 +266,72 @@ class CameraManager(private val context: Context) {
         camera?.cameraControl?.startFocusAndMetering(action)
     }
 
+    fun captureAndProcessPhoto(
+        preset: CameraPreset,
+        aspectRatio: AspectRatioMode,
+        mirrorFrontCamera: Boolean,
+        onPhotoSaved: (Uri) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val capture = imageCapture ?: run {
+            onError("Camera capture not ready")
+            return
+        }
+
+        if (_uiState.value.isCapturing) {
+            Log.d(TAG, "Capture already in progress, ignoring duplicate tap")
+            return
+        }
+
+        // Keep isCapturing active across both hardware capture and background photo development
+        _uiState.update { it.copy(isCapturing = true) }
+
+        capture.takePicture(
+            cameraExecutor,
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    // Application-level coroutine scope: never aborted if user navigates to gallery
+                    processingScope.launch {
+                        try {
+                            val uri = ImageProcessor.processAndSaveImage(
+                                context = context,
+                                imageProxy = image,
+                                preset = preset,
+                                tuning = _uiState.value.tuning,
+                                aspectRatio = aspectRatio,
+                                mirrorFrontCamera = mirrorFrontCamera
+                            )
+                            if (uri != null) {
+                                withContext(Dispatchers.Main) {
+                                    onPhotoSaved(uri)
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    onError("Failed to develop photograph")
+                                }
+                            }
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "Error developing captured photo", t)
+                            withContext(Dispatchers.Main) {
+                                onError(t.message ?: "Image processing failed")
+                            }
+                        } finally {
+                            _uiState.update { it.copy(isCapturing = false) }
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    _uiState.update { it.copy(isCapturing = false) }
+                    Log.e(TAG, "Hardware photo capture failed: ${exception.message}", exception)
+                    ContextCompat.getMainExecutor(context).execute {
+                        onError(exception.message ?: "Camera capture failed")
+                    }
+                }
+            }
+        )
+    }
+
     fun capturePhoto(
         onImageCaptured: (ImageProxy) -> Unit,
         onError: (ImageCaptureException) -> Unit
@@ -264,7 +343,6 @@ class CameraManager(private val context: Context) {
             cameraExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
-                    _uiState.update { it.copy(isCapturing = false) }
                     onImageCaptured(image)
                 }
 
@@ -336,5 +414,6 @@ class CameraManager(private val context: Context) {
     fun shutdown() {
         stopRecording()
         cameraExecutor.shutdown()
+        processingScope.cancel()
     }
 }

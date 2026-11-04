@@ -30,8 +30,10 @@ object BorderRenderer {
                     // Draw photograph in center window
                     canvas.drawBitmap(sourceBitmap, sideMargin.toFloat(), topMargin.toFloat(), null)
                     // Draw authentic Dazz Polaroid frame border on top
-                    val scaledBorder = Bitmap.createScaledBitmap(borderTex, targetW, targetH, true)
-                    canvas.drawBitmap(scaledBorder, 0f, 0f, null)
+                    val filterPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                    val srcRect = Rect(0, 0, borderTex.width, borderTex.height)
+                    val dstRect = Rect(0, 0, targetW, targetH)
+                    canvas.drawBitmap(borderTex, srcRect, dstRect, filterPaint)
                     output
                 } else {
                     // Procedural fallback
@@ -116,8 +118,10 @@ object BorderRenderer {
                 // Overlay authentic 8mm frame texture if present
                 context?.let { ctx ->
                     loadAssetBitmap(ctx, "8mm_frame1.png")?.let { frameTex ->
-                        val scaled = Bitmap.createScaledBitmap(frameTex, srcW, srcH, true)
-                        canvas.drawBitmap(scaled, 0f, 0f, null)
+                        val filterPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                        val srcRect = Rect(0, 0, frameTex.width, frameTex.height)
+                        val dstRect = Rect(0, 0, srcW, srcH)
+                        canvas.drawBitmap(frameTex, srcRect, dstRect, filterPaint)
                     }
                 }
 
