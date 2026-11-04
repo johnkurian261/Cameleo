@@ -65,3 +65,4 @@ object SoundManager {
         isInitialized = false
     }
 }
+

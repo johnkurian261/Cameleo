@@ -239,6 +239,30 @@ object ImageProcessor {
                 b = applyFilmicCurve(bi / 255.0f, contBoost, fade)
             }
 
+            // Preset contrast fine-tuning on top of base film response
+            if (abs(contBoost - 1.0f) > 0.02f) {
+                r = applyFilmicCurve(r, contBoost, 0.0f)
+                g = applyFilmicCurve(g, contBoost, 0.0f)
+                b = applyFilmicCurve(b, contBoost, 0.0f)
+            }
+
+            // Preset fade (milky black lift)
+            if (fade > 0.005f) {
+                val lift = fade * 0.15f
+                r = r * (1.0f - lift) + lift
+                g = g * (1.0f - lift) + lift
+                b = b * (1.0f - lift) + lift
+            }
+
+            // Preset shadow dye tinting
+            if (abs(grading.shadowTintR) > 0.005f || abs(grading.shadowTintG) > 0.005f || abs(grading.shadowTintB) > 0.005f) {
+                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                val shFactor = (1.0f - luma * 2.5f).coerceIn(0.0f, 1.0f)
+                r = (r + grading.shadowTintR * shFactor).coerceIn(0.0f, 1.0f)
+                g = (g + grading.shadowTintG * shFactor).coerceIn(0.0f, 1.0f)
+                b = (b + grading.shadowTintB * shFactor).coerceIn(0.0f, 1.0f)
+            }
+
             // User temperature / tint fine adjustment
             if (abs(tempShift) > 0.01f || abs(tintShift) > 0.01f) {
                 val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
@@ -366,11 +390,24 @@ object ImageProcessor {
         val vigPixels = IntArray(width * height)
         scaled.getPixels(vigPixels, 0, width, 0, 0, width, height)
 
+        // Dynamically find min and max luminance of the texture mask for proper photographic normalization
+        var minL = 255f
+        var maxL = 0f
+        val step = (width * height / 1000).coerceAtLeast(1)
+        for (i in 0 until (width * height) step step) {
+            val vp = vigPixels[i]
+            val l = (vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f
+            if (l < minL) minL = l
+            if (l > maxL) maxL = l
+        }
+        val range = (maxL - minL).coerceAtLeast(1.0f)
+
         for (i in pixels.indices) {
             val vp = vigPixels[i]
-            val vl = (((vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f) / 255.0f)
-            // Normalized: Center is near 1.0, corners fall off to 0.4..0.6
-            val factor = (1.0f - intensity * (1.0f - vl)).coerceIn(0.20f, 1.0f)
+            val vl = (vp shr 16 and 0xFF) * 0.299f + (vp shr 8 and 0xFF) * 0.587f + (vp and 0xFF) * 0.114f
+            val norm = ((vl - minL) / range).coerceIn(0.0f, 1.0f)
+            // Optical lens falloff: 1.0 (unattenuated) at center, falling off toward corners
+            val factor = (1.0f - intensity * (1.0f - norm)).coerceIn(0.20f, 1.0f)
 
             val cp = pixels[i]
             val a = cp ushr 24
@@ -424,7 +461,7 @@ object ImageProcessor {
         val grainPixels = IntArray(gw * gh)
         grainTex.getPixels(grainPixels, 0, gw, 0, 0, gw, gh)
 
-        val strength = intensity * 40.0f
+        val strength = intensity * 85.0f
 
         for (y in 0 until height) {
             val gy = (y % gh) * gw
@@ -433,14 +470,20 @@ object ImageProcessor {
                 val gx = x % gw
                 val gp = grainPixels[gy + gx]
                 val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) / 128f
-                val delta = (gl * strength).toInt()
 
                 val i = row + x
                 val cp = pixels[i]
+                val cr = (cp shr 16 and 0xFF)
+                val cg = (cp shr 8 and 0xFF)
+                val cb = (cp and 0xFF)
+                val luma = cr * 0.299f + cg * 0.587f + cb * 0.114f
+                val midWeight = 1.0f - (kotlin.math.abs(luma - 128f) / 128f).coerceIn(0.0f, 0.85f)
+                val delta = (gl * strength * midWeight).toInt()
+
                 val a = cp ushr 24
-                val r = ((cp shr 16 and 0xFF) + delta).coerceIn(0, 255)
-                val g = ((cp shr 8 and 0xFF) + delta).coerceIn(0, 255)
-                val b = ((cp and 0xFF) + delta).coerceIn(0, 255)
+                val r = (cr + delta).coerceIn(0, 255)
+                val g = (cg + delta).coerceIn(0, 255)
+                val b = (cb + delta).coerceIn(0, 255)
                 pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
             }
         }
@@ -471,28 +514,28 @@ object ImageProcessor {
 
     // ─── Preset to Asset Routing Tables ──────────────────────────────────────
     private fun selectLutForPreset(presetId: String): String = when (presetId) {
-        "analog_35mm_classic"  -> "lut_dclassic.png"
-        "analog_warm_film"     -> "lut_dclassic.png"
-        "analog_soft_film"     -> "lut_ct2f.png"
-        "analog_vintage_color" -> "lut_dexp.png"
-        "analog_faded_film"    -> "lut_nt16.png"
-        "analog_cinema_film"   -> "lut_d3d.png"
-        "ccd_classic"          -> "lut_135ne.png"
-        "ccd_flash"            -> "lut_dfuns.png"
-        "ccd_cool_digital"     -> "lut_ir.png"
-        "ccd_y2k_digital"      -> "lut_135ne.png"
-        "ccd_retro_compact"    -> "lut_dfuns.png"
-        "disp_classic"         -> "lut_dfuns.png"
-        "disp_flash"           -> "lut_dfuns.png"
-        "disp_warm"            -> "lut_dclassic.png"
-        "disp_night"           -> "lut_dclassic.png"
-        "inst_classic"         -> "lut_instant.png"
-        "inst_soft_polaroid"   -> "lut_instant.png"
-        "inst_vintage"         -> "lut_instant.png"
-        "cam_retro_vhs"        -> "lut_vhs.png"
-        "cam_analog_video"     -> "lut_vhs.png"
-        "cam_90s_camcorder"    -> "lut_vhs.png"
-        else                   -> "lut_dclassic.png"
+        "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
+        "analog_warm_film"     -> "lut_analog_warm_film.png"
+        "analog_soft_film"     -> "lut_analog_soft_film.png"
+        "analog_vintage_color" -> "lut_analog_vintage_color.png"
+        "analog_faded_film"    -> "lut_analog_faded_film.png"
+        "analog_cinema_film"   -> "lut_analog_cinema_film.png"
+        "ccd_classic"          -> "lut_ccd_classic.png"
+        "ccd_flash"            -> "lut_ccd_flash.png"
+        "ccd_cool_digital"     -> "lut_ccd_cool_digital.png"
+        "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
+        "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
+        "disp_classic"         -> "lut_disp_classic.png"
+        "disp_flash"           -> "lut_disp_flash.png"
+        "disp_warm"            -> "lut_disp_warm.png"
+        "disp_night"           -> "lut_disp_night.png"
+        "inst_classic"         -> "lut_inst_classic.png"
+        "inst_soft_polaroid"   -> "lut_inst_soft_polaroid.png"
+        "inst_vintage"         -> "lut_inst_vintage.png"
+        "cam_retro_vhs"        -> "lut_cam_retro_vhs.png"
+        "cam_analog_video"     -> "lut_cam_analog_video.png"
+        "cam_90s_camcorder"    -> "lut_cam_90s_camcorder.png"
+        else                   -> "lut_analog_35mm_classic.png"
     }
 
     private fun selectGrainForPreset(presetId: String, isCamcorder: Boolean): String = when {
