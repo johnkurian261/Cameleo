@@ -97,7 +97,7 @@ object ImageProcessor {
 
             // 5. Apply Retro Date Stamp
             if (tuning.dateStampEnabled && preset.dateStamp != null) {
-                val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear)
+                val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear, context)
                 if (stamped != workingBitmap) {
                     workingBitmap.recycle()
                     workingBitmap = stamped

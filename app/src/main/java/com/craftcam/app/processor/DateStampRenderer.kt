@@ -1,5 +1,6 @@
 package com.craftcam.app.processor
 
+import android.content.Context
 import android.graphics.*
 import com.craftcam.app.model.DateStampConfig
 import com.craftcam.app.model.DateStampStyle
@@ -8,7 +9,12 @@ import java.util.*
 
 object DateStampRenderer {
 
-    fun applyDateStamp(bitmap: Bitmap, config: DateStampConfig, customYearText: String? = null): Bitmap {
+    fun applyDateStamp(
+        bitmap: Bitmap,
+        config: DateStampConfig,
+        customYearText: String? = null,
+        context: Context? = null
+    ): Bitmap {
         if (!config.enabled) return bitmap
 
         val mutableBitmap = if (bitmap.isMutable) bitmap else bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -52,19 +58,27 @@ object DateStampRenderer {
         val height = mutableBitmap.height.toFloat()
 
         // Size proportional to image dimensions
-        val textSize = height * 0.032f
+        val textSize = height * 0.034f
         val marginX = width * 0.05f
         val marginY = height * 0.05f
 
+        val vcrTypeface = context?.let {
+            try {
+                Typeface.createFromAsset(it.assets, "fonts/VCR_OSD_MONO.ttf")
+            } catch (e: Exception) {
+                null
+            }
+        } ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.textSize = textSize
-            this.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            this.typeface = vcrTypeface
             textAlign = Paint.Align.RIGHT
         }
 
-        // 1. Draw glowing drop-shadow / soft bleed
+        // 1. Draw glowing drop-shadow / soft photochemical bleed
         paint.color = glowColor
-        paint.maskFilter = BlurMaskFilter(textSize * 0.25f, BlurMaskFilter.Blur.NORMAL)
+        paint.maskFilter = BlurMaskFilter(textSize * 0.22f, BlurMaskFilter.Blur.NORMAL)
         canvas.drawText(text, width - marginX, height - marginY, paint)
 
         // 2. Draw sharp primary text
