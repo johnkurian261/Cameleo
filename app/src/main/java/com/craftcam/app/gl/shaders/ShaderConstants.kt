@@ -6,12 +6,11 @@ object ShaderConstants {
 layout (location = 0) in vec4 aPosition;
 layout (location = 1) in vec4 aTextureCoord;
 
-uniform mat4 uTexMatrix;
-out vec2 vTextureCoord;
+out vec2 vQuadCoord;
 
 void main() {
     gl_Position = aPosition;
-    vTextureCoord = (uTexMatrix * aTextureCoord).xy;
+    vQuadCoord = aTextureCoord.xy;
 }
 """
 
@@ -22,8 +21,9 @@ precision mediump float;
 uniform samplerExternalOES sTexture;
 uniform sampler2D uLutTexture;
 uniform bool uLutEnabled;
+uniform mat4 uTexMatrix;
 uniform vec2 uViewportSize;
-in vec2 vTextureCoord;
+in vec2 vQuadCoord;
 out vec4 fragColor;
 
 // Tonal and Color Grading
@@ -94,25 +94,34 @@ vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
 }
 
 void main() {
-    vec2 uv = vTextureCoord;
-    vec2 p = uv - 0.5;
+    vec2 p = vQuadCoord - 0.5;
     float r2 = dot(p, p);
 
-    // 1. Lens Distortion (Barrel/Pincushion)
+    // 1. Lens Distortion (Barrel/Pincushion in canonical visual space)
+    vec2 uv = vQuadCoord;
     if (abs(uBarrelDistortion) > 0.001) {
         uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
+        uv = clamp(uv, vec2(0.001), vec2(0.999));
     }
 
-    // 2. Transverse Chromatic Aberration
+    // 2. Transverse Chromatic Aberration in visual space, strictly clamped inside [0, 1]
     vec4 srcColor;
     if (uChromaticAberration > 0.0001) {
         vec2 caOffset = p * (uChromaticAberration * r2 * 0.2);
-        float r = texture(sTexture, uv + caOffset).r;
-        float g = texture(sTexture, uv).g;
-        float b = texture(sTexture, uv - caOffset).b;
+        vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
+        vec2 uvB = clamp(uv - caOffset, vec2(0.001), vec2(0.999));
+
+        vec2 oesR = (uTexMatrix * vec4(uvR, 0.0, 1.0)).xy;
+        vec2 oesG = (uTexMatrix * vec4(uv,  0.0, 1.0)).xy;
+        vec2 oesB = (uTexMatrix * vec4(uvB, 0.0, 1.0)).xy;
+
+        float r = texture(sTexture, oesR).r;
+        float g = texture(sTexture, oesG).g;
+        float b = texture(sTexture, oesB).b;
         srcColor = vec4(r, g, b, 1.0);
     } else {
-        srcColor = texture(sTexture, uv);
+        vec2 oesUV = (uTexMatrix * vec4(uv, 0.0, 1.0)).xy;
+        srcColor = texture(sTexture, oesUV);
     }
 
     vec3 color = srcColor.rgb;
@@ -180,10 +189,9 @@ void main() {
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
-    // 11. Lens Vignette (matches ImageProcessor.kt quadratic falloff)
+    // 11. Lens Vignette (matches ImageProcessor.kt quadratic falloff in canonical frame space)
     if (uVignetteIntensity > 0.01) {
-        vec2 screenP = (gl_FragCoord.xy - 0.5 * uViewportSize) / (0.5 * length(uViewportSize));
-        float dist = length(screenP);
+        float dist = length(p) / 0.7071068;
         float dn = dist / uVignetteRadius;
         float vignette = clamp(1.0 - uVignetteIntensity * dn * dn, 0.25, 1.0);
         color *= vignette;
@@ -192,7 +200,7 @@ void main() {
     // 12. Analog Film Grain (Mid-tone density weighted)
     if (uGrainIntensity > 0.005) {
         float grainWeight = clamp(1.0 - 4.0 * pow(luma - 0.5, 2.0), 0.0, 1.0);
-        vec2 grainUV = uv * (uGrainScale * 600.0);
+        vec2 grainUV = vQuadCoord * (uGrainScale * 600.0);
         if (uIsColorNoise) {
             vec3 noise = vec3(
                 hash(grainUV, uRandomSeed + 1.1),
@@ -206,10 +214,10 @@ void main() {
         }
     }
 
-    // 13. Retro Camcorder Scanlines
+    // 13. Retro Camcorder Scanlines (subtle authentic tape texture)
     if (uScanlineIntensity > 0.01) {
-        float scanline = sin(gl_FragCoord.y * 1.5) * 0.5 + 0.5;
-        color *= mix(1.0, 0.82 + 0.18 * scanline, uScanlineIntensity);
+        float scanline = sin(vQuadCoord.y * 600.0) * 0.5 + 0.5;
+        color *= mix(1.0, 0.92 + 0.08 * scanline, uScanlineIntensity);
     }
 
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);

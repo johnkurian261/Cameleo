@@ -171,17 +171,17 @@ class CameraManager(private val context: Context) {
                         prev.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { request ->
                             val res = request.resolution
                             surfaceTex.setDefaultBufferSize(res.width, res.height)
-                            var currentSurface = previewSurface
-                            if (currentSurface == null || !currentSurface.isValid) {
-                                currentSurface?.release()
-                                currentSurface = Surface(surfaceTex)
-                                previewSurface = currentSurface
-                            }
+                            previewSurface?.release()
+                            val currentSurface = Surface(surfaceTex)
+                            previewSurface = currentSurface
                             request.provideSurface(currentSurface, ContextCompat.getMainExecutor(context)) {
-                                // Do not release the underlying Surface here; it belongs to GLSurfaceView
+                                currentSurface.release()
+                                if (previewSurface == currentSurface) {
+                                    previewSurface = null
+                                }
                             }
-                            val rot = camera?.cameraInfo?.sensorRotationDegrees ?: 90
                             val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
+                            val rot = camera?.cameraInfo?.sensorRotationDegrees ?: (if (isFront) 270 else 90)
                             onCameraOrientationChanged?.invoke(rot, isFront, res.width, res.height)
                         }
                     } else if (previewView != null) {
