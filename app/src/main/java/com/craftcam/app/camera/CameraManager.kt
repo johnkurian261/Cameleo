@@ -12,6 +12,7 @@ import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
 import android.view.Surface
+import android.view.WindowManager
 import androidx.camera.core.*
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -22,6 +23,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.craftcam.app.gl.GLViewfinderRenderer
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
@@ -55,17 +57,48 @@ class CameraManager(private val context: Context) {
     private var currentPreviewView: PreviewView? = null
     private var currentLifecycleOwner: LifecycleOwner? = null
     private var currentPreset: CameraPreset = PresetCatalog.allPresets[0]
+    private var glRenderer: GLViewfinderRenderer? = null
+    private var glSurfaceTexture: SurfaceTexture? = null
+    private var previewSurface: Surface? = null
 
     var onCameraOrientationChanged: ((rotationDegrees: Int, isFront: Boolean, width: Int, height: Int) -> Unit)? = null
+
+    fun setGLRenderer(renderer: GLViewfinderRenderer) {
+        glRenderer = renderer
+        glRenderer?.updatePreset(currentPreset)
+        glRenderer?.updateTuning(_uiState.value.tuning)
+    }
 
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
             currentPreset = preset
+            glRenderer?.updatePreset(preset)
             // If in video mode, re-bind overlay effect for the active preset's video recording profile
             if (_uiState.value.captureMode == CaptureMode.VIDEO) {
                 bindCameraUseCases()
             }
         }
+    }
+
+    fun initializeWithGLSurface(
+        lifecycleOwner: LifecycleOwner,
+        surfaceTexture: SurfaceTexture,
+        onOrientationUpdate: (rot: Int, isFront: Boolean, bufW: Int, bufH: Int) -> Unit
+    ) {
+        val effectiveOwner = (context as? LifecycleOwner) ?: lifecycleOwner
+        currentLifecycleOwner = effectiveOwner
+        glSurfaceTexture = surfaceTexture
+        onCameraOrientationChanged = onOrientationUpdate
+
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        cameraProviderFuture.addListener({
+            try {
+                cameraProvider = cameraProviderFuture.get()
+                bindCameraUseCases()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get ProcessCameraProvider", e)
+            }
+        }, ContextCompat.getMainExecutor(context))
     }
 
     fun initialize(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
@@ -98,7 +131,10 @@ class CameraManager(private val context: Context) {
     private fun bindCameraUseCases() {
         val provider = cameraProvider ?: return
         val lifecycleOwner = currentLifecycleOwner ?: return
-        val previewView = currentPreviewView ?: return
+        val previewView = currentPreviewView
+        val surfaceTex = glSurfaceTexture
+
+        if (previewView == null && surfaceTex == null) return
 
         val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(_uiState.value.lensFacing)
@@ -125,8 +161,25 @@ class CameraManager(private val context: Context) {
             preview = Preview.Builder()
                 .setResolutionSelector(previewResolutionSelector)
                 .build()
-                .also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
+                .also { prev ->
+                    if (surfaceTex != null) {
+                        prev.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { request ->
+                            val res = request.resolution
+                            surfaceTex.setDefaultBufferSize(res.width, res.height)
+                            previewSurface?.release()
+                            val surface = Surface(surfaceTex)
+                            previewSurface = surface
+                            request.provideSurface(surface, ContextCompat.getMainExecutor(context)) {
+                                surface.release()
+                                if (previewSurface == surface) previewSurface = null
+                            }
+                            val rot = camera?.cameraInfo?.sensorRotationDegrees ?: 90
+                            val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
+                            onCameraOrientationChanged?.invoke(rot, isFront, res.width, res.height)
+                        }
+                    } else if (previewView != null) {
+                        prev.setSurfaceProvider(previewView.surfaceProvider)
+                    }
                 }
 
             if (_uiState.value.captureMode == CaptureMode.PHOTO) {
@@ -249,21 +302,45 @@ class CameraManager(private val context: Context) {
     }
 
     fun updateTuning(update: (UserTuningConfig) -> UserTuningConfig) {
-        _uiState.update { it.copy(tuning = update(it.tuning)) }
+        _uiState.update {
+            val updated = it.copy(tuning = update(it.tuning))
+            glRenderer?.updateTuning(updated.tuning)
+            updated
+        }
     }
 
     fun resetTuning() {
-        _uiState.update { it.copy(tuning = UserTuningConfig()) }
+        val defaultTuning = UserTuningConfig()
+        glRenderer?.updateTuning(defaultTuning)
+        _uiState.update { it.copy(tuning = defaultTuning) }
     }
 
     fun tapToFocus(tapX: Float, tapY: Float) {
-        val previewView = currentPreviewView ?: return
-        val factory = previewView.meteringPointFactory
-        val point = factory.createPoint(tapX, tapY)
-        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
-            .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
-        camera?.cameraControl?.startFocusAndMetering(action)
+        val previewView = currentPreviewView
+        if (previewView != null) {
+            val factory = previewView.meteringPointFactory
+            val point = factory.createPoint(tapX, tapY)
+            val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            camera?.cameraControl?.startFocusAndMetering(action)
+        } else {
+            val cam = camera ?: return
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                context.display ?: windowManager?.defaultDisplay
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager?.defaultDisplay
+            } ?: return
+            val metrics = context.resources.displayMetrics
+            val factory = DisplayOrientedMeteringPointFactory(display, cam.cameraInfo, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+            val point = factory.createPoint(tapX, tapY)
+            val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            cam.cameraControl.startFocusAndMetering(action)
+        }
     }
 
     fun captureAndProcessPhoto(

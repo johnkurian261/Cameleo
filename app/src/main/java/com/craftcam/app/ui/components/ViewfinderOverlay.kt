@@ -77,46 +77,9 @@ fun ViewfinderOverlay(
             val right = left + frameW
             val bottom = top + frameH
 
-            // 2. Film Tone Color Wash (Simulates authentic analog emulsion warmth in real-time)
+            // 2. 8mm / 16mm Projector Rounded Film Gate
             val is8mm = preset.id.contains("8mm") || preset.id.contains("16mm")
             val isCamcorder = preset.category == CameraCategory.CAMCORDER
-            val tintColor = when {
-                isCamcorder                                          -> Color(0xFFF5F0DA) // NTSC warm phosphor
-                is8mm                                                -> Color(0xFFFFE1B4) // 8mm Kodachrome
-                preset.category == CameraCategory.CCD_DIGITAL        -> Color(0xFFDCEEFF) // Cool crisp CCD
-                preset.category == CameraCategory.DISPOSABLE         -> Color(0xFFFFDEAF) // Warm flash disposable
-                preset.id == "analog_soft_film"                      -> Color(0xFFEEFCF6) // Pastel Fuji mint
-                preset.id == "analog_cinema_film"                    -> Color(0xFFDEF2FC) // 35mm Hollywood cine
-                preset.id == "analog_vintage_color"                  -> Color(0xFFFFE8CD) // 70s Kodachrome
-                preset.id == "ccd_cool_digital"                      -> Color(0xFFD2EBFF) // Cyber cool
-                preset.id == "ccd_y2k_digital"                       -> Color(0xFFFFE1F2) // Magenta-pink Y2K
-                else                                                 -> Color(0xFFFFF2E2) // Kodak Portra warm ivory
-            }
-            drawRect(
-                color = tintColor,
-                topLeft = Offset(left, top),
-                size = Size(frameW, frameH),
-                blendMode = BlendMode.Multiply
-            )
-
-            // 3. Optical Lens Radial Vignette Shading
-            val vigRadius = maxOf(frameW, frameH) * (if (preset.category == CameraCategory.DISPOSABLE) 0.65f else 0.75f)
-            val vigBrush = Brush.radialGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color.Black.copy(alpha = 0.15f),
-                    Color.Black.copy(alpha = if (preset.category == CameraCategory.DISPOSABLE) 0.70f else 0.52f)
-                ),
-                center = Offset(left + frameW / 2f, top + frameH / 2f),
-                radius = vigRadius
-            )
-            drawRect(
-                brush = vigBrush,
-                topLeft = Offset(left, top),
-                size = Size(frameW, frameH)
-            )
-
-            // 4. 8mm / 16mm Projector Rounded Film Gate
             if (is8mm) {
                 val cornerRadius = frameW * 0.08f
                 val gatePath = Path().apply {

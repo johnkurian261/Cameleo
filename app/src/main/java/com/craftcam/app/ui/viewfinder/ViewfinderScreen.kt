@@ -2,11 +2,13 @@ package com.craftcam.app.ui.viewfinder
 
 import android.content.Context
 import android.graphics.SurfaceTexture
+import android.opengl.GLSurfaceView
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -88,14 +90,25 @@ fun ViewfinderScreen(
             .fillMaxSize()
             .background(CameraBlack)
     ) {
-        // 1. Clean, 100% native 4:3 optical viewfinder (zero distortion, full sensor FOV)
+        // 1. Hardware-Accelerated OpenGL ES 3.0 Viewfinder with Real-Time 3D Film Emulation
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                PreviewView(ctx).apply {
-                    scaleType = PreviewView.ScaleType.FIT_CENTER
-                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                    cameraManager.initialize(lifecycleOwner, this)
+                GLSurfaceView(ctx).apply {
+                    setEGLContextClientVersion(3)
+                    val renderer = GLViewfinderRenderer(ctx, this) { surfaceTexture ->
+                        ContextCompat.getMainExecutor(ctx).execute {
+                            cameraManager.initializeWithGLSurface(
+                                lifecycleOwner = lifecycleOwner,
+                                surfaceTexture = surfaceTexture
+                            ) { rot, isFront, bufW, bufH ->
+                                renderer.setCameraOrientation(rot, isFront, bufW, bufH)
+                            }
+                        }
+                    }
+                    cameraManager.setGLRenderer(renderer)
+                    setRenderer(renderer)
+                    renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
                 }
             }
         )

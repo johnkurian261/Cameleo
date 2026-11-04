@@ -1,11 +1,15 @@
 package com.craftcam.app.gl
 
+import android.content.Context
+import android.graphics.BitmapFactory
 import android.graphics.SurfaceTexture
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
+import android.opengl.GLUtils
 import android.util.Log
+import com.craftcam.app.camera.UserTuningConfig
 import com.craftcam.app.gl.shaders.ShaderConstants
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
@@ -17,6 +21,7 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 class GLViewfinderRenderer(
+    private val context: Context,
     private val glSurfaceView: GLSurfaceView,
     private val onSurfaceTextureReady: (SurfaceTexture) -> Unit
 ) : GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
@@ -71,9 +76,24 @@ class GLViewfinderRenderer(
     private var uLightLeakEnabledLoc = -1
     private var uLightLeakIntensityLoc = -1
     private var uScanlineIntensityLoc = -1
+    private var uLutTextureLoc = -1
+    private var uLutEnabledLoc = -1
+
+    private val lutTextureCache = HashMap<String, Int>()
 
     @Volatile
     private var activePreset: CameraPreset = PresetCatalog.allPresets.first()
+
+    @Volatile
+    private var currentTuning: UserTuningConfig = UserTuningConfig()
+
+    // Performance telemetry
+    var lastGpuTimeMs: Float = 0f
+        private set
+    var currentFps: Float = 0f
+        private set
+    private var frameCount = 0
+    private var lastFpsTimestamp = System.nanoTime()
 
     // Default 1:1 quad
     private val squareCoords = floatArrayOf(
@@ -105,13 +125,21 @@ class GLViewfinderRenderer(
         textureCoordBuffer.position(0)
     }
 
+    private fun requestRenderSafe() {
+        try {
+            glSurfaceView.requestRender()
+        } catch (t: Throwable) {
+            // Safe fallback if GL thread is not yet initialized or already released
+        }
+    }
+
     fun setCameraOrientation(rotationDegrees: Int, isFrontCamera: Boolean, bufW: Int, bufH: Int) {
         sensorRotation = rotationDegrees
         isFront = isFrontCamera
         bufferWidth = bufW
         bufferHeight = bufH
         updateGeometry()
-        glSurfaceView.requestRender()
+        requestRenderSafe()
     }
 
     private fun updateGeometry() {
@@ -150,7 +178,62 @@ class GLViewfinderRenderer(
 
     fun updatePreset(preset: CameraPreset) {
         activePreset = preset
-        glSurfaceView.requestRender()
+        requestRenderSafe()
+    }
+
+    fun updateTuning(tuning: UserTuningConfig) {
+        currentTuning = tuning
+        requestRenderSafe()
+    }
+
+    private fun getLutAssetForPreset(presetId: String): String = when (presetId) {
+        "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
+        "analog_warm_film"     -> "lut_analog_warm_film.png"
+        "analog_soft_film"     -> "lut_analog_soft_film.png"
+        "analog_vintage_color" -> "lut_analog_vintage_color.png"
+        "analog_faded_film"    -> "lut_analog_faded_film.png"
+        "analog_cinema_film"   -> "lut_analog_cinema_film.png"
+        "ccd_classic"          -> "lut_ccd_classic.png"
+        "ccd_flash"            -> "lut_ccd_flash.png"
+        "ccd_cool_digital"     -> "lut_ccd_cool_digital.png"
+        "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
+        "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
+        "disp_classic"         -> "lut_disp_classic.png"
+        "disp_flash"           -> "lut_disp_flash.png"
+        "disp_warm"            -> "lut_disp_warm.png"
+        "disp_night"           -> "lut_disp_night.png"
+        "inst_classic"         -> "lut_inst_classic.png"
+        "inst_soft_polaroid"   -> "lut_inst_soft_polaroid.png"
+        "inst_vintage"         -> "lut_inst_vintage.png"
+        "cam_retro_vhs"        -> "lut_cam_retro_vhs.png"
+        "cam_analog_video"     -> "lut_cam_analog_video.png"
+        "cam_90s_camcorder"    -> "lut_cam_90s_camcorder.png"
+        else                   -> "lut_analog_35mm_classic.png"
+    }
+
+    private fun getOrLoadLutTexture(lutAsset: String): Int {
+        lutTextureCache[lutAsset]?.let { return it }
+        return try {
+            context.assets.open(lutAsset).use { input ->
+                val bmp = BitmapFactory.decodeStream(input) ?: return 0
+                val texIds = IntArray(1)
+                GLES30.glGenTextures(1, texIds, 0)
+                val texId = texIds[0]
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texId)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+                GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bmp, 0)
+                bmp.recycle()
+                lutTextureCache[lutAsset] = texId
+                Log.d(TAG, "Uploaded GPU 3D LUT texture: $lutAsset (id=$texId)")
+                texId
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load LUT asset: $lutAsset", e)
+            0
+        }
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -195,6 +278,8 @@ class GLViewfinderRenderer(
         uLightLeakEnabledLoc = GLES30.glGetUniformLocation(programId, "uLightLeakEnabled")
         uLightLeakIntensityLoc = GLES30.glGetUniformLocation(programId, "uLightLeakIntensity")
         uScanlineIntensityLoc = GLES30.glGetUniformLocation(programId, "uScanlineIntensity")
+        uLutTextureLoc = GLES30.glGetUniformLocation(programId, "uLutTexture")
+        uLutEnabledLoc = GLES30.glGetUniformLocation(programId, "uLutEnabled")
 
         // Create OES external texture
         val textures = IntArray(1)
@@ -221,6 +306,8 @@ class GLViewfinderRenderer(
     }
 
     override fun onDrawFrame(gl: GL10?) {
+        val startNs = System.nanoTime()
+
         synchronized(this) {
             if (updateSurface) {
                 surfaceTexture?.updateTexImage()
@@ -242,10 +329,23 @@ class GLViewfinderRenderer(
         GLES30.glEnableVertexAttribArray(1)
         GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 8, textureCoordBuffer)
 
-        // Bind OES texture
+        // Bind OES texture (unit 0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
         GLES30.glUniform1i(sTextureLoc, 0)
+
+        // Bind 3D Hald CLUT Film Emulsion Texture (unit 1)
+        val preset = activePreset
+        val lutAsset = getLutAssetForPreset(preset.id)
+        val lutId = getOrLoadLutTexture(lutAsset)
+        if (lutId != 0 && uLutTextureLoc != -1) {
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, lutId)
+            GLES30.glUniform1i(uLutTextureLoc, 1)
+            GLES30.glUniform1i(uLutEnabledLoc, 1)
+        } else if (uLutEnabledLoc != -1) {
+            GLES30.glUniform1i(uLutEnabledLoc, 0)
+        }
 
         // Upload transform matrix and viewport size
         android.opengl.Matrix.setIdentityM(rotMatrix, 0)
@@ -260,37 +360,46 @@ class GLViewfinderRenderer(
         GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, finalTexMatrix, 0)
         GLES30.glUniform2f(uViewportSizeLoc, viewportWidth.toFloat(), viewportHeight.toFloat())
 
-        // Upload preset parameters
-        val preset = activePreset
+        // Upload preset parameters combined with live user tuning offsets
+        val tuning = currentTuning
         val color = preset.colorGrading
-        GLES30.glUniform1f(uContrastLoc, color.contrast)
-        GLES30.glUniform1f(uSaturationLoc, color.saturation)
-        GLES30.glUniform1f(uTemperatureLoc, color.temperature)
-        GLES30.glUniform1f(uTintLoc, color.tint)
+        val contrast = (color.contrast + tuning.contrastOffset).coerceAtLeast(0.1f)
+        val saturation = (color.saturation + tuning.saturationOffset).coerceAtLeast(0.0f)
+        val temperature = (color.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+        val tint = (color.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+
+        GLES30.glUniform1f(uContrastLoc, contrast)
+        GLES30.glUniform1f(uSaturationLoc, saturation)
+        GLES30.glUniform1f(uTemperatureLoc, temperature)
+        GLES30.glUniform1f(uTintLoc, tint)
         GLES30.glUniform1f(uGammaLoc, color.gamma)
         GLES30.glUniform1f(uFadeLoc, color.fade)
         GLES30.glUniform1f(uHighlightRollOffLoc, color.highlightRollOff)
         GLES30.glUniform3f(uShadowTintLoc, color.shadowTintR, color.shadowTintG, color.shadowTintB)
 
         val lens = preset.lens
-        GLES30.glUniform1f(uVignetteIntensityLoc, lens.vignetteIntensity)
+        val vigIntensity = (lens.vignetteIntensity + tuning.vignetteBoost).coerceAtLeast(0f)
+        GLES30.glUniform1f(uVignetteIntensityLoc, vigIntensity)
         GLES30.glUniform1f(uVignetteRadiusLoc, lens.vignetteRadius)
         GLES30.glUniform1f(uChromaticAberrationLoc, lens.chromaticAberration)
         GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion)
 
         val grain = preset.grain
-        GLES30.glUniform1f(uGrainIntensityLoc, if (grain.enabled) grain.intensity else 0f)
+        val grainIntensity = if (grain.enabled) (grain.intensity + tuning.grainBoost).coerceAtLeast(0f) else 0f
+        GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
         GLES30.glUniform1f(uGrainScaleLoc, grain.scale)
         GLES30.glUniform1i(uIsColorNoiseLoc, if (grain.isColorNoise) 1 else 0)
         GLES30.glUniform1f(uRandomSeedLoc, (System.currentTimeMillis() % 10000).toFloat() / 1000f)
 
         val halation = preset.halation
-        GLES30.glUniform1i(uHalationEnabledLoc, if (halation?.enabled == true) 1 else 0)
+        val halationActive = tuning.halationEnabled && halation?.enabled == true
+        GLES30.glUniform1i(uHalationEnabledLoc, if (halationActive) 1 else 0)
         GLES30.glUniform1f(uHalationThresholdLoc, halation?.threshold ?: 0.85f)
         GLES30.glUniform1f(uHalationIntensityLoc, halation?.intensity ?: 0f)
 
         val leak = preset.lightLeak
-        GLES30.glUniform1i(uLightLeakEnabledLoc, if (leak?.enabled == true) 1 else 0)
+        val leakActive = tuning.lightLeakEnabled && leak?.enabled == true
+        GLES30.glUniform1i(uLightLeakEnabledLoc, if (leakActive) 1 else 0)
         GLES30.glUniform1f(uLightLeakIntensityLoc, leak?.intensity ?: 0f)
 
         val isCamcorder = preset.category == CameraCategory.CAMCORDER
@@ -301,12 +410,22 @@ class GLViewfinderRenderer(
 
         GLES30.glDisableVertexAttribArray(0)
         GLES30.glDisableVertexAttribArray(1)
+
+        // Measure GPU execution time and frame rate
+        lastGpuTimeMs = (System.nanoTime() - startNs) / 1_000_000f
+        frameCount++
+        val now = System.nanoTime()
+        if (now - lastFpsTimestamp >= 1_000_000_000L) {
+            currentFps = frameCount * 1_000_000_000f / (now - lastFpsTimestamp)
+            frameCount = 0
+            lastFpsTimestamp = now
+        }
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
         synchronized(this) {
             updateSurface = true
         }
-        glSurfaceView.requestRender()
+        requestRenderSafe()
     }
 }

@@ -20,6 +20,8 @@ void main() {
 precision mediump float;
 
 uniform samplerExternalOES sTexture;
+uniform sampler2D uLutTexture;
+uniform bool uLutEnabled;
 uniform vec2 uViewportSize;
 in vec2 vTextureCoord;
 out vec4 fragColor;
@@ -59,6 +61,33 @@ float hash(vec2 p, float seed) {
     return fract(sin(dot(p, vec2(12.9898, 78.233)) + seed) * 43758.5453) - 0.5;
 }
 
+// Trilinear 3D Hald CLUT Sampling (512x512 = 8x8 tiles of 64x64 slices)
+vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
+    rgb = clamp(rgb, 0.0, 1.0);
+    float blueColor = rgb.b * 63.0;
+    
+    float quad1_y = floor(floor(blueColor) / 8.0);
+    float quad1_x = floor(blueColor) - (quad1_y * 8.0);
+    
+    float quad2_y = floor(ceil(blueColor) / 8.0);
+    float quad2_x = ceil(blueColor) - (quad2_y * 8.0);
+    
+    vec2 texPos1 = vec2(
+        (quad1_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
+        (quad1_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
+    );
+    
+    vec2 texPos2 = vec2(
+        (quad2_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
+        (quad2_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
+    );
+    
+    vec3 newColor1 = texture(lut, texPos1).rgb;
+    vec3 newColor2 = texture(lut, texPos2).rgb;
+    
+    return mix(newColor1, newColor2, fract(blueColor));
+}
+
 void main() {
     vec2 uv = vTextureCoord;
     vec2 p = uv - 0.5;
@@ -84,6 +113,11 @@ void main() {
     }
 
     vec3 color = srcColor.rgb;
+
+    // 2b. Photochemical 3D Film Emulsion LUT
+    if (uLutEnabled) {
+        color = sampleHaldLut(uLutTexture, color);
+    }
 
     // 3. White Balance: Temperature & Tint
     color.r += 0.12 * uTemperature;
@@ -183,6 +217,8 @@ void main() {
 precision highp float;
 
 uniform sampler2D sTexture;
+uniform sampler2D uLutTexture;
+uniform bool uLutEnabled;
 in vec2 vTextureCoord;
 out vec4 fragColor;
 
@@ -220,6 +256,32 @@ float hash(vec2 p, float seed) {
     return fract(sin(dot(p, vec2(12.9898, 78.233)) + seed) * 43758.5453) - 0.5;
 }
 
+vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
+    rgb = clamp(rgb, 0.0, 1.0);
+    float blueColor = rgb.b * 63.0;
+    
+    float quad1_y = floor(floor(blueColor) / 8.0);
+    float quad1_x = floor(blueColor) - (quad1_y * 8.0);
+    
+    float quad2_y = floor(ceil(blueColor) / 8.0);
+    float quad2_x = ceil(blueColor) - (quad2_y * 8.0);
+    
+    vec2 texPos1 = vec2(
+        (quad1_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
+        (quad1_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
+    );
+    
+    vec2 texPos2 = vec2(
+        (quad2_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
+        (quad2_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
+    );
+    
+    vec3 newColor1 = texture(lut, texPos1).rgb;
+    vec3 newColor2 = texture(lut, texPos2).rgb;
+    
+    return mix(newColor1, newColor2, fract(blueColor));
+}
+
 void main() {
     vec2 uv = vTextureCoord;
     vec2 p = uv - 0.5;
@@ -244,6 +306,11 @@ void main() {
     }
 
     vec3 color = srcColor.rgb;
+
+    // 2b. Photochemical 3D Film Emulsion LUT
+    if (uLutEnabled) {
+        color = sampleHaldLut(uLutTexture, color);
+    }
 
     // 3. White Balance
     color.r += 0.12 * uTemperature;
