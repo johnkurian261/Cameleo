@@ -55,3 +55,4 @@ Never execute the following operations without explicit confirmation from the us
   - Invoke binaries directly (`git`, `adb`, `.\gradlew.bat`) rather than wrapping them in unnecessary subshells or complex compound expressions.
   - Keep commands clean and idempotent to enable Antigravity's generalized prefix-matching approval rules.
 - **Verification Integrity**: Always verify artifact and build file paths before triggering deployment commands.
+

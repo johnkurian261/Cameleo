@@ -363,10 +363,15 @@ class GLViewfinderRenderer(
         // Upload preset parameters combined with live user tuning offsets
         val tuning = currentTuning
         val color = preset.colorGrading
-        val contrast = (color.contrast + tuning.contrastOffset).coerceAtLeast(0.1f)
-        val saturation = (color.saturation + tuning.saturationOffset).coerceAtLeast(0.0f)
-        val temperature = (color.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
-        val tint = (color.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+        val lutActive = (lutId != 0 && uLutTextureLoc != -1)
+        val contrast = if (lutActive) (1.0f + tuning.contrastOffset).coerceAtLeast(0.1f)
+                       else (color.contrast + tuning.contrastOffset).coerceAtLeast(0.1f)
+        val saturation = if (lutActive) (1.0f + tuning.saturationOffset).coerceAtLeast(0.0f)
+                         else (color.saturation + tuning.saturationOffset).coerceAtLeast(0.0f)
+        val temperature = if (lutActive) tuning.temperatureOffset.coerceIn(-1.0f, 1.0f)
+                          else (color.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+        val tint = if (lutActive) tuning.tintOffset.coerceIn(-1.0f, 1.0f)
+                   else (color.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
 
         GLES30.glUniform1f(uContrastLoc, contrast)
         GLES30.glUniform1f(uSaturationLoc, saturation)

@@ -96,18 +96,20 @@ fun ViewfinderScreen(
             factory = { ctx ->
                 GLSurfaceView(ctx).apply {
                     setEGLContextClientVersion(3)
+                    var rendererRef: GLViewfinderRenderer? = null
                     val renderer = GLViewfinderRenderer(ctx, this) { surfaceTexture ->
                         ContextCompat.getMainExecutor(ctx).execute {
                             cameraManager.initializeWithGLSurface(
                                 lifecycleOwner = lifecycleOwner,
                                 surfaceTexture = surfaceTexture
                             ) { rot, isFront, bufW, bufH ->
-                                renderer.setCameraOrientation(rot, isFront, bufW, bufH)
+                                rendererRef?.setCameraOrientation(rot, isFront, bufW, bufH)
                             }
                         }
                     }
-                    cameraManager.setGLRenderer(renderer)
+                    rendererRef = renderer
                     setRenderer(renderer)
+                    cameraManager.setGLRenderer(renderer)
                     renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
                 }
             }

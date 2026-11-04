@@ -64,28 +64,33 @@ float hash(vec2 p, float seed) {
 // Trilinear 3D Hald CLUT Sampling (512x512 = 8x8 tiles of 64x64 slices)
 vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     rgb = clamp(rgb, 0.0, 1.0);
-    float blueColor = rgb.b * 63.0;
+    float blueVal = rgb.b * 63.0;
     
-    float quad1_y = floor(floor(blueColor) / 8.0);
-    float quad1_x = floor(blueColor) - (quad1_y * 8.0);
+    float slice0 = floor(blueVal);
+    float slice1 = min(63.0, slice0 + 1.0);
+    float blueFract = fract(blueVal);
     
-    float quad2_y = floor(ceil(blueColor) / 8.0);
-    float quad2_x = ceil(blueColor) - (quad2_y * 8.0);
+    float s0_col = mod(slice0, 8.0);
+    float s0_row = floor(slice0 / 8.0);
     
-    vec2 texPos1 = vec2(
-        (quad1_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
-        (quad1_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
-    );
+    float s1_col = mod(slice1, 8.0);
+    float s1_row = floor(slice1 / 8.0);
     
-    vec2 texPos2 = vec2(
-        (quad2_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
-        (quad2_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
-    );
+    // Pixel coordinates in 512x512 texture
+    float px0_x = s0_col * 64.0 + 0.5 + rgb.r * 63.0;
+    float px1_x = s1_col * 64.0 + 0.5 + rgb.r * 63.0;
     
-    vec3 newColor1 = texture(lut, texPos1).rgb;
-    vec3 newColor2 = texture(lut, texPos2).rgb;
+    // In image bitmap, row 0 is at top, but in OpenGL v=0 is bottom
+    float px0_y = s0_row * 64.0 + 0.5 + rgb.g * 63.0;
+    float px1_y = s1_row * 64.0 + 0.5 + rgb.g * 63.0;
     
-    return mix(newColor1, newColor2, fract(blueColor));
+    vec2 uv0 = vec2(px0_x / 512.0, 1.0 - (px0_y / 512.0));
+    vec2 uv1 = vec2(px1_x / 512.0, 1.0 - (px1_y / 512.0));
+    
+    vec3 col0 = texture(lut, uv0).rgb;
+    vec3 col1 = texture(lut, uv1).rgb;
+    
+    return mix(col0, col1, blueFract);
 }
 
 void main() {
@@ -102,8 +107,9 @@ void main() {
     // 2. Transverse Chromatic Aberration
     vec4 srcColor;
     if (uChromaticAberration > 0.0001) {
-        vec2 uvR = uv + p * (uChromaticAberration * r2 * 3.0);
-        vec2 uvB = uv - p * (uChromaticAberration * r2 * 3.0);
+        vec2 caOffset = p * (uChromaticAberration * r2 * 0.5);
+        vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
+        vec2 uvB = clamp(uv - caOffset, vec2(0.001), vec2(0.999));
         float r = texture(sTexture, uvR).r;
         float g = texture(sTexture, uv).g;
         float b = texture(sTexture, uvB).b;
@@ -117,36 +123,45 @@ void main() {
     // 2b. Photochemical 3D Film Emulsion LUT
     if (uLutEnabled) {
         color = sampleHaldLut(uLutTexture, color);
-    }
+        
+        // Live user micro-tuning offsets (when sliders adjusted)
+        if (abs(uTemperature) > 0.001) {
+            color.r += 0.08 * uTemperature;
+            color.b -= 0.08 * uTemperature;
+        }
+        if (abs(uTint) > 0.001) {
+            color.g += 0.06 * uTint;
+            color.r -= 0.03 * uTint;
+            color.b -= 0.03 * uTint;
+        }
+        if (abs(uContrast - 1.0) > 0.01) {
+            color = (color - 0.5) * uContrast + 0.5;
+        }
+        if (abs(uSaturation - 1.0) > 0.01) {
+            float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            color = mix(vec3(luma), color, uSaturation);
+        }
+    } else {
+        // Fallback analytical color grading when LUT is unavailable
+        color.r += 0.12 * uTemperature;
+        color.b -= 0.12 * uTemperature;
+        color.g += 0.10 * uTint;
+        color.r -= 0.05 * uTint;
+        color.b -= 0.05 * uTint;
 
-    // 3. White Balance: Temperature & Tint
-    color.r += 0.12 * uTemperature;
-    color.b -= 0.12 * uTemperature;
-    color.g += 0.10 * uTint;
-    color.r -= 0.05 * uTint;
-    color.b -= 0.05 * uTint;
+        color = (color - 0.5) * uContrast + 0.5;
+        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        color = mix(vec3(luma), color, uSaturation);
+        color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
+        color = color * (1.0 - uFade) + uFade;
 
-    // 4. Contrast
-    color = (color - 0.5) * uContrast + 0.5;
+        float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
+        color += uShadowTint * shadowWeight;
 
-    // 5. Saturation
-    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    color = mix(vec3(luma), color, uSaturation);
-
-    // 6. Gamma Adjustment
-    color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
-
-    // 7. Film Fade (Lifted black point)
-    color = color * (1.0 - uFade) + uFade;
-
-    // 8. Shadow Tint and Highlight Roll-off
-    float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
-    color += uShadowTint * shadowWeight;
-
-    // Highlight soft shoulder
-    if (luma > uHighlightRollOff) {
-        float excess = luma - uHighlightRollOff;
-        color -= vec3(excess * 0.25);
+        if (luma > uHighlightRollOff) {
+            float excess = luma - uHighlightRollOff;
+            color -= vec3(excess * 0.25);
+        }
     }
 
     // 9. Halation (Film red glow around high-contrast speculars)
@@ -258,28 +273,31 @@ float hash(vec2 p, float seed) {
 
 vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     rgb = clamp(rgb, 0.0, 1.0);
-    float blueColor = rgb.b * 63.0;
+    float blueVal = rgb.b * 63.0;
     
-    float quad1_y = floor(floor(blueColor) / 8.0);
-    float quad1_x = floor(blueColor) - (quad1_y * 8.0);
+    float slice0 = floor(blueVal);
+    float slice1 = min(63.0, slice0 + 1.0);
+    float blueFract = fract(blueVal);
     
-    float quad2_y = floor(ceil(blueColor) / 8.0);
-    float quad2_x = ceil(blueColor) - (quad2_y * 8.0);
+    float s0_col = mod(slice0, 8.0);
+    float s0_row = floor(slice0 / 8.0);
     
-    vec2 texPos1 = vec2(
-        (quad1_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
-        (quad1_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
-    );
+    float s1_col = mod(slice1, 8.0);
+    float s1_row = floor(slice1 / 8.0);
     
-    vec2 texPos2 = vec2(
-        (quad2_x * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.r),
-        (quad2_y * 0.125) + (0.5 / 512.0) + ((63.0 / 512.0) * rgb.g)
-    );
+    float px0_x = s0_col * 64.0 + 0.5 + rgb.r * 63.0;
+    float px1_x = s1_col * 64.0 + 0.5 + rgb.r * 63.0;
     
-    vec3 newColor1 = texture(lut, texPos1).rgb;
-    vec3 newColor2 = texture(lut, texPos2).rgb;
+    float px0_y = s0_row * 64.0 + 0.5 + rgb.g * 63.0;
+    float px1_y = s1_row * 64.0 + 0.5 + rgb.g * 63.0;
     
-    return mix(newColor1, newColor2, fract(blueColor));
+    vec2 uv0 = vec2(px0_x / 512.0, 1.0 - (px0_y / 512.0));
+    vec2 uv1 = vec2(px1_x / 512.0, 1.0 - (px1_y / 512.0));
+    
+    vec3 col0 = texture(lut, uv0).rgb;
+    vec3 col1 = texture(lut, uv1).rgb;
+    
+    return mix(col0, col1, blueFract);
 }
 
 void main() {
@@ -289,14 +307,16 @@ void main() {
 
     // 1. Lens Distortion
     if (abs(uBarrelDistortion) > 0.001) {
-        uv = 0.5 + p * (1.0 + uBarrelDistortion * r2);
+        uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
+        uv = clamp(uv, vec2(0.001), vec2(0.999));
     }
 
     // 2. Chromatic Aberration
     vec4 srcColor;
     if (uChromaticAberration > 0.0001) {
-        vec2 uvR = uv + p * (uChromaticAberration * r2 * 3.0);
-        vec2 uvB = uv - p * (uChromaticAberration * r2 * 3.0);
+        vec2 caOffset = p * (uChromaticAberration * r2 * 0.5);
+        vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
+        vec2 uvB = clamp(uv - caOffset, vec2(0.001), vec2(0.999));
         float r = texture(sTexture, uvR).r;
         float g = texture(sTexture, uv).g;
         float b = texture(sTexture, uvB).b;
