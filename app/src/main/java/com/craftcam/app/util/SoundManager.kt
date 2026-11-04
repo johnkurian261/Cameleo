@@ -44,18 +44,11 @@ object SoundManager {
     }
 
     fun playShutterSound() {
-        val sp = soundPool ?: return
-        if (clickSounds.isNotEmpty()) {
-            val soundId = clickSounds[Random.nextInt(clickSounds.size)]
-            sp.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
-        }
+        // Silent photo capture: sound disabled
     }
 
     fun playFilmAdvanceSound() {
-        val sp = soundPool ?: return
-        if (advanceSoundId != 0) {
-            sp.play(advanceSoundId, 0.85f, 0.85f, 1, 0, 1.0f)
-        }
+        // Silent photo capture: sound disabled
     }
 
     fun release() {

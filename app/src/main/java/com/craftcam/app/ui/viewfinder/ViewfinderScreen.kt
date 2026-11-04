@@ -322,10 +322,8 @@ fun ViewfinderScreen(
                                     countdown = null
                                 }
 
-                                SoundManager.playShutterSound()
                                 cameraManager.capturePhoto(
                                     onImageCaptured = { imageProxy ->
-                                        SoundManager.playFilmAdvanceSound()
                                         scope.launch {
                                             val uri = ImageProcessor.processAndSaveImage(
                                                 context = context,
