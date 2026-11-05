@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,10 +18,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -40,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.exifinterface.media.ExifInterface
 import com.craftcam.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class GalleryItem(
@@ -57,7 +63,7 @@ fun GalleryScreen(
 ) {
     val context = LocalContext.current
     var photos by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
-    var selectedPhoto by remember { mutableStateOf<GalleryItem?>(null) }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
@@ -121,28 +127,32 @@ fun GalleryScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(photos, key = { it.id }) { item ->
+                    itemsIndexed(photos, key = { _, item -> item.id }) { index, item ->
                         GalleryThumbnail(
                             item = item,
-                            onClick = { selectedPhoto = item }
+                            onClick = { selectedIndex = index }
                         )
                     }
                 }
             }
         }
 
-        // Full Screen Viewer Overlay
-        selectedPhoto?.let { photo ->
+        // Full Screen Viewer Overlay with Swipe Navigation
+        selectedIndex?.let { initialIndex ->
             FullScreenViewer(
-                item = photo,
-                onDismiss = { selectedPhoto = null },
-                onDelete = {
-                    deletePhoto(context, photo.uri)
-                    photos = photos.filter { it.id != photo.id }
-                    selectedPhoto = null
+                photos = photos,
+                initialIndex = initialIndex,
+                onDismiss = { selectedIndex = null },
+                onDelete = { photoToDelete ->
+                    deletePhoto(context, photoToDelete.uri)
+                    val newPhotos = photos.filter { it.id != photoToDelete.id }
+                    photos = newPhotos
+                    if (newPhotos.isEmpty()) {
+                        selectedIndex = null
+                    }
                 },
-                onShare = {
-                    sharePhoto(context, photo)
+                onShare = { photoToShare ->
+                    sharePhoto(context, photoToShare)
                 }
             )
         }
@@ -229,45 +239,48 @@ private fun GalleryThumbnail(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FullScreenViewer(
-    item: GalleryItem,
+    photos: List<GalleryItem>,
+    initialIndex: Int,
     onDismiss: () -> Unit,
-    onDelete: () -> Unit,
-    onShare: () -> Unit
+    onDelete: (GalleryItem) -> Unit,
+    onShare: (GalleryItem) -> Unit
 ) {
-    val context = LocalContext.current
-    var fullBitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    val safeInitial = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+    val pagerState = rememberPagerState(
+        initialPage = safeInitial,
+        pageCount = { photos.size }
+    )
 
-    LaunchedEffect(item.uri) {
-        withContext(Dispatchers.IO) {
-            try {
-                if (item.isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val bmp = context.contentResolver.loadThumbnail(item.uri, android.util.Size(1080, 1080), null)
-                    fullBitmap = bmp.asImageBitmap()
-                } else {
-                    context.contentResolver.openInputStream(item.uri)?.use { stream ->
-                        val bmp = BitmapFactory.decodeStream(stream)
-                        bmp?.let { fullBitmap = it.asImageBitmap() }
-                    }
-                }
-            } catch (e: Exception) {
-                // error
-            }
-        }
-    }
+    val currentPage = pagerState.currentPage.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+    val currentItem = photos.getOrNull(currentPage)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(CameraBlack.copy(alpha = 0.98f))
     ) {
+        // Horizontal Pager for swiping between photos
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            key = { index -> photos.getOrNull(index)?.id ?: index.toLong() }
+        ) { page ->
+            val item = photos.getOrNull(page)
+            if (item != null) {
+                FullScreenPhotoPage(item = item)
+            }
+        }
+
         // Top Toolbar
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 8.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -275,53 +288,87 @@ private fun FullScreenViewer(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = TextPrimary)
             }
 
+            // Photo counter badge e.g. "3 / 12"
+            if (photos.isNotEmpty()) {
+                Text(
+                    text = "${currentPage + 1} / ${photos.size}",
+                    color = VintageAmber,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Row {
-                IconButton(onClick = onShare) {
+                IconButton(
+                    onClick = {
+                        currentItem?.let { onShare(it) }
+                    }
+                ) {
                     Icon(Icons.Default.Share, contentDescription = "Share", tint = TextPrimary)
                 }
-                IconButton(onClick = onDelete) {
+                IconButton(
+                    onClick = {
+                        currentItem?.let { onDelete(it) }
+                    }
+                ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = VintageRed)
                 }
             }
         }
 
-        // Photo / Video Display
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(vertical = 80.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            fullBitmap?.let {
-                Image(
-                    bitmap = it,
-                    contentDescription = item.name,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
+        // Left Navigation Arrow (when not on first item)
+        if (currentPage > 0) {
+            IconButton(
+                onClick = {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(currentPage - 1)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 12.dp)
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, TextMuted.copy(alpha = 0.35f), CircleShape)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Previous Photo",
+                    tint = TextPrimary,
+                    modifier = Modifier.size(24.dp)
                 )
-            } ?: CircularProgressIndicator(color = VintageAmber)
+            }
+        }
 
-            if (item.isVideo) {
-                IconButton(
-                    onClick = { playVideo(context, item.uri) },
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(Color.Black.copy(alpha = 0.70f))
-                        .border(2.dp, VintageAmber, androidx.compose.foundation.shape.CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Play Video",
-                        tint = VintageAmber,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
+        // Right Navigation Arrow (when not on last item)
+        if (currentPage < photos.size - 1) {
+            IconButton(
+                onClick = {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(currentPage + 1)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, TextMuted.copy(alpha = 0.35f), CircleShape)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Next Photo",
+                    tint = TextPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 
         // Camera Info Badge
-        item.cameraModel?.let { model ->
+        currentItem?.cameraModel?.let { model ->
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -336,6 +383,88 @@ private fun FullScreenViewer(
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullScreenPhotoPage(item: GalleryItem) {
+    val context = LocalContext.current
+    var fullBitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var isImageLoading by remember(item.uri) { mutableStateOf(true) }
+
+    LaunchedEffect(item.uri) {
+        withContext(Dispatchers.IO) {
+            try {
+                if (item.isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val bmp = context.contentResolver.loadThumbnail(item.uri, android.util.Size(1080, 1080), null)
+                    fullBitmap = bmp.asImageBitmap()
+                } else {
+                    // Optimized downscaled decode to fit viewport and prevent OOM
+                    context.contentResolver.openInputStream(item.uri)?.use { boundsStream ->
+                        val boundsOptions = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = true
+                        }
+                        BitmapFactory.decodeStream(boundsStream, null, boundsOptions)
+                        val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+                        var sample = 1
+                        while (maxDim / sample > 2048) {
+                            sample *= 2
+                        }
+
+                        context.contentResolver.openInputStream(item.uri)?.use { stream ->
+                            val decodeOptions = BitmapFactory.Options().apply {
+                                inSampleSize = sample
+                                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                            }
+                            val bmp = BitmapFactory.decodeStream(stream, null, decodeOptions)
+                            bmp?.let { fullBitmap = it.asImageBitmap() }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // error loading image
+            } finally {
+                isImageLoading = false
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 70.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        fullBitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = item.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+        } ?: if (isImageLoading) {
+            CircularProgressIndicator(color = VintageAmber)
+        } else {
+            Text("Failed to load photo", color = TextMuted, fontSize = 12.sp)
+        }
+
+        if (item.isVideo) {
+            IconButton(
+                onClick = { playVideo(context, item.uri) },
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.70f))
+                    .border(2.dp, VintageAmber, CircleShape)
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "Play Video",
+                    tint = VintageAmber,
+                    modifier = Modifier.size(44.dp)
                 )
             }
         }
@@ -451,4 +580,3 @@ private fun playVideo(context: Context, uri: Uri) {
         // fallback
     }
 }
-

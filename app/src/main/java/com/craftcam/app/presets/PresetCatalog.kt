@@ -26,7 +26,7 @@ object PresetCatalog {
                 shadowTintG = 0.03f,
                 shadowTintB = 0.05f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.14f, scale = 1.0f),
+            grain = GrainConfig(enabled = true, intensity = 0.24f, scale = 1.15f),
             lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.85f, chromaticAberration = 0.003f, softness = 0.12f),
             halation = HalationConfig(enabled = true, threshold = 0.82f, intensity = 0.25f, radius = 14f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -28),
