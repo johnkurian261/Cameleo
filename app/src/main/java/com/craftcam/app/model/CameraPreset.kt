@@ -25,7 +25,10 @@ data class GrainConfig(
     val enabled: Boolean = true,
     val intensity: Float = 0.12f,
     val scale: Float = 1.0f,
-    val isColorNoise: Boolean = false
+    val isColorNoise: Boolean = false,
+    val assetPath: String? = null,
+    val blendMode: String = "overlay", // "overlay", "screen", "soft_light"
+    val rotation: Float = 0.0f
 )
 
 data class LensConfig(

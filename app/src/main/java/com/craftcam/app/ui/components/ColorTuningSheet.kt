@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import android.content.pm.ApplicationInfo
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +40,8 @@ fun ColorTuningSheet(
     onDismiss: () -> Unit
 ) {
     val view = LocalView.current
+    val context = LocalContext.current
+    val isDebug = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     AnimatedVisibility(
         visible = visible,
@@ -169,20 +174,77 @@ fun ColorTuningSheet(
 
                 // 6. Film Grain Intensity
                 item {
-                    Text("FILM GRAIN", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("FILM GRAIN INTENSITY", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GrainOptionPill("OFF", tuning.grainBoost == 0f) {
-                            onTuningChange { it.copy(grainBoost = 0f) }
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        item {
+                            GrainOptionPill("OFF (0%)", tuning.grainBoost == 0f) {
+                                onTuningChange { it.copy(grainBoost = 0f) }
+                            }
                         }
-                        GrainOptionPill("FINE (1.0x)", tuning.grainBoost == 1.0f) {
-                            onTuningChange { it.copy(grainBoost = 1.0f) }
+                        item {
+                            GrainOptionPill("25%", tuning.grainBoost == 0.25f) {
+                                onTuningChange { it.copy(grainBoost = 0.25f) }
+                            }
                         }
-                        GrainOptionPill("MEDIUM (1.6x)", tuning.grainBoost == 1.6f) {
-                            onTuningChange { it.copy(grainBoost = 1.6f) }
+                        item {
+                            GrainOptionPill("50%", tuning.grainBoost == 0.50f) {
+                                onTuningChange { it.copy(grainBoost = 0.50f) }
+                            }
                         }
-                        GrainOptionPill("COARSE (2.2x)", tuning.grainBoost == 2.2f) {
-                            onTuningChange { it.copy(grainBoost = 2.2f) }
+                        item {
+                            GrainOptionPill("75%", tuning.grainBoost == 0.75f) {
+                                onTuningChange { it.copy(grainBoost = 0.75f) }
+                            }
+                        }
+                        item {
+                            GrainOptionPill("100% (STD)", tuning.grainBoost == 1.0f) {
+                                onTuningChange { it.copy(grainBoost = 1.0f) }
+                            }
+                        }
+                        item {
+                            GrainOptionPill("150%", tuning.grainBoost == 1.5f) {
+                                onTuningChange { it.copy(grainBoost = 1.5f) }
+                            }
+                        }
+                    }
+                }
+
+                // 6b. Developer Debug Grain Asset Comparison (Debug builds only)
+                if (isDebug) {
+                    item {
+                        Text("DEBUG • GRAIN ASSET COMPARISON", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = VintageAmber)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Switch physical scanned emulsion texture in real-time", fontSize = 10.sp, color = TextMuted)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val assets = listOf(
+                                "PRESET DEFAULT" to null,
+                                "Kodak 35mm" to "grains/grain_dclassic.jpg",
+                                "Warm 35mm" to "grains/grain_ou.jpg",
+                                "Push LowLight" to "grains/grain_ou_lowlight.jpg",
+                                "Hasselblad KV88" to "grains/grain_kv88.jpg",
+                                "CPM35 Negative" to "grains/grain_cpm35.jpg",
+                                "6x7 Portrait" to "grains/grain_s67.jpg",
+                                "Instant Packfilm" to "grains/grain_instc.jpg",
+                                "Disposable 540" to "grains/grain540_01.jpg",
+                                "Super 8mm" to "grains/grain8mm_01.jpg",
+                                "Digicam CCD" to "grains/grain_classicu.jpg",
+                                "Toy Cam Hoga" to "grains/grain_hoga.jpg"
+                            )
+                            items(assets.size) { idx ->
+                                val (title, path) = assets[idx]
+                                val selected = (tuning.debugGrainAsset == path)
+                                GrainOptionPill(title, selected) {
+                                    onTuningChange { it.copy(debugGrainAsset = path) }
+                                }
+                            }
                         }
                     }
                 }

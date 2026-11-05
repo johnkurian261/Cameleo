@@ -34,7 +34,8 @@ data class UserTuningConfig(
     val lightLeakEnabled: Boolean = true,
     val softLensDiffusion: Boolean = false,
     val dateStampEnabled: Boolean = true,
-    val customYear: String? = null
+    val customYear: String? = null,
+    val debugGrainAsset: String? = null // Developer debug grain asset override (debug mode only)
 )
 
 data class CameraUIState(

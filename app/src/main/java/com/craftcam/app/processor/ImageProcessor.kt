@@ -187,13 +187,26 @@ object ImageProcessor {
     private fun getOrLoadGrainPixels(context: Context, name: String): Pair<IntArray, Pair<Int, Int>>? {
         synchronized(grainPixelsCache) {
             grainPixelsCache[name]?.let { return it }
-            val bmp = loadTexture(context, name) ?: return null
+            val resolvedName = if (name.startsWith("grains/")) name else {
+                try {
+                    context.assets.open(name).close()
+                    name
+                } catch (e: Exception) {
+                    "grains/$name"
+                }
+            }
+            grainPixelsCache[resolvedName]?.let {
+                grainPixelsCache[name] = it
+                return it
+            }
+            val bmp = loadTexture(context, resolvedName) ?: loadTexture(context, name) ?: return null
             val gw = bmp.width
             val gh = bmp.height
             val gp = IntArray(gw * gh)
             bmp.getPixels(gp, 0, gw, 0, 0, gw, gh)
             val result = Pair(gp, Pair(gw, gh))
             grainPixelsCache[name] = result
+            grainPixelsCache[resolvedName] = result
             return result
         }
     }
@@ -250,14 +263,41 @@ object ImageProcessor {
             val rad = lens.vignetteRadius
             val vigDenom = maxD2 * rad * rad
 
-            val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
+            val grainAsset = tuning.debugGrainAsset ?: preset.grain.assetPath ?: selectGrainForPreset(preset.id, isCamcorder)
             val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
             val hasGrain = grain.enabled && effectiveGrain > 0.01f
             val grainData = if (hasGrain) getOrLoadGrainPixels(context, grainAsset) else null
             val grainPixels: IntArray? = grainData?.first
             val gw = grainData?.second?.first ?: 1
             val gh = grainData?.second?.second ?: 1
+            val grainScale = preset.grain.scale.coerceIn(0.5f, 3.0f)
             val grainStrength = effectiveGrain * 0.45f
+            val isScreenBlend = preset.grain.blendMode.equals("screen", ignoreCase = true)
+
+            // Anti-Tiling: Derive deterministic per-capture pseudo-random spatial offset & mirroring
+            val captureSeed = (System.currentTimeMillis() xor (width.toLong() shl 16) xor height.toLong())
+            val seedX = ((captureSeed ushr 7) % gw).toInt().let { if (it < 0) it + gw else it }
+            val seedY = ((captureSeed ushr 19) % gh).toInt().let { if (it < 0) it + gh else it }
+            val flipX = (captureSeed and 1L) == 1L
+            val flipY = (captureSeed and 2L) == 2L
+
+            // Precomputed 1D vector mapping prevents rectangular grid repetition without inner-loop trig overhead
+            val colBaseX = if (grainPixels != null) {
+                val invScale = 1.0f / grainScale
+                IntArray(width) { x -> (x * invScale).toInt() + seedX }
+            } else null
+            val colPhaseY = if (grainPixels != null) {
+                val invScale = 1.0f / grainScale
+                IntArray(width) { x -> (kotlin.math.cos(x * invScale * 0.00785f + seedX * 0.01f) * 26f).toInt() }
+            } else null
+            val rowBaseY = if (grainPixels != null) {
+                val invScale = 1.0f / grainScale
+                IntArray(height) { y -> (y * invScale).toInt() + seedY }
+            } else null
+            val rowPhaseX = if (grainPixels != null) {
+                val invScale = 1.0f / grainScale
+                IntArray(height) { y -> (kotlin.math.sin(y * invScale * 0.00785f + seedY * 0.01f) * 26f).toInt() }
+            } else null
 
             // ── Step 1b: Optical Lens Softness (Radial spherical aberration) ────
             if (preset.lens.softness > 0.01f) {
@@ -446,12 +486,21 @@ object ImageProcessor {
                             r *= v; g *= v; b *= v
                         }
 
-                        // Fused Multi-Tone Film Halide Grain with Tri-Pack Dye Cloud Separation
-                        if (grainPixels != null) {
-                            val gx = pxX % gw
-                            val gy = (pxY % gh) * gw
-                            val gp = grainPixels[gy + gx]
-                            val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) * (1.0f / 128f)
+                        // Fused Multi-Tone Film Halide Grain with Anti-Tiling, Dye Cloud Separation & S-Curve Weighting
+                        if (grainPixels != null && colBaseX != null && rowBaseY != null && rowPhaseX != null && colPhaseY != null) {
+                            var gx = (colBaseX[pxX] + rowPhaseX[pxY]) % gw
+                            if (gx < 0) gx += gw
+                            if (flipX) gx = gw - 1 - gx
+
+                            var gy = (rowBaseY[pxY] + colPhaseY[pxX]) % gh
+                            if (gy < 0) gy += gh
+                            if (flipY) gy = gh - 1 - gy
+
+                            val gp = grainPixels[gy * gw + gx]
+                            val rG = gp shr 16 and 0xFF
+                            val gG = gp shr 8 and 0xFF
+                            val bG = gp and 0xFF
+                            val gl = ((rG * 0.299f + gG * 0.587f + bG * 0.114f) - 128f) * (1.0f / 128f)
                             val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                             
                             val sRise = ((postLuma / 0.42f).coerceIn(0f, 1f)).let { t -> t * t * (3f - 2f * t) }
@@ -464,20 +513,39 @@ object ImageProcessor {
                                 grainWeight *= (1.0f - 0.35f * skinWeight)
                             }
 
-                            val deltaG = gl * grainStrength * grainWeight
-                            val deltaR = gl * (grainStrength * 1.08f) * grainWeight
-                            val deltaB = gl * (grainStrength * 0.92f) * grainWeight
-
-                            if (preset.grain.isColorNoise) {
-                                val chroma = gl * 0.35f * grainStrength * grainWeight
-                                r += deltaR + chroma
-                                g += deltaG
-                                b += deltaB - chroma
+                            if (isScreenBlend) {
+                                // SCREEN mode for push-processed / low-light film grain emulsion lift
+                                val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                val screenFactor = grainStrength * grainWeight * 0.85f
+                                if (preset.grain.isColorNoise) {
+                                    val rNorm = ((((rG - 128f) * (1.0f / 128f) + 1.0f) * 0.5f)).coerceIn(0f, 1f)
+                                    val bNorm = ((((bG - 128f) * (1.0f / 128f) + 1.0f) * 0.5f)).coerceIn(0f, 1f)
+                                    r = 1.0f - (1.0f - r) * (1.0f - rNorm * screenFactor)
+                                    g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
+                                    b = 1.0f - (1.0f - b) * (1.0f - bNorm * screenFactor)
+                                } else {
+                                    r = 1.0f - (1.0f - r) * (1.0f - grainNorm * screenFactor)
+                                    g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
+                                    b = 1.0f - (1.0f - b) * (1.0f - grainNorm * screenFactor)
+                                }
                             } else {
-                                val dyeCloud = gl * 0.12f * grainStrength * grainWeight
-                                r += deltaR + dyeCloud
-                                g += deltaG
-                                b += deltaB - dyeCloud
+                                // OVERLAY mode for standard photographic chemical halide modulation
+                                val deltaG = gl * grainStrength * grainWeight
+                                val deltaR = gl * (grainStrength * 1.08f) * grainWeight
+                                val deltaB = gl * (grainStrength * 0.92f) * grainWeight
+
+                                if (preset.grain.isColorNoise) {
+                                    val rChroma = ((rG - 128f) * (1.0f / 128f)) * grainStrength * grainWeight * 0.40f
+                                    val bChroma = ((bG - 128f) * (1.0f / 128f)) * grainStrength * grainWeight * 0.40f
+                                    r += deltaR + rChroma
+                                    g += deltaG
+                                    b += deltaB + bChroma
+                                } else {
+                                    val dyeCloud = gl * 0.12f * grainStrength * grainWeight
+                                    r += deltaR + dyeCloud
+                                    g += deltaG
+                                    b += deltaB - dyeCloud
+                                }
                             }
                         }
 
@@ -880,21 +948,21 @@ object ImageProcessor {
     }
 
     private fun selectGrainForPreset(presetId: String, isCamcorder: Boolean): String = when {
-        isCamcorder                            -> "vhs_grain01.jpg"
-        presetId == "analog_35mm_classic"      -> "grain_dclassic.jpg"
-        presetId == "analog_warm_film"         -> "grain_dclassic.jpg"
-        presetId == "analog_soft_film"         -> "grain_s67.jpg"
-        presetId == "analog_vintage_color"     -> "grain_dexp.jpg"
-        presetId == "analog_cinema_film"       -> "grain_d3d1.jpg"
-        presetId == "ccd_flash"                -> "grain_dfuns.jpg"
-        presetId == "ccd_y2k_digital"          -> "grain_classicu.jpg"
-        presetId == "ccd_retro_compact"        -> "grain_dqs.jpg"
-        presetId == "disp_classic"             -> "grain540_01.jpg"
-        presetId == "disp_flash"               -> "grain_cpm35.jpg"
-        presetId == "disp_warm"                -> "grain540_01.jpg"
-        presetId == "disp_night"               -> "half_grain.jpg"
-        presetId == "inst_vintage"             -> "grain_135sr.jpg"
-        else                                   -> "grain_dclassic.jpg"
+        isCamcorder                            -> "grains/grain8mm_01.jpg"
+        presetId == "analog_35mm_classic"      -> "grains/grain_dclassic.jpg"
+        presetId == "analog_warm_film"         -> "grains/grain_ou.jpg"
+        presetId == "analog_soft_film"         -> "grains/grain_s67.jpg"
+        presetId == "analog_vintage_color"     -> "grains/grain_dexp.jpg"
+        presetId == "analog_cinema_film"       -> "grains/grain_d3d1.jpg"
+        presetId == "ccd_flash"                -> "grains/grain_dfuns.jpg"
+        presetId == "ccd_y2k_digital"          -> "grains/grain_classicu.jpg"
+        presetId == "ccd_retro_compact"        -> "grains/grain_ccdr.jpg"
+        presetId == "disp_classic"             -> "grains/grain_dexp2.jpg"
+        presetId == "disp_flash"               -> "grains/grain_cpm35.jpg"
+        presetId == "disp_warm"                -> "grains/grain540_01.jpg"
+        presetId == "disp_night"               -> "grains/grain_ou_lowlight.jpg"
+        presetId == "inst_vintage"             -> "grains/grain_instc.jpg"
+        else                                   -> "grains/grain_dclassic.jpg"
     }
 
     private fun selectVignetteForPreset(presetId: String): String? = when (presetId) {
