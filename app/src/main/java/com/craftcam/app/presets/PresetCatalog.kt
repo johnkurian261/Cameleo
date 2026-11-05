@@ -240,10 +240,11 @@ object PresetCatalog {
             year = "2006",
             description = "Everyday point-and-shoot digital look with punchy dynamic range and crisp sharpness.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.15f,
-                saturation = 1.18f,
+                contrast = 1.12f,
+                saturation = 1.14f,
                 temperature = 0.05f,
-                fade = 0.02f
+                fade = 0.02f,
+                highlightRollOff = 0.82f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.06f, scale = 0.7f),
             lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.88f),
@@ -265,9 +266,10 @@ object PresetCatalog {
                 temperature = 0.22f,
                 tint = -0.04f,
                 fade = 0.06f,
-                shadowTintR = 0.03f,
-                shadowTintG = 0.05f,
-                shadowTintB = 0.01f
+                highlightRollOff = 0.80f,
+                shadowTintR = -0.02f,
+                shadowTintG = 0.04f,
+                shadowTintB = 0.06f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.4f),
             lens = LensConfig(vignetteIntensity = 0.72f, vignetteRadius = 0.65f, chromaticAberration = 0.010f, barrelDistortion = -0.08f),
@@ -307,7 +309,11 @@ object PresetCatalog {
                 saturation = 1.24f,
                 temperature = 0.48f,
                 tint = 0.12f,
-                fade = 0.07f
+                fade = 0.07f,
+                highlightRollOff = 0.76f,
+                shadowTintR = 0.06f,
+                shadowTintG = 0.03f,
+                shadowTintB = -0.02f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.5f),
             lens = LensConfig(vignetteIntensity = 0.68f, vignetteRadius = 0.68f, chromaticAberration = 0.008f),
@@ -429,7 +435,7 @@ object PresetCatalog {
                 shadowTintB = 0.03f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.8f, isColorNoise = true),
-            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.010f, softness = 0.28f),
+            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.012f, softness = 0.32f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -35)
         ),
@@ -444,9 +450,10 @@ object PresetCatalog {
             colorGrading = ColorGradingConfig(
                 contrast = 1.08f,
                 saturation = 1.02f,
-                temperature = 0.16f,
+                temperature = 0.20f,
                 tint = 0.04f,
-                fade = 0.06f
+                fade = 0.08f,
+                highlightRollOff = 0.80f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.6f),
             lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.008f, softness = 0.2f),

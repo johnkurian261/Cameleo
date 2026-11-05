@@ -363,13 +363,19 @@ object ImageProcessor {
                         g += shadowG * shadowWeight
                         b += shadowB * shadowWeight
 
-                        // F. Filmic Highlight Rolloff (Soft-shoulder exponential compression)
+                        // F. Filmic Highlight Rolloff & Desaturating Shoulder
                         if (rollOff < 0.99f) {
                             val knee = maxOf(0.01f, 1.0f - rollOff)
                             if (r > rollOff) r = rollOff + knee * (1.0f - exp(-(r - rollOff) / knee))
                             if (g > rollOff) g = rollOff + knee * (1.0f - exp(-(g - rollOff) / knee))
                             if (b > rollOff) b = rollOff + knee * (1.0f - exp(-(b - rollOff) / knee))
                             curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+
+                            val highOver = maxOf(0.0f, curLuma - rollOff) / knee
+                            val desat = (highOver * 0.35f).coerceIn(0.0f, 0.65f)
+                            r = r * (1.0f - desat) + curLuma * desat
+                            g = g * (1.0f - desat) + curLuma * desat
+                            b = b * (1.0f - desat) + curLuma * desat
                         }
 
                         // G. Film Fade (Lifted blacks)
@@ -398,12 +404,13 @@ object ImageProcessor {
                             r *= sf; g *= sf; b *= sf
                         }
 
-                        // Fused Lens Vignette Shading (Zero-sqrt quadratic distance)
+                        // Fused Optical Cosine Fourth Lens Vignette
                         if (hasVig) {
                             val dx = pxX - cx
                             val dy = pxY - cy
-                            val dn2 = (dx * dx + dy * dy) / vigDenom
-                            val v = (1.0f - vigIntensity * dn2).coerceIn(0.25f, 1.0f)
+                            val rn2 = (dx * dx + dy * dy) / vigDenom
+                            val cos4Vig = 1.0f / ((1.0f + rn2 * 0.55f) * (1.0f + rn2 * 0.55f))
+                            val v = (1.0f - vigIntensity + vigIntensity * cos4Vig).coerceIn(0.25f, 1.0f)
                             r *= v; g *= v; b *= v
                         }
 

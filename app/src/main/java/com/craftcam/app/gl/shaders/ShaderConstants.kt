@@ -65,6 +65,21 @@ float filmNoise(vec2 coord, float seed) {
     return fract((p3.x + p3.y) * p3.z) - 0.5;
 }
 
+// 2-Scale Cellular Dye Cloud: Hermite stochastic interpolation creates organic physical crystal clusters
+float dyeCloudNoise(vec2 coord, float seed) {
+    vec2 p = mod(coord, 512.0) + fract(seed * 1.6180339) * 32.0;
+    vec2 ip = floor(p);
+    vec2 fp = fract(p);
+    vec2 u = fp * fp * (3.0 - 2.0 * fp);
+    
+    float n00 = filmNoise(ip, seed);
+    float n10 = filmNoise(ip + vec2(1.0, 0.0), seed);
+    float n01 = filmNoise(ip + vec2(0.0, 1.0), seed);
+    float n11 = filmNoise(ip + vec2(1.0, 1.0), seed);
+    
+    return mix(mix(n00, n10, u.x), mix(n01, n11, u.x), u.y);
+}
+
 // Trilinear 3D Hald CLUT Sampling (512x512 = 8x8 tiles of 64x64 slices)
 vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     rgb = clamp(rgb, 0.0, 1.0);
@@ -108,15 +123,16 @@ void main() {
         uv = clamp(uv, vec2(0.001), vec2(0.999));
     }
 
-    // 2. Transverse Chromatic Aberration in visual space, strictly clamped inside [0, 1]
+    // 2. Transverse Chromatic Aberration (Cauchy spectral dispersion)
     vec4 srcColor;
     if (uChromaticAberration > 0.0001) {
-        vec2 caOffset = p * (uChromaticAberration * r2 * 0.2);
+        vec2 caOffset = p * (uChromaticAberration * r2 * 0.22);
         vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
-        vec2 uvB = clamp(uv - caOffset, vec2(0.001), vec2(0.999));
+        vec2 uvG = clamp(uv - caOffset * 0.15, vec2(0.001), vec2(0.999));
+        vec2 uvB = clamp(uv - caOffset * 1.35, vec2(0.001), vec2(0.999));
 
         vec2 oesR = (uTexMatrix * vec4(uvR, 0.0, 1.0)).xy;
-        vec2 oesG = (uTexMatrix * vec4(uv,  0.0, 1.0)).xy;
+        vec2 oesG = (uTexMatrix * vec4(uvG, 0.0, 1.0)).xy;
         vec2 oesB = (uTexMatrix * vec4(uvB, 0.0, 1.0)).xy;
 
         float r = texture(sTexture, oesR).r;
@@ -130,23 +146,33 @@ void main() {
 
     vec3 color = srcColor.rgb;
 
-    // 2b. Optical Softness (Radial spherical aberration edge diffusion)
+    // 2b. Optical Softness (Contrast-preserving spherical veiling flare)
     if (uSoftness > 0.005) {
         float rSoftness = clamp(r2 * 2.8 * uSoftness, 0.0, 0.85);
         if (rSoftness > 0.01) {
-            vec2 sStep = (2.5 / uViewportSize) * (1.0 + rSoftness * 2.0);
+            vec2 sStep = (3.0 / uViewportSize) * (1.0 + rSoftness * 1.5);
             vec3 sL = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(sStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
             vec3 sR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(sStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
             vec3 sT = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, sStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
             vec3 sB = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, sStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
             vec3 softSample = (sL + sR + sT + sB) * 0.25;
-            color = mix(color, softSample, rSoftness * 0.50);
+            
+            vec3 diffuseGlow = max(vec3(0.0), softSample - color * 0.75);
+            color = mix(color, softSample, rSoftness * 0.25) + diffuseGlow * (rSoftness * 0.35);
         }
+    }
+
+    // 2c. Camcorder Chroma Subcarrier Delay (Horizontal Color Smear)
+    if (uScanlineIntensity > 0.01) {
+        vec2 chromaOffset = vec2(3.5 / uViewportSize.x, 0.0);
+        vec3 delayedChroma = texture(sTexture, (uTexMatrix * vec4(clamp(uv - chromaOffset, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+        color.r = mix(color.r, delayedChroma.r, 0.35);
+        color.b = mix(color.b, delayedChroma.b, 0.45);
     }
 
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
-    // 2c. Photochemical 3D Film Emulsion LUT
+    // 2d. Photochemical 3D Film Emulsion LUT
     if (uLutEnabled) {
         color = sampleHaldLut(uLutTexture, color);
     }
@@ -184,12 +210,15 @@ void main() {
     float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
     color += uShadowTint * shadowWeight;
 
-    // 8. Filmic Highlight Rolloff (Soft-shoulder exponential compression preventing harsh digital clipping)
+    // 8. Filmic Highlight Rolloff & Desaturating Shoulder (Creamy soft transitions to white)
     if (uHighlightRollOff < 0.99) {
         float knee = max(0.01, 1.0 - uHighlightRollOff);
         vec3 over = max(vec3(0.0), color - vec3(uHighlightRollOff));
         color = min(color, vec3(uHighlightRollOff)) + knee * (vec3(1.0) - exp(-over / knee));
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        
+        float highOver = max(0.0, luma - uHighlightRollOff) / knee;
+        color = mix(color, vec3(luma), clamp(highOver * 0.35, 0.0, 0.65));
     }
 
     // 9. Film Fade (Lifted blacks / aged paper floor)
@@ -197,39 +226,43 @@ void main() {
         color = color * (1.0 - uFade) + uFade;
     }
 
-    // 10. Localized Film Halation (Red-orange highlight glow spreading into adjacent emulsion)
+    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with early exit)
     if (uHalationEnabled && uHalationIntensity > 0.01) {
-        vec2 hStep = (12.0 / uViewportSize);
-        vec4 tapL = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(hStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-        vec4 tapR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(hStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-        vec4 tapT = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, hStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-        vec4 tapB = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, hStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-
-        vec2 diag = hStep * 0.7071;
-        vec4 tapTL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-        vec4 tapTR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-        vec4 tapBL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-        vec4 tapBR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-
-        float lL = dot(tapL.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lR = dot(tapR.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lT = dot(tapT.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lB = dot(tapB.rgb, vec3(0.2126, 0.7152, 0.0722));
-
-        float lTL = dot(tapTL.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lTR = dot(tapTR.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lBL = dot(tapBL.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lBR = dot(tapBR.rgb, vec3(0.2126, 0.7152, 0.0722));
-
         float kThresh = uHalationThreshold;
-        float hCenter = max(0.0, luma - kThresh);
-        float hCross = max(0.0, lL - kThresh) + max(0.0, lR - kThresh) + max(0.0, lT - kThresh) + max(0.0, lB - kThresh);
-        float hDiag = max(0.0, lTL - kThresh) + max(0.0, lTR - kThresh) + max(0.0, lBL - kThresh) + max(0.0, lBR - kThresh);
+        if (luma > kThresh - 0.15) {
+            vec2 hInner = (6.0 / uViewportSize);
+            vec2 hOuter = (14.0 / uViewportSize);
 
-        float spreadHighlight = (hCenter * 0.30 + hCross * 0.10 + hDiag * 0.075) / max(0.01, 1.0 - kThresh);
-        if (spreadHighlight > 0.001) {
-            vec3 haloColor = vec3(1.0, 0.28, 0.05) * (spreadHighlight * uHalationIntensity * 0.40);
-            color += haloColor;
+            vec4 tInL = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(hInner.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tInR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(hInner.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tInT = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, hInner.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tInB = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, hInner.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+
+            vec2 diag = hOuter * 0.7071;
+            vec4 tOutTL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tOutTR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tOutBL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tOutBR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+
+            float lInL = dot(tInL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lInR = dot(tInR.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lInT = dot(tInT.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lInB = dot(tInB.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+            float lOutTL = dot(tOutTL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lOutTR = dot(tOutTR.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lOutBL = dot(tOutBL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lOutBR = dot(tOutBR.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+            float hCenter = max(0.0, luma - kThresh);
+            float hInnerSum = max(0.0, lInL - kThresh) + max(0.0, lInR - kThresh) + max(0.0, lInT - kThresh) + max(0.0, lInB - kThresh);
+            float hOuterSum = max(0.0, lOutTL - kThresh) + max(0.0, lOutTR - kThresh) + max(0.0, lOutBL - kThresh) + max(0.0, lOutBR - kThresh);
+
+            float spread = (hCenter * 0.35 + hInnerSum * 0.12 + hOuterSum * 0.04) / max(0.01, 1.0 - kThresh);
+            if (spread > 0.001) {
+                vec3 haloColor = vec3(1.0, 0.22, 0.04) * (spread * uHalationIntensity * 0.45);
+                color += haloColor;
+            }
         }
     }
 
@@ -238,63 +271,62 @@ void main() {
         float edgeDist = length(vec2(max(0.0, uv.x - 0.75) * 2.0, max(0.0, 0.25 - uv.y) * 2.0));
         float leakMask = smoothstep(0.40, 0.0, edgeDist);
         vec3 leakColor = vec3(1.0, 0.45, 0.12) * (leakMask * uLightLeakIntensity * 0.35);
-        // Screen blend
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
-    // 12. Lens Vignette (matches ImageProcessor.kt quadratic falloff in canonical frame space)
+    // 12. Optical Cosine Fourth Lens Vignette
     if (uVignetteIntensity > 0.01) {
-        float dist = length(p) / 0.7071068;
-        float dn = dist / uVignetteRadius;
-        float vignette = clamp(1.0 - uVignetteIntensity * dn * dn, 0.25, 1.0);
-        color *= vignette;
+        float rNorm = length(p) / 0.7071068;
+        float rn = rNorm / uVignetteRadius;
+        float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
+        float vignette = mix(1.0, cos4Vig, clamp(uVignetteIntensity * 1.15, 0.0, 1.0));
+        color *= clamp(vignette, 0.25, 1.0);
     }
 
-    // 13. Authentic Multi-Octave Tri-Pack Film Grain (Channel dye clumping)
+    // 13. Authentic Multi-Scale Silver Halide Dye-Cloud Grain
     if (uGrainIntensity > 0.005) {
-        // Asymmetric film density luminance envelope:
-        // Shadows retain ~28% grain, midtones peak at 100% around luma=0.42, highlights roll off to 12%
         float sRise = smoothstep(0.0, 0.42, luma);
         float hFall = smoothstep(0.42, 1.0, luma);
         float grainWeight = (0.28 + 0.72 * sRise) * (1.0 - 0.88 * hFall);
 
-        // Flattering skin protection: gently attenuate grain on smooth skin tones
         if (color.r > color.g && color.g > color.b && color.r > 0.25 && color.r < 0.90) {
             float skinWeight = clamp((color.r - color.b) * 2.0, 0.0, 1.0);
             grainWeight *= (1.0 - 0.35 * skinWeight);
         }
 
-        // Screen-pixel calibrated coordinate: fine crystals
         vec2 grainCoord = vQuadCoord * uViewportSize.xy * (uGrainScale * 0.45);
         
-        // Multi-octave synthesis for R, G, B channels with dye cloud separation
         float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
-        float clumpG = filmNoise(grainCoord * 0.45, uRandomSeed + 0.42);
-        float noiseG = fineG * 0.85 + clumpG * 0.15;
+        float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
+        float noiseG = fineG * 0.65 + clumpG * 0.35;
 
         float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
-        float clumpR = filmNoise(grainCoord * 0.45, uRandomSeed + 0.67);
-        float noiseR = fineR * 0.75 + clumpR * 0.25;
+        float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
+        float noiseR = fineR * 0.58 + clumpR * 0.42;
 
         float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
-        float clumpB = filmNoise(grainCoord * 0.45, uRandomSeed + 0.89);
-        float noiseB = fineB * 0.65 + clumpB * 0.35;
+        float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
+        float noiseB = fineB * 0.50 + clumpB * 0.50;
 
         vec3 grainDelta;
         if (uIsColorNoise) {
             grainDelta = vec3(noiseR, noiseG, noiseB);
         } else {
-            // Monochromatic base with subtle 18% dye cloud variance for natural analog look
             grainDelta = mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
         }
 
-        color += grainDelta * (grainWeight * uGrainIntensity * 0.42);
+        float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
+        color += grainDelta * (grainWeight * uGrainIntensity * 0.40 * grainDamp);
     }
 
-    // 14. Retro Camcorder Scanlines (subtle authentic tape texture)
+    // 14. Retro Camcorder Tape Texture & Line Modulation
     if (uScanlineIntensity > 0.01) {
-        float scanline = sin(vQuadCoord.y * 600.0) * 0.5 + 0.5;
-        color *= mix(1.0, 0.92 + 0.08 * scanline, uScanlineIntensity);
+        vec2 tapeCoord = vec2(vQuadCoord.x * uViewportSize.x * 0.75, floor(vQuadCoord.y * 240.0));
+        float tapeNoise = filmNoise(tapeCoord, uRandomSeed);
+        color += vec3(tapeNoise * 0.05 * uScanlineIntensity);
+
+        float scanline = sin(vQuadCoord.y * 480.0 * 3.14159) * 0.5 + 0.5;
+        color *= mix(1.0, 0.88 + 0.12 * scanline, uScanlineIntensity);
     }
 
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
@@ -361,6 +393,21 @@ float filmNoise(vec2 coord, float seed) {
     return fract((p3.x + p3.y) * p3.z) - 0.5;
 }
 
+// 2-Scale Cellular Dye Cloud: Hermite stochastic interpolation creates organic physical crystal clusters
+float dyeCloudNoise(vec2 coord, float seed) {
+    vec2 p = mod(coord, 512.0) + fract(seed * 1.6180339) * 32.0;
+    vec2 ip = floor(p);
+    vec2 fp = fract(p);
+    vec2 u = fp * fp * (3.0 - 2.0 * fp);
+    
+    float n00 = filmNoise(ip, seed);
+    float n10 = filmNoise(ip + vec2(1.0, 0.0), seed);
+    float n01 = filmNoise(ip + vec2(0.0, 1.0), seed);
+    float n11 = filmNoise(ip + vec2(1.0, 1.0), seed);
+    
+    return mix(mix(n00, n10, u.x), mix(n01, n11, u.x), u.y);
+}
+
 vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     rgb = clamp(rgb, 0.0, 1.0);
     float blueVal = rgb.b * 63.0;
@@ -401,14 +448,15 @@ void main() {
         uv = clamp(uv, vec2(0.001), vec2(0.999));
     }
 
-    // 2. Chromatic Aberration
+    // 2. Transverse Chromatic Aberration (Cauchy spectral dispersion)
     vec4 srcColor;
     if (uChromaticAberration > 0.0001) {
-        vec2 caOffset = p * (uChromaticAberration * r2 * 0.5);
+        vec2 caOffset = p * (uChromaticAberration * r2 * 0.25);
         vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
-        vec2 uvB = clamp(uv - caOffset, vec2(0.001), vec2(0.999));
+        vec2 uvG = clamp(uv - caOffset * 0.15, vec2(0.001), vec2(0.999));
+        vec2 uvB = clamp(uv - caOffset * 1.35, vec2(0.001), vec2(0.999));
         float r = texture(sTexture, uvR).r;
-        float g = texture(sTexture, uv).g;
+        float g = texture(sTexture, uvG).g;
         float b = texture(sTexture, uvB).b;
         srcColor = vec4(r, g, b, 1.0);
     } else {
@@ -417,23 +465,33 @@ void main() {
 
     vec3 color = srcColor.rgb;
 
-    // 2b. Optical Softness (Radial spherical aberration edge diffusion)
+    // 2b. Optical Softness (Contrast-preserving spherical veiling flare)
     if (uSoftness > 0.005) {
         float rSoftness = clamp(r2 * 2.8 * uSoftness, 0.0, 0.85);
         if (rSoftness > 0.01) {
-            vec2 sStep = vec2(0.0018) * (1.0 + rSoftness * 2.0);
-            vec3 sL = texture(sTexture, uv - vec2(sStep.x, 0.0)).rgb;
-            vec3 sR = texture(sTexture, uv + vec2(sStep.x, 0.0)).rgb;
-            vec3 sT = texture(sTexture, uv - vec2(0.0, sStep.y)).rgb;
-            vec3 sB = texture(sTexture, uv + vec2(0.0, sStep.y)).rgb;
+            vec2 sStep = vec2(0.0022) * (1.0 + rSoftness * 1.5);
+            vec3 sL = texture(sTexture, clamp(uv - vec2(sStep.x, 0.0), vec2(0.001), vec2(0.999))).rgb;
+            vec3 sR = texture(sTexture, clamp(uv + vec2(sStep.x, 0.0), vec2(0.001), vec2(0.999))).rgb;
+            vec3 sT = texture(sTexture, clamp(uv - vec2(0.0, sStep.y), vec2(0.001), vec2(0.999))).rgb;
+            vec3 sB = texture(sTexture, clamp(uv + vec2(0.0, sStep.y), vec2(0.001), vec2(0.999))).rgb;
             vec3 softSample = (sL + sR + sT + sB) * 0.25;
-            color = mix(color, softSample, rSoftness * 0.50);
+            
+            vec3 diffuseGlow = max(vec3(0.0), softSample - color * 0.75);
+            color = mix(color, softSample, rSoftness * 0.25) + diffuseGlow * (rSoftness * 0.35);
         }
+    }
+
+    // 2c. Camcorder Chroma Subcarrier Delay (Horizontal Color Smear)
+    if (uScanlineIntensity > 0.01) {
+        vec2 chromaOffset = vec2(0.0035, 0.0);
+        vec3 delayedChroma = texture(sTexture, clamp(uv - chromaOffset, vec2(0.001), vec2(0.999))).rgb;
+        color.r = mix(color.r, delayedChroma.r, 0.35);
+        color.b = mix(color.b, delayedChroma.b, 0.45);
     }
 
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
-    // 2c. Photochemical 3D Film Emulsion LUT
+    // 2d. Photochemical 3D Film Emulsion LUT
     if (uLutEnabled) {
         color = sampleHaldLut(uLutTexture, color);
     }
@@ -467,12 +525,15 @@ void main() {
     float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
     color += uShadowTint * shadowWeight;
 
-    // 8. Filmic Highlight Rolloff (Soft-shoulder exponential compression preventing harsh digital clipping)
+    // 8. Filmic Highlight Rolloff & Desaturating Shoulder (Creamy soft transitions to white)
     if (uHighlightRollOff < 0.99) {
         float knee = max(0.01, 1.0 - uHighlightRollOff);
         vec3 over = max(vec3(0.0), color - vec3(uHighlightRollOff));
         color = min(color, vec3(uHighlightRollOff)) + knee * (vec3(1.0) - exp(-over / knee));
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        
+        float highOver = max(0.0, luma - uHighlightRollOff) / knee;
+        color = mix(color, vec3(luma), clamp(highOver * 0.35, 0.0, 0.65));
     }
 
     // 9. Film Fade
@@ -480,59 +541,64 @@ void main() {
         color = color * (1.0 - uFade) + uFade;
     }
 
-    // 10. Localized Film Halation (Red-orange highlight glow spreading into adjacent emulsion)
+    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with early exit)
     if (uHalationEnabled && uHalationIntensity > 0.01) {
-        vec2 hStep = vec2(0.0035);
-        vec4 tapL = texture(sTexture, uv - vec2(hStep.x, 0.0));
-        vec4 tapR = texture(sTexture, uv + vec2(hStep.x, 0.0));
-        vec4 tapT = texture(sTexture, uv - vec2(0.0, hStep.y));
-        vec4 tapB = texture(sTexture, uv + vec2(0.0, hStep.y));
-
-        vec2 diag = hStep * 0.7071;
-        vec4 tapTL = texture(sTexture, uv + vec2(-diag.x, -diag.y));
-        vec4 tapTR = texture(sTexture, uv + vec2( diag.x, -diag.y));
-        vec4 tapBL = texture(sTexture, uv + vec2(-diag.x,  diag.y));
-        vec4 tapBR = texture(sTexture, uv + vec2( diag.x,  diag.y));
-
-        float lL = dot(tapL.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lR = dot(tapR.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lT = dot(tapT.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lB = dot(tapB.rgb, vec3(0.2126, 0.7152, 0.0722));
-
-        float lTL = dot(tapTL.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lTR = dot(tapTR.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lBL = dot(tapBL.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float lBR = dot(tapBR.rgb, vec3(0.2126, 0.7152, 0.0722));
-
         float kThresh = uHalationThreshold;
-        float hCenter = max(0.0, luma - kThresh);
-        float hCross = max(0.0, lL - kThresh) + max(0.0, lR - kThresh) + max(0.0, lT - kThresh) + max(0.0, lB - kThresh);
-        float hDiag = max(0.0, lTL - kThresh) + max(0.0, lTR - kThresh) + max(0.0, lBL - kThresh) + max(0.0, lBR - kThresh);
+        if (luma > kThresh - 0.15) {
+            vec2 hInner = vec2(0.0035);
+            vec2 hOuter = vec2(0.0080);
 
-        float spreadHighlight = (hCenter * 0.30 + hCross * 0.10 + hDiag * 0.075) / max(0.01, 1.0 - kThresh);
-        if (spreadHighlight > 0.001) {
-            vec3 haloColor = vec3(1.0, 0.28, 0.05) * (spreadHighlight * uHalationIntensity * 0.40);
-            color += haloColor;
+            vec4 tInL = texture(sTexture, clamp(uv - vec2(hInner.x, 0.0), vec2(0.001), vec2(0.999)));
+            vec4 tInR = texture(sTexture, clamp(uv + vec2(hInner.x, 0.0), vec2(0.001), vec2(0.999)));
+            vec4 tInT = texture(sTexture, clamp(uv - vec2(0.0, hInner.y), vec2(0.001), vec2(0.999)));
+            vec4 tInB = texture(sTexture, clamp(uv + vec2(0.0, hInner.y), vec2(0.001), vec2(0.999)));
+
+            vec2 diag = hOuter * 0.7071;
+            vec4 tOutTL = texture(sTexture, clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)));
+            vec4 tOutTR = texture(sTexture, clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)));
+            vec4 tOutBL = texture(sTexture, clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)));
+            vec4 tOutBR = texture(sTexture, clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)));
+
+            float lInL = dot(tInL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lInR = dot(tInR.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lInT = dot(tInT.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lInB = dot(tInB.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+            float lOutTL = dot(tOutTL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lOutTR = dot(tOutTR.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lOutBL = dot(tOutBL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lOutBR = dot(tOutBR.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+            float hCenter = max(0.0, luma - kThresh);
+            float hInnerSum = max(0.0, lInL - kThresh) + max(0.0, lInR - kThresh) + max(0.0, lInT - kThresh) + max(0.0, lInB - kThresh);
+            float hOuterSum = max(0.0, lOutTL - kThresh) + max(0.0, lOutTR - kThresh) + max(0.0, lOutBL - kThresh) + max(0.0, lOutBR - kThresh);
+
+            float spread = (hCenter * 0.35 + hInnerSum * 0.12 + hOuterSum * 0.04) / max(0.01, 1.0 - kThresh);
+            if (spread > 0.001) {
+                vec3 haloColor = vec3(1.0, 0.22, 0.04) * (spread * uHalationIntensity * 0.45);
+                color += haloColor;
+            }
         }
     }
 
     // 11. Subtle Edge Light Leak Emulation
     if (uLightLeakEnabled && uLightLeakIntensity > 0.01) {
-        float leakDist = length(uv - vec2(0.95, 0.05));
-        float leakMask = smoothstep(0.45, 0.05, leakDist);
-        vec3 leakColor = vec3(1.0, 0.50, 0.15) * (leakMask * uLightLeakIntensity * 0.50);
+        float edgeDist = length(vec2(max(0.0, uv.x - 0.75) * 2.0, max(0.0, 0.25 - uv.y) * 2.0));
+        float leakMask = smoothstep(0.40, 0.0, edgeDist);
+        vec3 leakColor = vec3(1.0, 0.45, 0.12) * (leakMask * uLightLeakIntensity * 0.35);
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
-    // 12. Lens Vignette (matches ImageProcessor.kt quadratic falloff)
+    // 12. Optical Cosine Fourth Lens Vignette
     if (uVignetteIntensity > 0.01) {
-        float dist = length(p) / 0.7071068;
-        float dn = dist / uVignetteRadius;
-        float vignette = clamp(1.0 - uVignetteIntensity * dn * dn, 0.25, 1.0);
-        color *= vignette;
+        float rNorm = length(p) / 0.7071068;
+        float rn = rNorm / uVignetteRadius;
+        float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
+        float vignette = mix(1.0, cos4Vig, clamp(uVignetteIntensity * 1.15, 0.0, 1.0));
+        color *= clamp(vignette, 0.25, 1.0);
     }
 
-    // 13. Authentic Multi-Octave Tri-Pack Film Grain (Channel dye clumping)
+    // 13. Authentic Multi-Scale Silver Halide Dye-Cloud Grain
     if (uGrainIntensity > 0.005) {
         float sRise = smoothstep(0.0, 0.42, luma);
         float hFall = smoothstep(0.42, 1.0, luma);
@@ -544,17 +610,18 @@ void main() {
         }
 
         vec2 grainCoord = uv * 1400.0 * (uGrainScale * 0.45);
+        
         float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
-        float clumpG = filmNoise(grainCoord * 0.45, uRandomSeed + 0.42);
-        float noiseG = fineG * 0.85 + clumpG * 0.15;
+        float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
+        float noiseG = fineG * 0.65 + clumpG * 0.35;
 
         float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
-        float clumpR = filmNoise(grainCoord * 0.45, uRandomSeed + 0.67);
-        float noiseR = fineR * 0.75 + clumpR * 0.25;
+        float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
+        float noiseR = fineR * 0.58 + clumpR * 0.42;
 
         float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
-        float clumpB = filmNoise(grainCoord * 0.45, uRandomSeed + 0.89);
-        float noiseB = fineB * 0.65 + clumpB * 0.35;
+        float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
+        float noiseB = fineB * 0.50 + clumpB * 0.50;
 
         vec3 grainDelta;
         if (uIsColorNoise) {
@@ -563,13 +630,18 @@ void main() {
             grainDelta = mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
         }
 
-        color += grainDelta * (grainWeight * uGrainIntensity * 0.42);
+        float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
+        color += grainDelta * (grainWeight * uGrainIntensity * 0.40 * grainDamp);
     }
 
-    // 13. Retro Camcorder Scanlines
+    // 14. Retro Camcorder Tape Texture & Line Modulation
     if (uScanlineIntensity > 0.01) {
-        float scanline = sin(uv.y * 1000.0) * 0.5 + 0.5;
-        color *= mix(1.0, 0.82 + 0.18 * scanline, uScanlineIntensity);
+        vec2 tapeCoord = vec2(uv.x * 1200.0 * 0.75, floor(uv.y * 240.0));
+        float tapeNoise = filmNoise(tapeCoord, uRandomSeed);
+        color += vec3(tapeNoise * 0.05 * uScanlineIntensity);
+
+        float scanline = sin(uv.y * 480.0 * 3.14159) * 0.5 + 0.5;
+        color *= mix(1.0, 0.88 + 0.12 * scanline, uScanlineIntensity);
     }
 
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
