@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.craftcam.app.camera.UserTuningConfig
+import com.craftcam.app.model.GrainBlendMode
 import com.craftcam.app.ui.theme.*
 
 @Composable
@@ -213,10 +214,10 @@ fun ColorTuningSheet(
                     }
                 }
 
-                // 6b. Developer Debug Grain Asset Comparison (Debug builds only)
+                // 6b. Developer Debug Controls (Debug builds only)
                 if (isDebug) {
                     item {
-                        Text("DEBUG • GRAIN ASSET COMPARISON", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = VintageAmber)
+                        Text("DEBUG • GRAIN ASSET SELECTION", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = VintageAmber)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("Switch physical scanned emulsion texture in real-time", fontSize = 10.sp, color = TextMuted)
                         Spacer(modifier = Modifier.height(6.dp))
@@ -226,17 +227,17 @@ fun ColorTuningSheet(
                         ) {
                             val assets = listOf(
                                 "PRESET DEFAULT" to null,
-                                "Kodak 35mm" to "grains/grain_dclassic.jpg",
-                                "Warm 35mm" to "grains/grain_ou.jpg",
-                                "Push LowLight" to "grains/grain_ou_lowlight.jpg",
-                                "Hasselblad KV88" to "grains/grain_kv88.jpg",
-                                "CPM35 Negative" to "grains/grain_cpm35.jpg",
-                                "6x7 Portrait" to "grains/grain_s67.jpg",
-                                "Instant Packfilm" to "grains/grain_instc.jpg",
-                                "Disposable 540" to "grains/grain540_01.jpg",
-                                "Super 8mm" to "grains/grain8mm_01.jpg",
-                                "Digicam CCD" to "grains/grain_classicu.jpg",
-                                "Toy Cam Hoga" to "grains/grain_hoga.jpg"
+                                "Kodak 35mm (1125x1500)" to "grains/grain_dclassic.jpg",
+                                "Warm 35mm (2043x3070)" to "grains/grain_ou.jpg",
+                                "Push LowLight (2043x3070)" to "grains/grain_ou_lowlight.jpg",
+                                "Hasselblad KV88 (3024x3024)" to "grains/grain_kv88.jpg",
+                                "CPM35 Negative (2075x3130)" to "grains/grain_cpm35.jpg",
+                                "6x7 Portrait (1080x1360)" to "grains/grain_s67.jpg",
+                                "Instant Packfilm (1000x1500)" to "grains/grain_instc.jpg",
+                                "Disposable 540 (960x540)" to "grains/grain540_01.jpg",
+                                "Super 8mm (960x540)" to "grains/grain8mm_01.jpg",
+                                "Digicam CCD (1125x1500)" to "grains/grain_classicu.jpg",
+                                "Toy Cam Hoga (1080x1080)" to "grains/grain_hoga.jpg"
                             )
                             items(assets.size) { idx ->
                                 val (title, path) = assets[idx]
@@ -244,6 +245,47 @@ fun ColorTuningSheet(
                                 GrainOptionPill(title, selected) {
                                     onTuningChange { it.copy(debugGrainAsset = path) }
                                 }
+                            }
+                        }
+                    }
+
+                    item {
+                        Text("DEBUG • GRAIN BLEND MODE", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = VintageAmber)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GrainOptionPill("PRESET", tuning.debugGrainBlendMode == null) {
+                                onTuningChange { it.copy(debugGrainBlendMode = null) }
+                            }
+                            GrainOptionPill("OVERLAY", tuning.debugGrainBlendMode == GrainBlendMode.OVERLAY) {
+                                onTuningChange { it.copy(debugGrainBlendMode = GrainBlendMode.OVERLAY) }
+                            }
+                            GrainOptionPill("SCREEN", tuning.debugGrainBlendMode == GrainBlendMode.SCREEN) {
+                                onTuningChange { it.copy(debugGrainBlendMode = GrainBlendMode.SCREEN) }
+                            }
+                            GrainOptionPill("MULTIPLY", tuning.debugGrainBlendMode == GrainBlendMode.MULTIPLY) {
+                                onTuningChange { it.copy(debugGrainBlendMode = GrainBlendMode.MULTIPLY) }
+                            }
+                            GrainOptionPill("NORMAL", tuning.debugGrainBlendMode == GrainBlendMode.NORMAL) {
+                                onTuningChange { it.copy(debugGrainBlendMode = GrainBlendMode.NORMAL) }
+                            }
+                        }
+                    }
+
+                    item {
+                        Text("DEBUG • PROCEDURAL MICRO-HALIDE", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = VintageAmber)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GrainOptionPill("OFF (0%)", tuning.debugProceduralGrainBoost == 0f) {
+                                onTuningChange { it.copy(debugProceduralGrainBoost = 0f) }
+                            }
+                            GrainOptionPill("25%", tuning.debugProceduralGrainBoost == 0.25f) {
+                                onTuningChange { it.copy(debugProceduralGrainBoost = 0.25f) }
+                            }
+                            GrainOptionPill("50%", tuning.debugProceduralGrainBoost == 0.50f) {
+                                onTuningChange { it.copy(debugProceduralGrainBoost = 0.50f) }
+                            }
+                            GrainOptionPill("100%", tuning.debugProceduralGrainBoost == 1.0f) {
+                                onTuningChange { it.copy(debugProceduralGrainBoost = 1.0f) }
                             }
                         }
                     }

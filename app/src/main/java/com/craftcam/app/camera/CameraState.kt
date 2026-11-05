@@ -2,6 +2,7 @@ package com.craftcam.app.camera
 
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import com.craftcam.app.model.GrainBlendMode
 
 enum class AspectRatioMode(val displayName: String, val ratio: Float) {
     RATIO_4_3("4:3", 4f / 3f),
@@ -35,7 +36,9 @@ data class UserTuningConfig(
     val softLensDiffusion: Boolean = false,
     val dateStampEnabled: Boolean = true,
     val customYear: String? = null,
-    val debugGrainAsset: String? = null // Developer debug grain asset override (debug mode only)
+    val debugGrainAsset: String? = null, // Developer debug grain asset override (debug mode only)
+    val debugGrainBlendMode: GrainBlendMode? = null, // Developer debug blend mode override (debug mode only)
+    val debugProceduralGrainBoost: Float = 0.0f // 0.0 (OFF), 0.25, 0.50, 1.0 (subtle procedural overlay)
 )
 
 data class CameraUIState(

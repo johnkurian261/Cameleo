@@ -21,14 +21,30 @@ data class ColorGradingConfig(
     val shadowTintB: Float = 0.0f
 )
 
+enum class GrainBlendMode {
+    OVERLAY,
+    SCREEN,
+    MULTIPLY,
+    NORMAL
+}
+
+enum class GrainSourceMode {
+    SCANNED_ONLY,
+    SCANNED_PLUS_PROCEDURAL,
+    PROCEDURAL_ONLY
+}
+
 data class GrainConfig(
     val enabled: Boolean = true,
     val intensity: Float = 0.12f,
     val scale: Float = 1.0f,
     val isColorNoise: Boolean = false,
     val assetPath: String? = null,
-    val blendMode: String = "overlay", // "overlay", "screen", "soft_light"
-    val rotation: Float = 0.0f
+    val blendMode: GrainBlendMode = GrainBlendMode.OVERLAY,
+    val shadowStrength: Float = 0.28f,
+    val highlightStrength: Float = 0.12f,
+    val rotation: Float = 0.0f,
+    val sourceMode: GrainSourceMode = GrainSourceMode.SCANNED_ONLY
 )
 
 data class LensConfig(

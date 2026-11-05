@@ -14,6 +14,8 @@ import com.craftcam.app.camera.AspectRatioMode
 import com.craftcam.app.camera.UserTuningConfig
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.model.GrainBlendMode
+import com.craftcam.app.model.GrainSourceMode
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
@@ -272,7 +274,11 @@ object ImageProcessor {
             val gh = grainData?.second?.second ?: 1
             val grainScale = preset.grain.scale.coerceIn(0.5f, 3.0f)
             val grainStrength = effectiveGrain * 0.45f
-            val isScreenBlend = preset.grain.blendMode.equals("screen", ignoreCase = true)
+            val blendMode = tuning.debugGrainBlendMode ?: preset.grain.blendMode
+            val shadowStrength = preset.grain.shadowStrength
+            val highlightStrength = preset.grain.highlightStrength
+            val proceduralBoost = tuning.debugProceduralGrainBoost.coerceIn(0.0f, 1.0f)
+            val useHybridProcedural = proceduralBoost > 0.01f || preset.grain.sourceMode == GrainSourceMode.SCANNED_PLUS_PROCEDURAL
 
             // Anti-Tiling: Derive deterministic per-capture pseudo-random spatial offset & mirroring
             val captureSeed = (System.currentTimeMillis() xor (width.toLong() shl 16) xor height.toLong())
@@ -503,9 +509,12 @@ object ImageProcessor {
                             val gl = ((rG * 0.299f + gG * 0.587f + bG * 0.114f) - 128f) * (1.0f / 128f)
                             val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                             
-                            val sRise = ((postLuma / 0.42f).coerceIn(0f, 1f)).let { t -> t * t * (3f - 2f * t) }
-                            val hFall = (((postLuma - 0.42f) / 0.58f).coerceIn(0f, 1f)).let { t -> t * t * (3f - 2f * t) }
-                            var grainWeight = (0.28f + 0.72f * sRise) * (1.0f - 0.88f * hFall)
+                            // Luminance-Aware Grain Mask (Smoothstep response in shadows and highlights)
+                            val shadowT = (postLuma / 0.35f).coerceIn(0.0f, 1.0f)
+                            val shadowMask = shadowT * shadowT * (3.0f - 2.0f * shadowT)
+                            val highlightT = ((postLuma - 0.65f) / 0.35f).coerceIn(0.0f, 1.0f)
+                            val highlightMask = 1.0f - (highlightT * highlightT * (3.0f - 2.0f * highlightT))
+                            var grainWeight = (shadowStrength + (1.0f - shadowStrength) * shadowMask) * (highlightStrength + (1.0f - highlightStrength) * highlightMask)
 
                             // Flattering skin protection: gently attenuate grain on smooth skin
                             if (r > g && g > b && r > 0.25f && r < 0.90f) {
@@ -513,39 +522,70 @@ object ImageProcessor {
                                 grainWeight *= (1.0f - 0.35f * skinWeight)
                             }
 
-                            if (isScreenBlend) {
-                                // SCREEN mode for push-processed / low-light film grain emulsion lift
-                                val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
-                                val screenFactor = grainStrength * grainWeight * 0.85f
-                                if (preset.grain.isColorNoise) {
-                                    val rNorm = ((((rG - 128f) * (1.0f / 128f) + 1.0f) * 0.5f)).coerceIn(0f, 1f)
-                                    val bNorm = ((((bG - 128f) * (1.0f / 128f) + 1.0f) * 0.5f)).coerceIn(0f, 1f)
-                                    r = 1.0f - (1.0f - r) * (1.0f - rNorm * screenFactor)
-                                    g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
-                                    b = 1.0f - (1.0f - b) * (1.0f - bNorm * screenFactor)
-                                } else {
-                                    r = 1.0f - (1.0f - r) * (1.0f - grainNorm * screenFactor)
-                                    g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
-                                    b = 1.0f - (1.0f - b) * (1.0f - grainNorm * screenFactor)
+                            // Blend Mode Selection (OVERLAY, SCREEN, MULTIPLY, NORMAL)
+                            when (blendMode) {
+                                GrainBlendMode.SCREEN -> {
+                                    // SCREEN mode for push-processed / low-light film grain emulsion lift
+                                    val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                    val screenFactor = grainStrength * grainWeight * 0.85f
+                                    if (preset.grain.isColorNoise) {
+                                        val rNorm = ((((rG - 128f) * (1.0f / 128f) + 1.0f) * 0.5f)).coerceIn(0f, 1f)
+                                        val bNorm = ((((bG - 128f) * (1.0f / 128f) + 1.0f) * 0.5f)).coerceIn(0f, 1f)
+                                        r = 1.0f - (1.0f - r) * (1.0f - rNorm * screenFactor)
+                                        g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
+                                        b = 1.0f - (1.0f - b) * (1.0f - bNorm * screenFactor)
+                                    } else {
+                                        r = 1.0f - (1.0f - r) * (1.0f - grainNorm * screenFactor)
+                                        g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
+                                        b = 1.0f - (1.0f - b) * (1.0f - grainNorm * screenFactor)
+                                    }
                                 }
-                            } else {
-                                // OVERLAY mode for standard photographic chemical halide modulation
-                                val deltaG = gl * grainStrength * grainWeight
-                                val deltaR = gl * (grainStrength * 1.08f) * grainWeight
-                                val deltaB = gl * (grainStrength * 0.92f) * grainWeight
+                                GrainBlendMode.MULTIPLY -> {
+                                    // MULTIPLY mode for negative exposure printing
+                                    val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                    val multFactor = grainStrength * grainWeight * 0.85f
+                                    val grainMult = 1.0f - (1.0f - grainNorm) * multFactor
+                                    r *= grainMult
+                                    g *= grainMult
+                                    b *= grainMult
+                                }
+                                GrainBlendMode.NORMAL -> {
+                                    // NORMAL mode for gentle alpha overlay
+                                    val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                    val normFactor = grainStrength * grainWeight * 0.45f
+                                    r = r * (1.0f - normFactor) + grainNorm * normFactor
+                                    g = g * (1.0f - normFactor) + grainNorm * normFactor
+                                    b = b * (1.0f - normFactor) + grainNorm * normFactor
+                                }
+                                GrainBlendMode.OVERLAY -> {
+                                    // OVERLAY mode for standard photographic chemical halide modulation
+                                    val deltaG = gl * grainStrength * grainWeight
+                                    val deltaR = gl * (grainStrength * 1.08f) * grainWeight
+                                    val deltaB = gl * (grainStrength * 0.92f) * grainWeight
 
-                                if (preset.grain.isColorNoise) {
-                                    val rChroma = ((rG - 128f) * (1.0f / 128f)) * grainStrength * grainWeight * 0.40f
-                                    val bChroma = ((bG - 128f) * (1.0f / 128f)) * grainStrength * grainWeight * 0.40f
-                                    r += deltaR + rChroma
-                                    g += deltaG
-                                    b += deltaB + bChroma
-                                } else {
-                                    val dyeCloud = gl * 0.12f * grainStrength * grainWeight
-                                    r += deltaR + dyeCloud
-                                    g += deltaG
-                                    b += deltaB - dyeCloud
+                                    if (preset.grain.isColorNoise) {
+                                        val rChroma = ((rG - 128f) * (1.0f / 128f)) * grainStrength * grainWeight * 0.40f
+                                        val bChroma = ((bG - 128f) * (1.0f / 128f)) * grainStrength * grainWeight * 0.40f
+                                        r += deltaR + rChroma
+                                        g += deltaG
+                                        b += deltaB + bChroma
+                                    } else {
+                                        val dyeCloud = gl * 0.12f * grainStrength * grainWeight
+                                        r += deltaR + dyeCloud
+                                        g += deltaG
+                                        b += deltaB - dyeCloud
+                                    }
                                 }
+                            }
+
+                            // Optional subtle hybrid procedural micro-halide (Section 14)
+                            if (useHybridProcedural) {
+                                val hCoord = (pxX * 12.9898f + pxY * 78.233f) % 3.14159f
+                                val pNoise = (kotlin.math.sin(hCoord) * 43758.5453f).let { it - kotlin.math.floor(it) - 0.5f }
+                                val pDelta = pNoise * grainStrength * grainWeight * (proceduralBoost.takeIf { it > 0.01f } ?: 0.15f)
+                                r += pDelta
+                                g += pDelta
+                                b += pDelta
                             }
                         }
 

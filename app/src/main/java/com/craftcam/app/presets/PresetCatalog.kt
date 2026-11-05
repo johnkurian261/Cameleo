@@ -26,7 +26,7 @@ object PresetCatalog {
                 shadowTintG = 0.03f,
                 shadowTintB = 0.05f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.15f, assetPath = "grains/grain_dclassic.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.15f, assetPath = "grains/grain_dclassic.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.12f),
             lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.85f, chromaticAberration = 0.003f, softness = 0.12f),
             halation = HalationConfig(enabled = true, threshold = 0.82f, intensity = 0.25f, radius = 14f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -28),
@@ -52,7 +52,7 @@ object PresetCatalog {
                 shadowTintG = 0.04f,
                 shadowTintB = 0.01f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 1.10f, assetPath = "grains/grain_ou.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 1.10f, assetPath = "grains/grain_ou.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.25f, highlightStrength = 0.10f),
             lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.004f, softness = 0.15f),
             halation = HalationConfig(enabled = true, threshold = 0.86f, intensity = 0.32f, radius = 16f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -30)
@@ -74,7 +74,7 @@ object PresetCatalog {
                 fade = 0.08f,
                 highlightRollOff = 0.72f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.11f, scale = 0.90f, assetPath = "grains/grain_s67.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.11f, scale = 0.90f, assetPath = "grains/grain_s67.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.18f, highlightStrength = 0.08f),
             lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.90f, chromaticAberration = 0.002f, softness = 0.30f),
             halation = HalationConfig(enabled = true, threshold = 0.76f, intensity = 0.22f, radius = 18f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MINIMAL_WHITE)
@@ -98,7 +98,7 @@ object PresetCatalog {
                 shadowTintG = 0.06f,
                 shadowTintB = 0.01f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.25f, isColorNoise = true, assetPath = "grains/grain_dexp.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.25f, isColorNoise = true, assetPath = "grains/grain_dexp.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.14f),
             lens = LensConfig(vignetteIntensity = 0.42f, vignetteRadius = 0.75f, chromaticAberration = 0.005f, softness = 0.14f),
             halation = HalationConfig(enabled = true, threshold = 0.80f, intensity = 0.30f, radius = 15f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -35)
@@ -122,7 +122,7 @@ object PresetCatalog {
                 shadowTintG = 0.04f,
                 shadowTintB = 0.08f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.15f, scale = 1.00f, assetPath = "grains/grain_d3d1.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.15f, scale = 1.00f, assetPath = "grains/grain_d3d1.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.22f, highlightStrength = 0.10f),
             lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.004f, softness = 0.12f),
             halation = HalationConfig(enabled = true, threshold = 0.80f, intensity = 0.42f, radius = 20f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE)
@@ -144,7 +144,7 @@ object PresetCatalog {
                 gamma = 0.92f,
                 fade = 0.01f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.12f, scale = 0.95f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.12f, scale = 0.95f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.22f, highlightStrength = 0.14f),
             lens = LensConfig(vignetteIntensity = 0.55f, vignetteRadius = 0.65f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -20)
         ),
@@ -163,7 +163,7 @@ object PresetCatalog {
                 tint = 0.22f,
                 fade = 0.03f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.10f, scale = 0.95f, isColorNoise = true, assetPath = "grains/grain_classicu.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.10f, scale = 0.95f, isColorNoise = true, assetPath = "grains/grain_classicu.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.20f, highlightStrength = 0.15f),
             lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.80f, chromaticAberration = 0.004f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -22)
         ),
@@ -182,7 +182,7 @@ object PresetCatalog {
                 fade = 0.02f,
                 highlightRollOff = 0.82f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.08f, scale = 0.85f, isColorNoise = false, assetPath = "grains/grain_ccdr.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.08f, scale = 0.85f, isColorNoise = false, assetPath = "grains/grain_ccdr.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.18f, highlightStrength = 0.12f),
             lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.88f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -20)
         ),
@@ -207,7 +207,7 @@ object PresetCatalog {
                 shadowTintG = 0.04f,
                 shadowTintB = 0.06f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.24f, scale = 1.35f, assetPath = "grains/grain_dexp2.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.24f, scale = 1.35f, assetPath = "grains/grain_dexp2.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.35f, highlightStrength = 0.18f),
             lens = LensConfig(vignetteIntensity = 0.72f, vignetteRadius = 0.65f, chromaticAberration = 0.010f, barrelDistortion = -0.08f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.35f, warmColorBias = 0.95f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -27)
@@ -227,7 +227,7 @@ object PresetCatalog {
                 gamma = 0.90f,
                 fade = 0.03f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.23f, scale = 1.30f, assetPath = "grains/grain_cpm35.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.23f, scale = 1.30f, assetPath = "grains/grain_cpm35.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.32f, highlightStrength = 0.16f),
             lens = LensConfig(vignetteIntensity = 0.80f, vignetteRadius = 0.58f, chromaticAberration = 0.009f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.40f, warmColorBias = 0.90f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -25)
@@ -251,7 +251,7 @@ object PresetCatalog {
                 shadowTintG = 0.03f,
                 shadowTintB = -0.02f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.30f, assetPath = "grains/grain540_01.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.30f, assetPath = "grains/grain540_01.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.14f),
             lens = LensConfig(vignetteIntensity = 0.68f, vignetteRadius = 0.68f, chromaticAberration = 0.008f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.50f, warmColorBias = 1.0f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -29)
@@ -274,7 +274,7 @@ object PresetCatalog {
                 shadowTintG = 0.07f,
                 shadowTintB = 0.03f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.50f, isColorNoise = true, assetPath = "grains/grain_ou_lowlight.jpg", blendMode = "screen"),
+            grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.50f, isColorNoise = true, assetPath = "grains/grain_ou_lowlight.jpg", blendMode = GrainBlendMode.SCREEN, shadowStrength = 0.55f, highlightStrength = 0.25f),
             lens = LensConfig(vignetteIntensity = 0.75f, vignetteRadius = 0.62f, chromaticAberration = 0.012f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -26)
         ),
@@ -298,7 +298,7 @@ object PresetCatalog {
                 shadowTintG = 0.07f,
                 shadowTintB = 0.04f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.17f, scale = 1.15f, assetPath = "grains/grain_instc.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.17f, scale = 1.15f, assetPath = "grains/grain_instc.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.24f, highlightStrength = 0.10f),
             lens = LensConfig(vignetteIntensity = 0.52f, vignetteRadius = 0.72f),
             border = BorderConfig(style = BorderStyle.POLAROID_WHITE_CHIN),
             dateStamp = DateStampConfig(enabled = false)
@@ -324,7 +324,7 @@ object PresetCatalog {
                 shadowTintG = 0.05f,
                 shadowTintB = 0.03f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.80f, isColorNoise = true, assetPath = "grains/grain8mm_01.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.80f, isColorNoise = true, assetPath = "grains/grain8mm_01.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.35f, highlightStrength = 0.20f),
             lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.012f, softness = 0.32f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -35)
@@ -345,7 +345,7 @@ object PresetCatalog {
                 fade = 0.08f,
                 highlightRollOff = 0.80f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.60f, assetPath = "grains/grain_16mm.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.60f, assetPath = "grains/grain_16mm.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.18f),
             lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.008f, softness = 0.2f),
             border = BorderConfig(style = BorderStyle.ROUNDED_8MM),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MONOSPACE_DOT_MATRIX, customYearOffset = -30)
@@ -365,7 +365,7 @@ object PresetCatalog {
                 tint = 0.06f,
                 fade = 0.04f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.50f, isColorNoise = true, assetPath = "grains/grain_dcr_01.jpg", blendMode = "overlay"),
+            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.50f, isColorNoise = true, assetPath = "grains/grain_dcr_01.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.25f, highlightStrength = 0.15f),
             lens = LensConfig(vignetteIntensity = 0.30f, vignetteRadius = 0.85f, chromaticAberration = 0.006f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -27)
