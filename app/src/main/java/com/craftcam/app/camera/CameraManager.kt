@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import kotlin.math.roundToInt
 import android.util.Size
 import android.view.Surface
 import android.view.WindowManager
@@ -294,7 +295,13 @@ class CameraManager(private val context: Context) {
 
     fun setExposureIndex(index: Int) {
         val clamped = index.coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
-        _uiState.update { it.copy(exposureIndex = clamped) }
+        val evVal = clamped * _uiState.value.exposureStep
+        _uiState.update {
+            it.copy(
+                exposureIndex = clamped,
+                tuning = it.tuning.copy(exposureCompensation = evVal)
+            )
+        }
         camera?.cameraControl?.setExposureCompensationIndex(clamped)
     }
 
@@ -322,16 +329,28 @@ class CameraManager(private val context: Context) {
 
     fun updateTuning(update: (UserTuningConfig) -> UserTuningConfig) {
         _uiState.update {
-            val updated = it.copy(tuning = update(it.tuning))
-            glRenderer?.updateTuning(updated.tuning)
-            updated
+            val updatedTuning = update(it.tuning)
+            if (updatedTuning.exposureCompensation != it.tuning.exposureCompensation) {
+                val step = if (it.exposureStep > 0f) it.exposureStep else 0.5f
+                val targetIndex = (updatedTuning.exposureCompensation / step).roundToInt()
+                    .coerceIn(it.minExposureIndex, it.maxExposureIndex)
+                camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
+                val updated = it.copy(tuning = updatedTuning, exposureIndex = targetIndex)
+                glRenderer?.updateTuning(updated.tuning)
+                updated
+            } else {
+                val updated = it.copy(tuning = updatedTuning)
+                glRenderer?.updateTuning(updated.tuning)
+                updated
+            }
         }
     }
 
     fun resetTuning() {
         val defaultTuning = UserTuningConfig()
         glRenderer?.updateTuning(defaultTuning)
-        _uiState.update { it.copy(tuning = defaultTuning) }
+        camera?.cameraControl?.setExposureCompensationIndex(0)
+        _uiState.update { it.copy(tuning = defaultTuning, exposureIndex = 0) }
     }
 
     fun tapToFocus(tapX: Float, tapY: Float) {

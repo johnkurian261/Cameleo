@@ -9,7 +9,13 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -76,6 +82,7 @@ fun ViewfinderScreen(
     }
 
     var showTuningSheet by remember { mutableStateOf(false) }
+    var showExposureSlider by remember { mutableStateOf(false) }
     var countdown by remember { mutableStateOf<Int?>(null) }
     var switchRotation by remember { mutableStateOf(0f) }
     val animatedRotation by animateFloatAsState(targetValue = switchRotation, label = "switch_rot")
@@ -115,14 +122,22 @@ fun ViewfinderScreen(
             }
         )
 
-        // 2. Viewfinder Overlay (Vintage Simulation, Matte, Grid, Tap-To-Focus)
+        // 2. Viewfinder Overlay (Vintage Simulation, Matte, Grid, Tap-To-Focus + Vertical Exposure Drag)
         ViewfinderOverlay(
             modifier = Modifier.fillMaxSize(),
             preset = selectedPreset,
             aspectRatio = uiState.aspectRatio,
             showGrid = uiState.showGrid,
+            exposureIndex = uiState.exposureIndex,
+            minExposureIndex = uiState.minExposureIndex,
+            maxExposureIndex = uiState.maxExposureIndex,
+            exposureStep = uiState.exposureStep,
             onTapFocus = { tapX, tapY ->
                 cameraManager.tapToFocus(tapX, tapY)
+            },
+            onExposureChange = { newIdx ->
+                cameraManager.setExposureIndex(newIdx)
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             }
         )
 
@@ -137,6 +152,10 @@ fun ViewfinderScreen(
                 aspectRatio = uiState.aspectRatio,
                 timerSeconds = uiState.timerSeconds,
                 showGrid = uiState.showGrid,
+                exposureIndex = uiState.exposureIndex,
+                exposureStep = uiState.exposureStep,
+                isExposureSliderVisible = showExposureSlider,
+                isTuned = isTuned,
                 onFlashToggle = {
                     val next = when (uiState.flashMode) {
                         ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
@@ -163,13 +182,39 @@ fun ViewfinderScreen(
                     cameraManager.setTimerSeconds(next)
                 },
                 onGridToggle = { cameraManager.toggleGrid() },
-                isTuned = isTuned,
+                onExposureToggle = {
+                    showExposureSlider = !showExposureSlider
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                },
                 onTuneClick = {
                     showTuningSheet = !showTuningSheet
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 },
                 onSettingsClick = onNavigateToSettings
             )
+
+            // Quick Brightness / Exposure Slider (Dazz Cam style ☀️ slider)
+            AnimatedVisibility(
+                visible = showExposureSlider,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                QuickExposureSlider(
+                    exposureIndex = uiState.exposureIndex,
+                    minExposureIndex = uiState.minExposureIndex,
+                    maxExposureIndex = uiState.maxExposureIndex,
+                    exposureStep = uiState.exposureStep,
+                    onExposureChange = { newIdx ->
+                        cameraManager.setExposureIndex(newIdx)
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    },
+                    onReset = {
+                        cameraManager.setExposureIndex(0)
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    },
+                    onClose = { showExposureSlider = false }
+                )
+            }
 
             // Vintage camera model badge or Recording Indicator
             if (uiState.isRecording) {
@@ -200,8 +245,11 @@ fun ViewfinderScreen(
                         .padding(horizontal = 14.dp, vertical = 4.dp)
                         .align(Alignment.CenterHorizontally)
                 ) {
+                    val evVal = uiState.exposureIndex * uiState.exposureStep
+                    val evSign = if (evVal > 0f) "+" else ""
+                    val evBadge = if (uiState.exposureIndex != 0) "  •  $evSign${String.format(Locale.US, "%.1f EV", evVal)}" else ""
                     Text(
-                        text = "${selectedPreset.name.uppercase()} • ${selectedPreset.year}",
+                        text = "${selectedPreset.name.uppercase()} • ${selectedPreset.year}$evBadge",
                         color = VintageAmber,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,

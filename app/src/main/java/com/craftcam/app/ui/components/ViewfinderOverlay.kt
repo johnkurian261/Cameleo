@@ -3,11 +3,13 @@ package com.craftcam.app.ui.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
@@ -15,6 +17,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.craftcam.app.camera.AspectRatioMode
@@ -22,8 +25,11 @@ import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.ui.theme.CameraBlack
 import com.craftcam.app.ui.theme.VintageAmber
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.*
+import kotlin.math.abs
 
 @Composable
 fun ViewfinderOverlay(
@@ -31,27 +37,100 @@ fun ViewfinderOverlay(
     preset: CameraPreset,
     aspectRatio: AspectRatioMode,
     showGrid: Boolean,
-    onTapFocus: (Float, Float) -> Unit
+    exposureIndex: Int = 0,
+    minExposureIndex: Int = -4,
+    maxExposureIndex: Int = 4,
+    exposureStep: Float = 0.5f,
+    onTapFocus: (Float, Float) -> Unit,
+    onExposureChange: (Int) -> Unit = {}
 ) {
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
-    val focusScale = remember { Animatable(1.5f) }
-    val focusAlpha = remember { Animatable(1.0f) }
+    val focusScale = remember { Animatable(1.35f) }
+    val focusAlpha = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    var dismissJob by remember { mutableStateOf<Job?>(null) }
+
+    fun scheduleDismiss() {
+        dismissJob?.cancel()
+        dismissJob = scope.launch {
+            delay(3500)
+            focusAlpha.animateTo(0f, tween(500))
+            focusPoint = null
+        }
+    }
+
+    val density = LocalDensity.current
+    val moveThresholdPx = with(density) { 60.dp.toPx() }
+    val pixelsPerStep = with(density) { 16.dp.toPx() }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    focusPoint = offset
-                    onTapFocus(offset.x, offset.y)
+            .pointerInput(minExposureIndex, maxExposureIndex, exposureIndex) {
+                val touchSlop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val startPos = down.position
 
-                    scope.launch {
-                        focusScale.snapTo(1.5f)
-                        focusAlpha.snapTo(1.0f)
-                        focusScale.animateTo(1.0f, tween(250))
-                        focusAlpha.animateTo(0.0f, tween(800, delayMillis = 600))
-                        focusPoint = null
+                    var isDrag = false
+                    var totalDragY = 0f
+
+                    if (focusPoint == null) {
+                        focusPoint = startPos
+                        onTapFocus(startPos.x, startPos.y)
+                        scope.launch {
+                            focusScale.snapTo(1.35f)
+                            focusAlpha.snapTo(1.0f)
+                            focusScale.animateTo(1.0f, tween(180))
+                        }
+                    } else {
+                        val dist = (startPos - focusPoint!!).getDistance()
+                        if (dist > moveThresholdPx) {
+                            focusPoint = startPos
+                            onTapFocus(startPos.x, startPos.y)
+                            scope.launch {
+                                focusScale.snapTo(1.35f)
+                                focusAlpha.snapTo(1.0f)
+                                focusScale.animateTo(1.0f, tween(180))
+                            }
+                        } else {
+                            scope.launch {
+                                focusAlpha.snapTo(1.0f)
+                            }
+                        }
+                    }
+                    scheduleDismiss()
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) {
+                            scheduleDismiss()
+                            break
+                        }
+
+                        val dy = change.position.y - startPos.y
+                        val dx = change.position.x - startPos.x
+                        if (!isDrag && (abs(dy) > touchSlop || abs(dx) > touchSlop)) {
+                            isDrag = true
+                        }
+
+                        if (isDrag) {
+                            change.consume()
+                            scheduleDismiss()
+
+                            val dragDeltaY = change.position.y - change.previousPosition.y
+                            totalDragY -= dragDeltaY // Dragging up increases exposure
+
+                            val stepsDelta = (totalDragY / pixelsPerStep).toInt()
+                            if (stepsDelta != 0) {
+                                totalDragY -= stepsDelta * pixelsPerStep
+                                val targetIndex = (exposureIndex + stepsDelta).coerceIn(minExposureIndex, maxExposureIndex)
+                                if (targetIndex != exposureIndex) {
+                                    onExposureChange(targetIndex)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -101,7 +180,7 @@ fun ViewfinderOverlay(
                 drawPath(outerPath, Color(0xFF0A0A0C))
             }
 
-            // 5. Authentic Live Date Stamp in Viewfinder
+            // 3. Authentic Live Date Stamp in Viewfinder
             if (preset.dateStamp?.enabled == true) {
                 val cal = Calendar.getInstance()
                 val offset = preset.dateStamp.customYearOffset
@@ -132,7 +211,7 @@ fun ViewfinderOverlay(
                 )
             }
 
-            // 6. Camcorder OSD & Scanlines
+            // 4. Camcorder OSD & Scanlines
             if (isCamcorder) {
                 val cal = Calendar.getInstance()
                 val dateStr = java.text.SimpleDateFormat("MMM. dd yyyy", Locale.US).format(cal.time).uppercase(Locale.US)
@@ -162,7 +241,7 @@ fun ViewfinderOverlay(
                 )
             }
 
-            // 7. Draw Matte / Letterboxing Bars
+            // 5. Draw Matte / Letterboxing Bars
             if (top > 0) {
                 drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(canvasW, top))
                 drawRect(color = CameraBlack, topLeft = Offset(0f, bottom), size = Size(canvasW, canvasH - bottom))
@@ -172,7 +251,7 @@ fun ViewfinderOverlay(
                 drawRect(color = CameraBlack, topLeft = Offset(right, 0f), size = Size(canvasW - right, canvasH))
             }
 
-            // 8. Draw Rule of Thirds Grid if enabled
+            // 6. Draw Rule of Thirds Grid if enabled
             if (showGrid) {
                 val gridColor = Color.White.copy(alpha = 0.22f)
                 val strokeWidth = 1.dp.toPx()
@@ -190,7 +269,7 @@ fun ViewfinderOverlay(
                 drawLine(gridColor, Offset(left, row2), Offset(right, row2), strokeWidth)
             }
 
-            // 9. Draw Viewfinder Frame Border
+            // 7. Draw Viewfinder Frame Border
             drawRect(
                 color = Color.White.copy(alpha = 0.15f),
                 topLeft = Offset(left, top),
@@ -198,22 +277,108 @@ fun ViewfinderOverlay(
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // 10. Draw Tap-to-Focus Reticle
+            // 8. Draw Tap-to-Focus Reticle & Vertical Sun Brightness Slider (Dazz Cam Style)
             focusPoint?.let { pt ->
-                val ringRadius = 32.dp.toPx() * focusScale.value
-                drawCircle(
-                    color = VintageAmber.copy(alpha = focusAlpha.value),
-                    radius = ringRadius,
-                    center = pt,
-                    style = Stroke(width = 1.5.dp.toPx())
-                )
-                drawCircle(
-                    color = VintageAmber.copy(alpha = focusAlpha.value * 0.8f),
-                    radius = 3.dp.toPx(),
-                    center = pt
-                )
+                val alpha = focusAlpha.value
+                if (alpha > 0.01f) {
+                    val boxSize = 52.dp.toPx() * focusScale.value
+                    val halfBox = boxSize / 2f
+
+                    // Clamped focus center to keep reticle and slider fully visible
+                    val clampedPtX = pt.x.coerceIn(left + halfBox + 10.dp.toPx(), right - halfBox - 60.dp.toPx())
+                    val clampedPtY = pt.y.coerceIn(top + halfBox + 10.dp.toPx(), bottom - halfBox - 10.dp.toPx())
+
+                    // Focus frame: clean rounded square with corner brackets in VintageAmber
+                    drawRoundRect(
+                        color = VintageAmber.copy(alpha = alpha * 0.90f),
+                        topLeft = Offset(clampedPtX - halfBox, clampedPtY - halfBox),
+                        size = Size(boxSize, boxSize),
+                        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+
+                    // Small center dot
+                    drawCircle(
+                        color = VintageAmber.copy(alpha = alpha * 0.70f),
+                        radius = 2.dp.toPx(),
+                        center = Offset(clampedPtX, clampedPtY)
+                    )
+
+                    // Vertical Exposure Track & Sun Handle
+                    val trackHeight = 94.dp.toPx()
+                    val placeOnRight = (clampedPtX + halfBox + 48.dp.toPx()) < right
+                    val trackX = if (placeOnRight) clampedPtX + halfBox + 16.dp.toPx() else clampedPtX - halfBox - 16.dp.toPx()
+                    val trackTop = (clampedPtY - trackHeight / 2f).coerceIn(top + 8.dp.toPx(), bottom - trackHeight - 8.dp.toPx())
+                    val trackBottom = trackTop + trackHeight
+                    val trackCenterY = (trackTop + trackBottom) / 2f
+
+                    // Draw vertical track line
+                    drawLine(
+                        color = Color.White.copy(alpha = alpha * 0.35f),
+                        start = Offset(trackX, trackTop),
+                        end = Offset(trackX, trackBottom),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
+
+                    // Neutral 0.0 EV tick mark
+                    drawLine(
+                        color = Color.White.copy(alpha = alpha * 0.65f),
+                        start = Offset(trackX - 4.dp.toPx(), trackCenterY),
+                        end = Offset(trackX + 4.dp.toPx(), trackCenterY),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
+
+                    // Compute Sun Y position based on exposureIndex
+                    val range = maxOf(1, maxExposureIndex - minExposureIndex)
+                    val progress = ((exposureIndex - minExposureIndex).toFloat() / range.toFloat()).coerceIn(0f, 1f)
+                    val sunY = trackBottom - progress * trackHeight
+
+                    // Draw Glowing Sun Icon at (trackX, sunY)
+                    val sunRadius = 4.2.dp.toPx()
+                    val rayInner = 6.2.dp.toPx()
+                    val rayOuter = 9.2.dp.toPx()
+                    val sunColor = VintageAmber.copy(alpha = alpha)
+
+                    // Sun core
+                    drawCircle(
+                        color = sunColor,
+                        radius = sunRadius,
+                        center = Offset(trackX, sunY)
+                    )
+
+                    // 8 Sun Rays
+                    for (i in 0 until 8) {
+                        val angle = (i * 45.0) * (Math.PI / 180.0)
+                        val cosA = Math.cos(angle).toFloat()
+                        val sinA = Math.sin(angle).toFloat()
+                        drawLine(
+                            color = sunColor,
+                            start = Offset(trackX + cosA * rayInner, sunY + sinA * rayInner),
+                            end = Offset(trackX + cosA * rayOuter, sunY + sinA * rayOuter),
+                            strokeWidth = 1.5.dp.toPx()
+                        )
+                    }
+
+                    // EV value readout text (e.g. "+0.7" or "0.0")
+                    val evVal = exposureIndex * exposureStep
+                    val evText = if (evVal > 0f) String.format(Locale.US, "+%.1f", evVal) else String.format(Locale.US, "%.1f", evVal)
+                    val textPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.argb((alpha * 255).toInt(), 255, 179, 71)
+                        textSize = 10.sp.toPx()
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.MONOSPACE
+                        textAlign = if (placeOnRight) android.graphics.Paint.Align.LEFT else android.graphics.Paint.Align.RIGHT
+                        setShadowLayer(4f, 0f, 0f, android.graphics.Color.BLACK)
+                    }
+                    val textX = if (placeOnRight) trackX + 13.dp.toPx() else trackX - 13.dp.toPx()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "$evText EV",
+                        textX,
+                        sunY + 3.5.dp.toPx(),
+                        textPaint
+                    )
+                }
             }
         }
     }
 }
-

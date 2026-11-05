@@ -25,6 +25,7 @@ import com.craftcam.app.ui.theme.CameraBlack
 import com.craftcam.app.ui.theme.SurfaceGraphite
 import com.craftcam.app.ui.theme.TextPrimary
 import com.craftcam.app.ui.theme.VintageAmber
+import java.util.Locale
 
 @Composable
 fun TopControlBar(
@@ -33,11 +34,15 @@ fun TopControlBar(
     aspectRatio: AspectRatioMode,
     timerSeconds: Int,
     showGrid: Boolean,
+    exposureIndex: Int = 0,
+    exposureStep: Float = 0.5f,
+    isExposureSliderVisible: Boolean = false,
     isTuned: Boolean = false,
     onFlashToggle: () -> Unit,
     onAspectRatioCycle: () -> Unit,
     onTimerCycle: () -> Unit,
     onGridToggle: () -> Unit,
+    onExposureToggle: () -> Unit = {},
     onTuneClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
@@ -45,7 +50,7 @@ fun TopControlBar(
         modifier = modifier
             .fillMaxWidth()
             .background(CameraBlack.copy(alpha = 0.85f))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -105,7 +110,30 @@ fun TopControlBar(
             )
         }
 
-        // 5. Analog Lab / Color Adjustments Tuning Toggle
+        // 5. Quick Brightness / Exposure (Sun icon ☀️)
+        IconButton(onClick = onExposureToggle) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.WbSunny,
+                    "Exposure Brightness",
+                    tint = if (exposureIndex != 0 || isExposureSliderVisible) VintageAmber else TextPrimary.copy(alpha = 0.7f)
+                )
+                if (exposureIndex != 0) {
+                    val evVal = exposureIndex * exposureStep
+                    val sign = if (evVal > 0) "+" else ""
+                    Text(
+                        text = "$sign${String.format(Locale.US, "%.1f", evVal)}",
+                        color = VintageAmber,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 18.dp)
+                    )
+                }
+            }
+        }
+
+        // 6. Analog Lab / Color Adjustments Tuning Toggle
         IconButton(onClick = onTuneClick) {
             Icon(
                 Icons.Default.Tune,
@@ -114,7 +142,7 @@ fun TopControlBar(
             )
         }
 
-        // 6. Settings Navigation
+        // 7. Settings Navigation
         IconButton(onClick = onSettingsClick) {
             Icon(
                 Icons.Default.Settings,
@@ -124,4 +152,3 @@ fun TopControlBar(
         }
     }
 }
-
