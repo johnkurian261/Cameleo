@@ -42,8 +42,8 @@ object PresetCatalog {
             description = "Rich amber highlights and warm copper undertones inspired by late afternoon film photography.",
             colorGrading = ColorGradingConfig(
                 contrast = 1.15f,
-                saturation = 1.12f,
-                temperature = 0.40f,
+                saturation = 1.04f,
+                temperature = 0.18f,
                 tint = 0.08f,
                 gamma = 0.98f,
                 fade = 0.05f,
@@ -54,7 +54,7 @@ object PresetCatalog {
             ),
             grain = GrainConfig(enabled = true, intensity = 0.16f, scale = 1.15f),
             lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.004f, softness = 0.15f),
-            halation = HalationConfig(enabled = true, threshold = 0.78f, intensity = 0.32f, radius = 16f),
+            halation = HalationConfig(enabled = true, threshold = 0.86f, intensity = 0.32f, radius = 16f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -30)
         ),
         CameraPreset(

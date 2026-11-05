@@ -226,10 +226,10 @@ void main() {
         color = color * (1.0 - uFade) + uFade;
     }
 
-    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with early exit)
+    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with boundary confinement)
     if (uHalationEnabled && uHalationIntensity > 0.01) {
         float kThresh = uHalationThreshold;
-        if (luma > kThresh - 0.15) {
+        if (luma > kThresh - 0.04) {
             vec2 hInner = (6.0 / uViewportSize);
             vec2 hOuter = (14.0 / uViewportSize);
 
@@ -254,13 +254,15 @@ void main() {
             float lOutBL = dot(tOutBL.rgb, vec3(0.2126, 0.7152, 0.0722));
             float lOutBR = dot(tOutBR.rgb, vec3(0.2126, 0.7152, 0.0722));
 
-            float hCenter = max(0.0, luma - kThresh);
             float hInnerSum = max(0.0, lInL - kThresh) + max(0.0, lInR - kThresh) + max(0.0, lInT - kThresh) + max(0.0, lInB - kThresh);
             float hOuterSum = max(0.0, lOutTL - kThresh) + max(0.0, lOutTR - kThresh) + max(0.0, lOutBL - kThresh) + max(0.0, lOutBR - kThresh);
 
-            float spread = (hCenter * 0.35 + hInnerSum * 0.12 + hOuterSum * 0.04) / max(0.01, 1.0 - kThresh);
+            float spread = (hInnerSum * 0.18 + hOuterSum * 0.07) / max(0.01, 1.0 - kThresh);
             if (spread > 0.001) {
-                vec3 haloColor = vec3(1.0, 0.22, 0.04) * (spread * uHalationIntensity * 0.45);
+                // Highlight-core preservation: maintain neutral white in specular cores, concentrate red-orange fringe at boundaries
+                float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
+                vec3 haloBase = mix(vec3(1.0, 0.32, 0.10), vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
+                vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.45);
                 color += haloColor;
             }
         }
@@ -541,10 +543,10 @@ void main() {
         color = color * (1.0 - uFade) + uFade;
     }
 
-    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with early exit)
+    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with boundary confinement)
     if (uHalationEnabled && uHalationIntensity > 0.01) {
         float kThresh = uHalationThreshold;
-        if (luma > kThresh - 0.15) {
+        if (luma > kThresh - 0.04) {
             vec2 hInner = vec2(0.0035);
             vec2 hOuter = vec2(0.0080);
 
@@ -569,13 +571,15 @@ void main() {
             float lOutBL = dot(tOutBL.rgb, vec3(0.2126, 0.7152, 0.0722));
             float lOutBR = dot(tOutBR.rgb, vec3(0.2126, 0.7152, 0.0722));
 
-            float hCenter = max(0.0, luma - kThresh);
             float hInnerSum = max(0.0, lInL - kThresh) + max(0.0, lInR - kThresh) + max(0.0, lInT - kThresh) + max(0.0, lInB - kThresh);
             float hOuterSum = max(0.0, lOutTL - kThresh) + max(0.0, lOutTR - kThresh) + max(0.0, lOutBL - kThresh) + max(0.0, lOutBR - kThresh);
 
-            float spread = (hCenter * 0.35 + hInnerSum * 0.12 + hOuterSum * 0.04) / max(0.01, 1.0 - kThresh);
+            float spread = (hInnerSum * 0.18 + hOuterSum * 0.07) / max(0.01, 1.0 - kThresh);
             if (spread > 0.001) {
-                vec3 haloColor = vec3(1.0, 0.22, 0.04) * (spread * uHalationIntensity * 0.45);
+                // Highlight-core preservation: maintain neutral white in specular cores, concentrate red-orange fringe at boundaries
+                float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
+                vec3 haloBase = mix(vec3(1.0, 0.32, 0.10), vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
+                vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.45);
                 color += haloColor;
             }
         }

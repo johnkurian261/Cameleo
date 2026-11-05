@@ -548,8 +548,8 @@ object ImageProcessor {
                     val excess = (luma - thresh255).toFloat() / range
                     val a = (excess * intensity * 255f).toInt().coerceIn(0, 255)
                     val hr = 255
-                    val hg = (65 * excess).toInt().coerceIn(0, 120)
-                    val hb = (15 * excess).toInt().coerceIn(0, 40)
+                    val hg = (82 * excess).toInt().coerceIn(0, 140)
+                    val hb = (26 * excess).toInt().coerceIn(0, 60)
                     bloomPixels[bRow + bx] = (a shl 24) or (hr shl 16) or (hg shl 8) or hb
                 } else {
                     bloomPixels[bRow + bx] = 0
