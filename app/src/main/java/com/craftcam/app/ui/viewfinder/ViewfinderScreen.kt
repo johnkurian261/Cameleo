@@ -1,6 +1,15 @@
 package com.craftcam.app.ui.viewfinder
 
 import android.content.Context
+import android.content.ContentUris
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import android.graphics.SurfaceTexture
 import android.opengl.GLSurfaceView
 import android.view.HapticFeedbackConstants
@@ -83,6 +92,11 @@ fun ViewfinderScreen(
 
     var showTuningSheet by remember { mutableStateOf(false) }
     var showExposureSlider by remember { mutableStateOf(false) }
+    var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(Unit) {
+        latestThumbnail = loadLatestCameleoThumbnail(context)
+    }
     var countdown by remember { mutableStateOf<Int?>(null) }
     var switchRotation by remember { mutableStateOf(0f) }
     val animatedRotation by animateFloatAsState(targetValue = switchRotation, label = "switch_rot")
@@ -340,20 +354,37 @@ fun ViewfinderScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Gallery Shortcut
-                IconButton(
-                    onClick = onNavigateToGallery,
+                // Gallery Shortcut with small preview of latest photo
+                Box(
                     modifier = Modifier
                         .size(52.dp)
                         .clip(CircleShape)
                         .background(SurfaceElevated)
-                        .border(1.dp, DividerSubtle, CircleShape)
+                        .border(
+                            width = if (latestThumbnail != null) 2.dp else 1.dp,
+                            color = if (latestThumbnail != null) VintageAmber.copy(alpha = 0.85f) else DividerSubtle,
+                            shape = CircleShape
+                        )
+                        .clickable(onClick = onNavigateToGallery),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.PhotoLibrary,
-                        contentDescription = "Gallery",
-                        tint = TextPrimary
-                    )
+                    if (latestThumbnail != null) {
+                        Image(
+                            bitmap = latestThumbnail!!,
+                            contentDescription = "Gallery Preview",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.PhotoLibrary,
+                            contentDescription = "Gallery",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
 
                 // Shutter / Record Button
@@ -370,6 +401,9 @@ fun ViewfinderScreen(
                                 cameraManager.startRecording(
                                     onVideoSaved = { uri ->
                                         Toast.makeText(context, "Video saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                        scope.launch {
+                                            latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                        }
                                     },
                                     onError = { err ->
                                         Toast.makeText(context, "Video error: $err", Toast.LENGTH_SHORT).show()
@@ -394,6 +428,9 @@ fun ViewfinderScreen(
                                     mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
                                     onPhotoSaved = { uri ->
                                         Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                        scope.launch {
+                                            latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                        }
                                     },
                                     onError = { exc ->
                                         Toast.makeText(context, "Capture failed: $exc", Toast.LENGTH_SHORT).show()
@@ -462,3 +499,84 @@ private fun CaptureModeTab(
         )
     }
 }
+
+private suspend fun loadLatestCameleoThumbnail(context: Context): ImageBitmap? = withContext(Dispatchers.IO) {
+    try {
+        val imgProjection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DATE_ADDED
+        )
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+        val selectionArgs = arrayOf("CAMELEO_%", "CRAFTCAM_%")
+        val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+
+        var latestUri: Uri? = null
+        var latestDate = 0L
+
+        // Check images
+        context.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            imgProjection,
+            selection,
+            selectionArgs,
+            sortOrder
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                val id = cursor.getLong(idCol)
+                latestDate = cursor.getLong(dateCol)
+                latestUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+            }
+        }
+
+        // Check videos
+        val vidProjection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.DATE_ADDED
+        )
+        context.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            vidProjection,
+            selection,
+            selectionArgs,
+            sortOrder
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+                val vidDate = cursor.getLong(dateCol)
+                if (vidDate > latestDate) {
+                    val id = cursor.getLong(idCol)
+                    latestUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                }
+            }
+        }
+
+        latestUri?.let { uri ->
+            loadThumbnailForUri(context, uri)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private suspend fun loadThumbnailForUri(context: Context, uri: Uri): ImageBitmap? = withContext(Dispatchers.IO) {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val bmp = context.contentResolver.loadThumbnail(uri, android.util.Size(192, 192), null)
+            bmp.asImageBitmap()
+        } else {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = 8
+                }
+                val bmp = BitmapFactory.decodeStream(stream, null, options)
+                bmp?.asImageBitmap()
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
