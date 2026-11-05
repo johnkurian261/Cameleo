@@ -426,7 +426,7 @@ class GPUVideoProcessor(
             videoFrameCount++
             val grain = preset.grain
             val grainIntensity = if (grain.enabled) (grain.intensity + tuning.grainBoost).coerceAtLeast(0f) else 0f
-            val frameSeed = (videoFrameCount % 1000).toFloat() * 1.6180339887f + (System.currentTimeMillis() % 100).toFloat() * 0.01f
+            val frameSeed = (videoFrameCount % 60).toFloat() / 60.0f
             GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
             GLES30.glUniform1f(uGrainScaleLoc, grain.scale)
             GLES30.glUniform1i(uIsColorNoiseLoc, if (grain.isColorNoise) 1 else 0)

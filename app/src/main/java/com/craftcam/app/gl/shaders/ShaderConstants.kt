@@ -16,7 +16,7 @@ void main() {
 
     const val FRAGMENT_SHADER_VIEWFINDER = """#version 300 es
 #extension GL_OES_EGL_image_external_essl3 : require
-precision mediump float;
+precision highp float;
 
 uniform samplerExternalOES sTexture;
 uniform sampler2D uLutTexture;
@@ -56,9 +56,9 @@ uniform bool uLightLeakEnabled;
 uniform float uLightLeakIntensity;
 uniform float uScanlineIntensity;
 
-// Stochastic sine-free hash for authentic silver halide film grain
+// Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
-    vec2 p = coord + vec2(seed * 1.6180339887, seed * 1.4142135623);
+    vec2 p = mod(coord, 1024.0) + vec2(fract(seed * 1.6180339887), fract(seed * 1.4142135623)) * 64.0;
     vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z) - 0.5;
@@ -148,7 +148,7 @@ void main() {
 
     // 4. Preset & User Contrast
     if (abs(uContrast - 1.0) > 0.01) {
-        color = (color - 0.5) * uContrast + 0.5;
+        color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
     }
 
     // 5. Preset & User Saturation
@@ -186,11 +186,11 @@ void main() {
         color += haloColor;
     }
 
-    // 11. Light Leak Emulation
+    // 11. Subtle Edge Light Leak Emulation
     if (uLightLeakEnabled && uLightLeakIntensity > 0.01) {
         float leakDist = length(uv - vec2(0.95, 0.05));
-        float leakMask = smoothstep(0.85, 0.15, leakDist);
-        vec3 leakColor = vec3(1.0, 0.45, 0.08) * (leakMask * uLightLeakIntensity);
+        float leakMask = smoothstep(0.45, 0.05, leakDist);
+        vec3 leakColor = vec3(1.0, 0.50, 0.15) * (leakMask * uLightLeakIntensity * 0.50);
         // Screen blend
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
@@ -302,9 +302,9 @@ uniform bool uLightLeakEnabled;
 uniform float uLightLeakIntensity;
 uniform float uScanlineIntensity;
 
-// Stochastic sine-free hash for authentic silver halide film grain
+// Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
-    vec2 p = coord + vec2(seed * 1.6180339887, seed * 1.4142135623);
+    vec2 p = mod(coord, 1024.0) + vec2(fract(seed * 1.6180339887), fract(seed * 1.4142135623)) * 64.0;
     vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z) - 0.5;
