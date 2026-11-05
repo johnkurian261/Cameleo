@@ -73,10 +73,10 @@ fun CollectionScreen(
     val photoModels = remember {
         listOf(
             ModelShelfItem("D Classic", "cam_d_classic", "analog_35mm_classic"),
-            ModelShelfItem("D Slide",   "cam_d_slide",   "inst_classic"),
+            ModelShelfItem("Warm Film", "cam_gr_f",      "analog_warm_film"),
             ModelShelfItem("D Exp",     "cam_d_exp",     "analog_vintage_color"),
             ModelShelfItem("Polaroid",  "cam_polaroid",  "inst_vintage"),
-            ModelShelfItem("TLR",       "cam_tlr",       "inst_soft_polaroid")
+            ModelShelfItem("Soft Film", "cam_ct2f",      "analog_soft_film")
         )
     }
 

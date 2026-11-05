@@ -104,27 +104,6 @@ object PresetCatalog {
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -35)
         ),
         CameraPreset(
-            id = "analog_faded_film",
-            iconResName = "cam_nt16",
-            name = "Faded Film",
-            subtitle = "Aged Paper Negative",
-            category = CameraCategory.ANALOG_FILM,
-            year = "1968",
-            description = "Lifted hazy shadow curve with desaturated palette reminiscent of prints stored in attic boxes.",
-            colorGrading = ColorGradingConfig(
-                contrast = 0.92f,
-                saturation = 0.85f,
-                temperature = 0.18f,
-                tint = 0.05f,
-                gamma = 1.12f,
-                fade = 0.14f,
-                highlightRollOff = 0.76f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.16f, scale = 1.1f),
-            lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.85f, chromaticAberration = 0.003f, softness = 0.16f),
-            dateStamp = DateStampConfig(enabled = false)
-        ),
-        CameraPreset(
             id = "analog_cinema_film",
             iconResName = "cam_d3d",
             name = "Cinema Film",
@@ -151,27 +130,6 @@ object PresetCatalog {
 
         // ==================== B. CCD DIGITAL CAMERAS ====================
         CameraPreset(
-            id = "ccd_classic",
-            iconResName = "cam_135ne",
-            name = "CCD Classic",
-            subtitle = "Early 2000s Compact Sensor",
-            category = CameraCategory.CCD_DIGITAL,
-            year = "2003",
-            description = "Vibrant sky blues, crisp edge definition, punchy contrast and characteristic CCD color rendition.",
-            colorGrading = ColorGradingConfig(
-                contrast = 1.20f,
-                saturation = 1.22f,
-                temperature = -0.06f,
-                tint = 0.02f,
-                gamma = 0.96f,
-                fade = 0.01f,
-                highlightRollOff = 0.92f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.05f, scale = 0.7f, isColorNoise = true),
-            lens = LensConfig(vignetteIntensity = 0.18f, vignetteRadius = 0.92f, chromaticAberration = 0.002f, softness = 0.0f),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -22)
-        ),
-        CameraPreset(
             id = "ccd_flash",
             iconResName = "cam_d_funs",
             name = "CCD Flash",
@@ -189,28 +147,6 @@ object PresetCatalog {
             grain = GrainConfig(enabled = true, intensity = 0.09f, scale = 0.9f, isColorNoise = true),
             lens = LensConfig(vignetteIntensity = 0.55f, vignetteRadius = 0.65f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -20)
-        ),
-        CameraPreset(
-            id = "ccd_cool_digital",
-            iconResName = "cam_ir",
-            name = "Cool Digital",
-            subtitle = "Y2K Cyber Millennium",
-            category = CameraCategory.CCD_DIGITAL,
-            year = "2001",
-            description = "Subtle cyan-blue bias and cool white balance typical of turn-of-the-century Japanese digicams.",
-            colorGrading = ColorGradingConfig(
-                contrast = 1.16f,
-                saturation = 1.08f,
-                temperature = -0.32f,
-                tint = -0.06f,
-                fade = 0.02f,
-                shadowTintR = -0.04f,
-                shadowTintG = 0.01f,
-                shadowTintB = 0.07f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.07f, scale = 0.8f),
-            lens = LensConfig(vignetteIntensity = 0.28f, vignetteRadius = 0.85f),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -25)
         ),
         CameraPreset(
             id = "ccd_y2k_digital",
@@ -344,52 +280,6 @@ object PresetCatalog {
         ),
 
         // ==================== D. INSTANT PHOTOGRAPHY ====================
-        CameraPreset(
-            id = "inst_classic",
-            iconResName = "cam_d_slide",
-            name = "Instant Classic",
-            subtitle = "Peel-Apart Chemical Film",
-            category = CameraCategory.INSTANT,
-            year = "1982",
-            description = "Iconic white frame with milky black point, muted highlights and soft analog chemistry.",
-            colorGrading = ColorGradingConfig(
-                contrast = 1.04f,
-                saturation = 0.94f,
-                temperature = 0.18f,
-                tint = -0.06f,
-                gamma = 1.08f,
-                fade = 0.12f,
-                highlightRollOff = 0.76f,
-                shadowTintR = 0.04f,
-                shadowTintG = 0.03f,
-                shadowTintB = 0.06f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.15f, scale = 1.2f),
-            lens = LensConfig(vignetteIntensity = 0.40f, vignetteRadius = 0.80f, softness = 0.25f),
-            border = BorderConfig(style = BorderStyle.POLAROID_WHITE_CHIN),
-            dateStamp = DateStampConfig(enabled = false)
-        ),
-        CameraPreset(
-            id = "inst_soft_polaroid",
-            iconResName = "cam_tlr",
-            name = "Soft Polaroid",
-            subtitle = "Dreamy Cream Tone",
-            category = CameraCategory.INSTANT,
-            year = "1986",
-            description = "Dreamy low-contrast pastel tones with luminous warmth and characteristic vintage paper borders.",
-            colorGrading = ColorGradingConfig(
-                contrast = 0.92f,
-                saturation = 0.88f,
-                temperature = 0.24f,
-                tint = 0.04f,
-                fade = 0.16f,
-                highlightRollOff = 0.72f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.12f, scale = 1.0f),
-            lens = LensConfig(vignetteIntensity = 0.30f, vignetteRadius = 0.85f, softness = 0.35f),
-            border = BorderConfig(style = BorderStyle.SQUARE_INSTANT_WHITE),
-            dateStamp = DateStampConfig(enabled = false)
-        ),
         CameraPreset(
             id = "inst_vintage",
             iconResName = "cam_polaroid",
