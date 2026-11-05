@@ -297,6 +297,16 @@ fun ViewfinderScreen(
                 .background(CameraBlack.copy(alpha = 0.90f))
                 .padding(bottom = 24.dp)
         ) {
+            // Camera Lens Wheel (Apple / Dazz Cam style lens selector)
+            CameraLensWheel(
+                modifier = Modifier.padding(bottom = 6.dp),
+                lenses = uiState.availableLenses,
+                selectedLens = uiState.selectedLens,
+                onLensSelected = { lens ->
+                    cameraManager.selectLens(lens)
+                }
+            )
+
             // Mode Switcher (PHOTO | VIDEO)
             Row(
                 modifier = Modifier

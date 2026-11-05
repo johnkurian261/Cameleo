@@ -37,6 +37,9 @@ data class CameraUIState(
     val zoomRatio: Float = 1.0f,
     val minZoom: Float = 1.0f,
     val maxZoom: Float = 5.0f,
+    val rearLenses: List<CameraLens> = emptyList(),
+    val frontLenses: List<CameraLens> = emptyList(),
+    val selectedLens: CameraLens? = null,
     val exposureIndex: Int = 0,
     val minExposureIndex: Int = -4,
     val maxExposureIndex: Int = 4,
@@ -50,4 +53,7 @@ data class CameraUIState(
     val timerCountdown: Int? = null,
     val showGrid: Boolean = false,
     val showLevel: Boolean = false
-)
+) {
+    val availableLenses: List<CameraLens>
+        get() = if (lensFacing == CameraSelector.LENS_FACING_FRONT) frontLenses else rearLenses
+}

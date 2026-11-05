@@ -65,6 +65,27 @@ class CameraManager(private val context: Context) {
 
     var onCameraOrientationChanged: ((rotationDegrees: Int, isFront: Boolean, width: Int, height: Int) -> Unit)? = null
 
+    private var lastSelectedRearLens: CameraLens? = null
+
+    init {
+        try {
+            val discovered = CameraDiscovery.discover(context)
+            val defaultRear = discovered.rearLenses.firstOrNull { kotlin.math.abs(it.equivalentZoom - 1.0f) < 0.1f }
+                ?: discovered.rearLenses.firstOrNull()
+            _uiState.update {
+                it.copy(
+                    rearLenses = discovered.rearLenses,
+                    frontLenses = discovered.frontLenses,
+                    selectedLens = defaultRear,
+                    zoomRatio = defaultRear?.equivalentZoom ?: 1.0f
+                )
+            }
+            lastSelectedRearLens = defaultRear
+        } catch (e: Exception) {
+            Log.e(TAG, "Lens initialization failed", e)
+        }
+    }
+
     fun setGLRenderer(renderer: GLViewfinderRenderer) {
         glRenderer = renderer
         glRenderer?.updatePreset(currentPreset)
@@ -260,7 +281,10 @@ class CameraManager(private val context: Context) {
             // Update Zoom and Exposure capabilities
             camera?.cameraInfo?.let { info ->
                 info.zoomState.value?.let { zs ->
-                    _uiState.update { it.copy(minZoom = zs.minZoomRatio, maxZoom = zs.maxZoomRatio.coerceAtMost(5.0f)) }
+                    _uiState.update { it.copy(minZoom = zs.minZoomRatio, maxZoom = zs.maxZoomRatio.coerceAtMost(10.0f)) }
+                    val targetZoom = _uiState.value.selectedLens?.equivalentZoom ?: _uiState.value.zoomRatio
+                    val clamped = targetZoom.coerceIn(zs.minZoomRatio, zs.maxZoomRatio)
+                    camera?.cameraControl?.setZoomRatio(clamped)
                 }
                 info.exposureState.let { es ->
                     _uiState.update {
@@ -279,13 +303,39 @@ class CameraManager(private val context: Context) {
     }
 
     fun switchCamera() {
-        val newFacing = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_BACK) {
-            CameraSelector.LENS_FACING_FRONT
+        val currentFacing = _uiState.value.lensFacing
+        if (currentFacing == CameraSelector.LENS_FACING_BACK) {
+            lastSelectedRearLens = _uiState.value.selectedLens
+            val frontLens = _uiState.value.frontLenses.firstOrNull()
+            _uiState.update {
+                it.copy(
+                    lensFacing = CameraSelector.LENS_FACING_FRONT,
+                    selectedLens = frontLens,
+                    zoomRatio = frontLens?.equivalentZoom ?: 1.0f
+                )
+            }
         } else {
-            CameraSelector.LENS_FACING_BACK
+            val restoreRear = lastSelectedRearLens
+                ?: _uiState.value.rearLenses.firstOrNull { kotlin.math.abs(it.equivalentZoom - 1.0f) < 0.1f }
+                ?: _uiState.value.rearLenses.firstOrNull()
+            _uiState.update {
+                it.copy(
+                    lensFacing = CameraSelector.LENS_FACING_BACK,
+                    selectedLens = restoreRear,
+                    zoomRatio = restoreRear?.equivalentZoom ?: 1.0f
+                )
+            }
         }
-        _uiState.update { it.copy(lensFacing = newFacing) }
         bindCameraUseCases()
+    }
+
+    fun selectLens(lens: CameraLens) {
+        _uiState.update { it.copy(selectedLens = lens, zoomRatio = lens.equivalentZoom) }
+        if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_BACK) {
+            lastSelectedRearLens = lens
+        }
+        val clamped = lens.equivalentZoom.coerceIn(_uiState.value.minZoom, _uiState.value.maxZoom)
+        camera?.cameraControl?.setZoomRatio(clamped)
     }
 
     fun setFlashMode(flashMode: Int) {
@@ -307,7 +357,12 @@ class CameraManager(private val context: Context) {
 
     fun setZoomRatio(ratio: Float) {
         val clamped = ratio.coerceIn(_uiState.value.minZoom, _uiState.value.maxZoom)
-        _uiState.update { it.copy(zoomRatio = clamped) }
+        val activeLenses = _uiState.value.availableLenses
+        val closest = activeLenses.minByOrNull { kotlin.math.abs(it.equivalentZoom - clamped) }
+        _uiState.update { it.copy(zoomRatio = clamped, selectedLens = closest) }
+        if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_BACK && closest != null) {
+            lastSelectedRearLens = closest
+        }
         camera?.cameraControl?.setZoomRatio(clamped)
     }
 
