@@ -29,6 +29,7 @@ object ImageProcessor {
     // ─── Fast Memory Caches ─────────────────────────────────────────────────
     private val lutCache = mutableMapOf<String, IntArray>()
     private val textureCache = mutableMapOf<String, Bitmap?>()
+    private val grainPixelsCache = mutableMapOf<String, Pair<IntArray, Pair<Int, Int>>>()
 
     // ─── Main Processing & Saving Pipeline ──────────────────────────────────
     suspend fun processAndSaveImage(
@@ -50,74 +51,93 @@ object ImageProcessor {
         }
 
         Log.i(TAG, "Native full-sensor photo captured: ${rawBitmap.width}x${rawBitmap.height}, rotation=$rotation, preset=${preset.id}")
-        var workingBitmap: Bitmap = rawBitmap
+        
+        // 1. Single-Pass Transformation Matrix (Downscale >4096px, Upright Rotation, Mirror, Aspect Ratio Crop)
+        // Eliminates intermediate scaled, oriented, and cropped Bitmap allocations (saving up to 146MB heap churn)
+        val rawW = rawBitmap.width
+        val rawH = rawBitmap.height
+
+        val matrix = Matrix()
+        // A. Cap at 4096px only for ultra-high megapixel sensors to protect heap
+        if (rawW > 4096 || rawH > 4096) {
+            val scale = 4096f / maxOf(rawW, rawH)
+            matrix.postScale(scale, scale)
+        }
+
+        // B. Rotate & mirror to produce upright photo
+        if (rotation != 0) matrix.postRotate(rotation.toFloat())
+        if (mirrorFrontCamera) matrix.postScale(-1f, 1f)
+
+        // C. Map bounds to calculate oriented dimensions
+        val srcBounds = RectF(0f, 0f, rawW.toFloat(), rawH.toFloat())
+        val orientedBounds = RectF()
+        matrix.mapRect(orientedBounds, srcBounds)
+
+        val orientedW = orientedBounds.width().roundToInt()
+        val orientedH = orientedBounds.height().roundToInt()
+
+        // D. Calculate aspect ratio crop in oriented space
+        val srcRatio = orientedW.toFloat() / orientedH
+        val targetRatio = if (orientedW > orientedH) aspectRatio.ratio else (1.0f / aspectRatio.ratio)
+        val cropW: Int
+        val cropH: Int
+        if (srcRatio > targetRatio) {
+            cropH = orientedH
+            cropW = (orientedH * targetRatio).toInt().coerceIn(1, orientedW)
+        } else {
+            cropW = orientedW
+            cropH = (orientedW / targetRatio).toInt().coerceIn(1, orientedH)
+        }
+        val startX = (orientedW - cropW) / 2
+        val startY = (orientedH - cropH) / 2
+
+        // E. Translate bounding box to origin (0, 0) and apply center-crop translation
+        matrix.postTranslate(-orientedBounds.left - startX, -orientedBounds.top - startY)
+
+        // F. Acquire working buffer from thread-safe BitmapPool and draw in single pass
+        var workingBitmap: Bitmap = BitmapPool.acquire(cropW, cropH)
         try {
-            // 1. Maintain full native camera sensor resolution (cap at 4096px only for ultra-high megapixel sensors to protect heap)
-            if (workingBitmap.width > 4096 || workingBitmap.height > 4096) {
-                val scale = 4096f / maxOf(workingBitmap.width, workingBitmap.height)
-                val targetW = (workingBitmap.width * scale).toInt().coerceAtLeast(1)
-                val targetH = (workingBitmap.height * scale).toInt().coerceAtLeast(1)
-                val scaled = Bitmap.createScaledBitmap(workingBitmap, targetW, targetH, true)
-                if (scaled != workingBitmap) {
-                    workingBitmap.recycle()
-                    workingBitmap = scaled
-                }
-            }
+            val canvas = Canvas(workingBitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            canvas.drawBitmap(rawBitmap, matrix, paint)
+        } finally {
+            // Free transient rawBitmap immediately: lifetime is under ~30ms
+            rawBitmap.recycle()
+        }
 
-            // 2. Rotate & mirror to produce upright photo
-            val matrix = Matrix()
-            if (rotation != 0) matrix.postRotate(rotation.toFloat())
-            if (mirrorFrontCamera) matrix.postScale(-1f, 1f)
-            if (rotation != 0 || mirrorFrontCamera) {
-                val oriented = Bitmap.createBitmap(workingBitmap, 0, 0, workingBitmap.width, workingBitmap.height, matrix, true)
-                if (oriented != workingBitmap) {
-                    workingBitmap.recycle()
-                    workingBitmap = oriented
-                }
-            }
+        try {
+            // 2. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
+            // Executed in-place on workingBitmap using pooled IntArrays (zero new Bitmap allocations)
+            workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning)
 
-            // 3. Aspect Ratio Cropping
-            val cropped = cropToAspectRatio(workingBitmap, aspectRatio)
-            if (cropped != workingBitmap) {
-                workingBitmap.recycle()
-                workingBitmap = cropped
-            }
-
-            // 4. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
-            val processed = applyPresetEffects(context, workingBitmap, preset, tuning)
-            if (processed != workingBitmap) {
-                workingBitmap.recycle()
-                workingBitmap = processed
-            }
-
-            // 5. Apply Retro Date Stamp
+            // 3. Apply Retro Date Stamp (draws in-place onto mutable workingBitmap)
             if (tuning.dateStampEnabled && preset.dateStamp != null) {
                 val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear, context)
                 if (stamped != workingBitmap) {
-                    workingBitmap.recycle()
+                    BitmapPool.release(workingBitmap)
                     workingBitmap = stamped
                 }
             }
 
-            // 6. Apply Analog Film Border
+            // 4. Apply Analog Film Border
             if (preset.border != null) {
                 val bordered = BorderRenderer.applyBorder(workingBitmap, preset.border, context)
                 if (bordered != workingBitmap) {
-                    workingBitmap.recycle()
+                    // Instantly return the photo bitmap to the pool, and retain bordered bitmap for saving
+                    BitmapPool.release(workingBitmap)
                     workingBitmap = bordered
                 }
             }
 
-            // 7. Save to MediaStore (DCIM/Cameleo)
+            // 5. Save to MediaStore (DCIM/Cameleo)
             val uri = saveToGallery(context, workingBitmap, preset.name)
-            workingBitmap.recycle()
             uri
         } catch (t: Throwable) {
             Log.e(TAG, "Error in image processing pipeline", t)
-            if (!workingBitmap.isRecycled) {
-                workingBitmap.recycle()
-            }
             null
+        } finally {
+            // Release workingBitmap back into BitmapPool (or recycle if unpooled border bitmap)
+            BitmapPool.release(workingBitmap)
         }
     }
 
@@ -164,6 +184,20 @@ object ImageProcessor {
         }
     }
 
+    private fun getOrLoadGrainPixels(context: Context, name: String): Pair<IntArray, Pair<Int, Int>>? {
+        synchronized(grainPixelsCache) {
+            grainPixelsCache[name]?.let { return it }
+            val bmp = loadTexture(context, name) ?: return null
+            val gw = bmp.width
+            val gh = bmp.height
+            val gp = IntArray(gw * gh)
+            bmp.getPixels(gp, 0, gw, 0, 0, gw, gh)
+            val result = Pair(gp, Pair(gw, gh))
+            grainPixelsCache[name] = result
+            return result
+        }
+    }
+
     // ─── True Film Emulsion & Dazz Cam Processing Engine ─────────────────────
     private suspend fun applyPresetEffects(
         context: Context,
@@ -173,76 +207,74 @@ object ImageProcessor {
     ): Bitmap {
         val width = source.width
         val height = source.height
-        val pixels = IntArray(width * height)
-        source.getPixels(pixels, 0, width, 0, 0, width, height)
+        val totalPixels = width * height
+        val pixels = IntArrayPool.acquire(totalPixels)
+        try {
+            source.getPixels(pixels, 0, width, 0, 0, width, height)
 
-        val grading = preset.colorGrading
-        val lens = preset.lens
-        val grain = preset.grain
-        val halation = preset.halation
-        val leak = preset.lightLeak
-        val isCamcorder = preset.category == CameraCategory.CAMCORDER
+            val grading = preset.colorGrading
+            val lens = preset.lens
+            val grain = preset.grain
+            val halation = preset.halation
+            val leak = preset.lightLeak
+            val isCamcorder = preset.category == CameraCategory.CAMCORDER
 
-        // 1. Identify camera-specific 3D LUT
-        val lutFile = selectLutForPreset(preset.id)
-        val lut = getOrLoadLut(context, lutFile)
+            // 1. Identify camera-specific 3D LUT
+            val lutFile = selectLutForPreset(preset.id)
+            val lut = getOrLoadLut(context, lutFile)
 
-        // Micro-tuning user offsets
-        val tempShift = tuning.temperatureOffset.coerceIn(-1.0f, 1.0f)
-        val tintShift = tuning.tintOffset.coerceIn(-1.0f, 1.0f)
-        val satBoost  = (1.0f + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
-        val contBoost = (1.0f + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
+            // Micro-tuning user offsets
+            val tempShift = tuning.temperatureOffset.coerceIn(-1.0f, 1.0f)
+            val tintShift = tuning.tintOffset.coerceIn(-1.0f, 1.0f)
+            val satBoost  = (1.0f + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
+            val contBoost = (1.0f + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
 
-        // Combined preset color grading + user tuning
-        val effectiveTemp = (grading.temperature + tempShift).coerceIn(-1.0f, 1.0f)
-        val effectiveTint = (grading.tint + tintShift).coerceIn(-1.0f, 1.0f)
-        val effectiveContrast = (grading.contrast * contBoost).coerceAtLeast(0.1f)
-        val effectiveSat = (grading.saturation * satBoost).coerceAtLeast(0.0f)
-        val effectiveGamma = grading.gamma
-        val effectiveFade = grading.fade
-        val shadowR = grading.shadowTintR
-        val shadowG = grading.shadowTintG
-        val shadowB = grading.shadowTintB
-        val rollOff = grading.highlightRollOff
+            // Combined preset color grading + user tuning
+            val effectiveTemp = (grading.temperature + tempShift).coerceIn(-1.0f, 1.0f)
+            val effectiveTint = (grading.tint + tintShift).coerceIn(-1.0f, 1.0f)
+            val effectiveContrast = (grading.contrast * contBoost).coerceAtLeast(0.1f)
+            val effectiveSat = (grading.saturation * satBoost).coerceAtLeast(0.0f)
+            val effectiveGamma = grading.gamma
+            val effectiveFade = grading.fade
+            val shadowR = grading.shadowTintR
+            val shadowG = grading.shadowTintG
+            val shadowB = grading.shadowTintB
+            val rollOff = grading.highlightRollOff
 
-        // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
-        val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
-        val hasVig = vigIntensity > 0.03f
-        val cx = width * 0.5f
-        val cy = height * 0.5f
-        val maxD2 = cx * cx + cy * cy
-        val rad = lens.vignetteRadius
-        val vigDenom = maxD2 * rad * rad
+            // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
+            val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
+            val hasVig = vigIntensity > 0.03f
+            val cx = width * 0.5f
+            val cy = height * 0.5f
+            val maxD2 = cx * cx + cy * cy
+            val rad = lens.vignetteRadius
+            val vigDenom = maxD2 * rad * rad
 
-        val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
-        val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
-        val hasGrain = grain.enabled && effectiveGrain > 0.01f
-        val grainTex = if (hasGrain) loadTexture(context, grainAsset) else null
-        val gw = grainTex?.width ?: 1
-        val gh = grainTex?.height ?: 1
-        val grainPixels: IntArray? = if (grainTex != null) {
-            val gp = IntArray(gw * gh)
-            grainTex.getPixels(gp, 0, gw, 0, 0, gw, gh)
-            gp
-        } else null
-        val grainStrength = effectiveGrain * 0.45f
+            val grainAsset = selectGrainForPreset(preset.id, isCamcorder)
+            val effectiveGrain = (grain.intensity * tuning.grainBoost).coerceIn(0.0f, 1.0f)
+            val hasGrain = grain.enabled && effectiveGrain > 0.01f
+            val grainData = if (hasGrain) getOrLoadGrainPixels(context, grainAsset) else null
+            val grainPixels: IntArray? = grainData?.first
+            val gw = grainData?.second?.first ?: 1
+            val gh = grainData?.second?.second ?: 1
+            val grainStrength = effectiveGrain * 0.45f
 
-        // ── Step 1b: Optical Lens Softness (Radial spherical aberration) ────
-        if (preset.lens.softness > 0.01f) {
-            applyOpticalSoftness(pixels, width, height, preset.lens.softness)
-        }
+            // ── Step 1b: Optical Lens Softness (Radial spherical aberration) ────
+            if (preset.lens.softness > 0.01f) {
+                applyOpticalSoftness(pixels, width, height, preset.lens.softness)
+            }
 
-        // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
-        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
-        val chunkSize = (pixels.size + numCores - 1) / numCores
+            // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
+            val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+            val chunkSize = (totalPixels + numCores - 1) / numCores
 
-        coroutineScope {
-            (0 until numCores).map { coreIndex ->
-                async(Dispatchers.Default) {
-                    val start = coreIndex * chunkSize
-                    val end = minOf(pixels.size, start + chunkSize)
+            coroutineScope {
+                (0 until numCores).map { coreIndex ->
+                    async(Dispatchers.Default) {
+                        val start = coreIndex * chunkSize
+                        val end = minOf(totalPixels, start + chunkSize)
 
-                    for (i in start until end) {
+                        for (i in start until end) {
                         val px = pixels[i]
                         val ri = (px shr 16) and 0xFF
                         val gi = (px shr 8) and 0xFF
@@ -458,63 +490,66 @@ object ImageProcessor {
             }.awaitAll()
         }
 
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        result.setPixels(pixels, 0, width, 0, 0, width, height)
+            // In-place update of source bitmap (eliminates 48.8MB result Bitmap allocation)
+            source.setPixels(pixels, 0, width, 0, 0, width, height)
 
-        // ── Step 4: Canvas Layer Overlays ────────────────────────────────────
-        val canvas = Canvas(result)
+            // ── Step 4: Canvas Layer Overlays ────────────────────────────────────
+            val canvas = Canvas(source)
 
-        // 4a. Authentic Optical Halation (Red-Orange Photochemical Highlight Bloom)
-        val halationEnabled = tuning.halationEnabled && halation?.enabled == true && halation.intensity > 0.01f
-        if (halationEnabled) {
-            val halationThresh = halation?.threshold ?: 0.80f
-            val halationInt = halation?.intensity ?: 0.35f
-            applyAuthenticHalation(pixels, width, height, canvas, halationThresh, halationInt)
-        }
-
-        // 4b. Real Scanned Dust & Scratches (Subtle Film Patina for Distressed Cameras)
-        val dustAsset = selectDustForPreset(preset.id)
-        if (dustAsset != null) {
-            loadTexture(context, dustAsset)?.let { tex ->
-                val srcRect = Rect(0, 0, tex.width, tex.height)
-                val dstRect = Rect(0, 0, width, height)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                    alpha = 28 // Delicate organic film patina, NEVER opaque black spots
-                }
-                canvas.drawBitmap(tex, srcRect, dstRect, paint)
+            // 4a. Authentic Optical Halation (Red-Orange Photochemical Highlight Bloom)
+            val halationEnabled = tuning.halationEnabled && halation?.enabled == true && halation.intensity > 0.01f
+            if (halationEnabled) {
+                val halationThresh = halation?.threshold ?: 0.80f
+                val halationInt = halation?.intensity ?: 0.35f
+                applyAuthenticHalation(pixels, width, height, canvas, halationThresh, halationInt)
             }
-        }
 
-        // 4c. Real Photographic Light Leaks
-        val leakEnabled = tuning.lightLeakEnabled && leak?.enabled == true && leak.intensity > 0.01f
-        if (leakEnabled) {
-            val leakAsset = selectLightLeakForPreset(preset.id)
-            loadTexture(context, leakAsset)?.let { tex ->
-                val srcRect = Rect(0, 0, tex.width, tex.height)
-                val dstRect = Rect(0, 0, width, height)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                    xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-                    alpha = ((leak.intensity * 0.65f) * 255.0f).toInt().coerceIn(0, 255)
+            // 4b. Real Scanned Dust & Scratches (Subtle Film Patina for Distressed Cameras)
+            val dustAsset = selectDustForPreset(preset.id)
+            if (dustAsset != null) {
+                loadTexture(context, dustAsset)?.let { tex ->
+                    val srcRect = Rect(0, 0, tex.width, tex.height)
+                    val dstRect = Rect(0, 0, width, height)
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                        alpha = 28 // Delicate organic film patina, NEVER opaque black spots
+                    }
+                    canvas.drawBitmap(tex, srcRect, dstRect, paint)
                 }
-                canvas.drawBitmap(tex, srcRect, dstRect, paint)
             }
-        }
 
-        // 4d. Direct Flash Illumination Overlay
-        val flashAsset = selectFlashForPreset(preset.id)
-        if (flashAsset != null) {
-            loadTexture(context, flashAsset)?.let { tex ->
-                val srcRect = Rect(0, 0, tex.width, tex.height)
-                val dstRect = Rect(0, 0, width, height)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                    xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-                    alpha = 55
+            // 4c. Real Photographic Light Leaks
+            val leakEnabled = tuning.lightLeakEnabled && leak?.enabled == true && leak.intensity > 0.01f
+            if (leakEnabled) {
+                val leakAsset = selectLightLeakForPreset(preset.id)
+                loadTexture(context, leakAsset)?.let { tex ->
+                    val srcRect = Rect(0, 0, tex.width, tex.height)
+                    val dstRect = Rect(0, 0, width, height)
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                        xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+                        alpha = ((leak.intensity * 0.65f) * 255.0f).toInt().coerceIn(0, 255)
+                    }
+                    canvas.drawBitmap(tex, srcRect, dstRect, paint)
                 }
-                canvas.drawBitmap(tex, srcRect, dstRect, paint)
             }
-        }
 
-        return result
+            // 4d. Direct Flash Illumination Overlay
+            val flashAsset = selectFlashForPreset(preset.id)
+            if (flashAsset != null) {
+                loadTexture(context, flashAsset)?.let { tex ->
+                    val srcRect = Rect(0, 0, tex.width, tex.height)
+                    val dstRect = Rect(0, 0, width, height)
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                        xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+                        alpha = 55
+                    }
+                    canvas.drawBitmap(tex, srcRect, dstRect, paint)
+                }
+            }
+
+            return source
+        } finally {
+            IntArrayPool.release(pixels)
+        }
     }
 
     // ─── Authentic Optical Film Halation Bloom ───────────────────────────────
@@ -528,53 +563,58 @@ object ImageProcessor {
     ) {
         val bw = maxOf(1, width / 4)
         val bh = maxOf(1, height / 4)
-        val bloomPixels = IntArray(bw * bh)
+        val totalBloom = bw * bh
+        val bloomPixels = IntArrayPool.acquire(totalBloom)
+        val temp = IntArrayPool.acquire(totalBloom)
+        val bloomBitmap = BitmapPool.acquire(bw, bh)
 
-        val thresh255 = (threshold * 255f).toInt()
-        val range = (255 - thresh255).coerceAtLeast(1)
+        try {
+            val thresh255 = (threshold * 255f).toInt()
+            val range = (255 - thresh255).coerceAtLeast(1)
 
-        for (by in 0 until bh) {
-            val sy = (by * height) / bh
-            val sRow = sy * width
-            val bRow = by * bw
-            for (bx in 0 until bw) {
-                val sx = (bx * width) / bw
-                val px = pixels[sRow + sx]
-                val r = (px shr 16) and 0xFF
-                val g = (px shr 8) and 0xFF
-                val b = px and 0xFF
-                val luma = (54 * r + 183 * g + 19 * b) shr 8
-                if (luma > thresh255) {
-                    val excess = (luma - thresh255).toFloat() / range
-                    val a = (excess * intensity * 255f).toInt().coerceIn(0, 255)
-                    val hr = 255
-                    val hg = (82 * excess).toInt().coerceIn(0, 140)
-                    val hb = (26 * excess).toInt().coerceIn(0, 60)
-                    bloomPixels[bRow + bx] = (a shl 24) or (hr shl 16) or (hg shl 8) or hb
-                } else {
-                    bloomPixels[bRow + bx] = 0
+            for (by in 0 until bh) {
+                val sy = (by * height) / bh
+                val sRow = sy * width
+                val bRow = by * bw
+                for (bx in 0 until bw) {
+                    val sx = (bx * width) / bw
+                    val px = pixels[sRow + sx]
+                    val r = (px shr 16) and 0xFF
+                    val g = (px shr 8) and 0xFF
+                    val b = px and 0xFF
+                    val luma = (54 * r + 183 * g + 19 * b) shr 8
+                    if (luma > thresh255) {
+                        val excess = (luma - thresh255).toFloat() / range
+                        val a = (excess * intensity * 255f).toInt().coerceIn(0, 255)
+                        val hr = 255
+                        val hg = (82 * excess).toInt().coerceIn(0, 140)
+                        val hb = (26 * excess).toInt().coerceIn(0, 60)
+                        bloomPixels[bRow + bx] = (a shl 24) or (hr shl 16) or (hg shl 8) or hb
+                    } else {
+                        bloomPixels[bRow + bx] = 0
+                    }
                 }
             }
+
+            fastBoxBlur(bloomPixels, bw, bh, 8, temp)
+
+            bloomBitmap.setPixels(bloomPixels, 0, bw, 0, 0, bw, bh)
+
+            val srcRect = Rect(0, 0, bw, bh)
+            val dstRect = Rect(0, 0, width, height)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+                alpha = 255
+            }
+            canvas.drawBitmap(bloomBitmap, srcRect, dstRect, paint)
+        } finally {
+            BitmapPool.release(bloomBitmap)
+            IntArrayPool.release(bloomPixels)
+            IntArrayPool.release(temp)
         }
-
-        fastBoxBlur(bloomPixels, bw, bh, 8)
-
-        val bloomBitmap = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-        bloomBitmap.setPixels(bloomPixels, 0, bw, 0, 0, bw, bh)
-
-        val srcRect = Rect(0, 0, bw, bh)
-        val dstRect = Rect(0, 0, width, height)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-            xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-            alpha = 255
-        }
-        canvas.drawBitmap(bloomBitmap, srcRect, dstRect, paint)
-
-        bloomBitmap.recycle()
     }
 
-    private fun fastBoxBlur(pixels: IntArray, w: Int, h: Int, r: Int) {
-        val temp = IntArray(w * h)
+    private fun fastBoxBlur(pixels: IntArray, w: Int, h: Int, r: Int, temp: IntArray) {
         val div = 2 * r + 1
 
         for (y in 0 until h) {
@@ -625,40 +665,46 @@ object ImageProcessor {
         val cx = width / 2f
         val cy = height / 2f
         val maxDistSq = (cx * cx + cy * cy).coerceAtLeast(1f)
-        val copy = pixels.clone()
-        val step = maxOf(1, minOf(width, height) / 900)
+        val totalPixels = width * height
+        val copy = IntArrayPool.acquire(totalPixels)
+        try {
+            System.arraycopy(pixels, 0, copy, 0, totalPixels)
+            val step = maxOf(1, minOf(width, height) / 900)
 
-        for (y in step until height - step) {
-            val row = y * width
-            val dy = y - cy
-            val dySq = dy * dy
-            for (x in step until width - step) {
-                val dx = x - cx
-                val r2 = (dx * dx + dySq) / maxDistSq
-                val rSoftness = (r2 * 2.5f * softness).coerceIn(0f, 0.85f)
-                if (rSoftness > 0.02f) {
-                    val pL = copy[row + (x - step)]
-                    val pR = copy[row + (x + step)]
-                    val pT = copy[(y - step) * width + x]
-                    val pB = copy[(y + step) * width + x]
+            for (y in step until height - step) {
+                val row = y * width
+                val dy = y - cy
+                val dySq = dy * dy
+                for (x in step until width - step) {
+                    val dx = x - cx
+                    val r2 = (dx * dx + dySq) / maxDistSq
+                    val rSoftness = (r2 * 2.5f * softness).coerceIn(0f, 0.85f)
+                    if (rSoftness > 0.02f) {
+                        val pL = copy[row + (x - step)]
+                        val pR = copy[row + (x + step)]
+                        val pT = copy[(y - step) * width + x]
+                        val pB = copy[(y + step) * width + x]
 
-                    val rAvg = (((pL shr 16 and 0xFF) + (pR shr 16 and 0xFF) + (pT shr 16 and 0xFF) + (pB shr 16 and 0xFF)) shr 2)
-                    val gAvg = (((pL shr 8 and 0xFF) + (pR shr 8 and 0xFF) + (pT shr 8 and 0xFF) + (pB shr 8 and 0xFF)) shr 2)
-                    val bAvg = (((pL and 0xFF) + (pR and 0xFF) + (pT and 0xFF) + (pB and 0xFF)) shr 2)
+                        val rAvg = (((pL shr 16 and 0xFF) + (pR shr 16 and 0xFF) + (pT shr 16 and 0xFF) + (pB shr 16 and 0xFF)) shr 2)
+                        val gAvg = (((pL shr 8 and 0xFF) + (pR shr 8 and 0xFF) + (pT shr 8 and 0xFF) + (pB shr 8 and 0xFF)) shr 2)
+                        val bAvg = (((pL and 0xFF) + (pR and 0xFF) + (pT and 0xFF) + (pB and 0xFF)) shr 2)
 
-                    val orig = copy[row + x]
-                    val rOrig = (orig shr 16) and 0xFF
-                    val gOrig = (orig shr 8) and 0xFF
-                    val bOrig = orig and 0xFF
+                        val orig = copy[row + x]
+                        val rOrig = (orig shr 16) and 0xFF
+                        val gOrig = (orig shr 8) and 0xFF
+                        val bOrig = orig and 0xFF
 
-                    val blend = rSoftness * 0.50f
-                    val rNew = (rOrig * (1f - blend) + rAvg * blend).toInt().coerceIn(0, 255)
-                    val gNew = (gOrig * (1f - blend) + gAvg * blend).toInt().coerceIn(0, 255)
-                    val bNew = (bOrig * (1f - blend) + bAvg * blend).toInt().coerceIn(0, 255)
+                        val blend = rSoftness * 0.50f
+                        val rNew = (rOrig * (1f - blend) + rAvg * blend).toInt().coerceIn(0, 255)
+                        val gNew = (gOrig * (1f - blend) + gAvg * blend).toInt().coerceIn(0, 255)
+                        val bNew = (bOrig * (1f - blend) + bAvg * blend).toInt().coerceIn(0, 255)
 
-                    pixels[row + x] = (0xFF shl 24) or (rNew shl 16) or (gNew shl 8) or bNew
+                        pixels[row + x] = (0xFF shl 24) or (rNew shl 16) or (gNew shl 8) or bNew
+                    }
                 }
             }
+        } finally {
+            IntArrayPool.release(copy)
         }
     }
 
