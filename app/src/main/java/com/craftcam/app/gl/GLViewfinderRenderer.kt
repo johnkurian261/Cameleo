@@ -353,15 +353,10 @@ class GLViewfinderRenderer(
         // Upload preset parameters combined with live user tuning offsets
         val tuning = currentTuning
         val color = preset.colorGrading
-        val lutActive = (lutId != 0 && uLutTextureLoc != -1)
-        val contrast = if (lutActive) (1.0f + tuning.contrastOffset).coerceAtLeast(0.1f)
-                       else (color.contrast + tuning.contrastOffset).coerceAtLeast(0.1f)
-        val saturation = if (lutActive) (1.0f + tuning.saturationOffset).coerceAtLeast(0.0f)
-                         else (color.saturation + tuning.saturationOffset).coerceAtLeast(0.0f)
-        val temperature = if (lutActive) tuning.temperatureOffset.coerceIn(-1.0f, 1.0f)
-                          else (color.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
-        val tint = if (lutActive) tuning.tintOffset.coerceIn(-1.0f, 1.0f)
-                   else (color.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+        val contrast = (color.contrast * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
+        val saturation = (color.saturation * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+        val temperature = (color.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+        val tint = (color.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
 
         GLES30.glUniform1f(uContrastLoc, contrast)
         GLES30.glUniform1f(uSaturationLoc, saturation)
@@ -381,10 +376,11 @@ class GLViewfinderRenderer(
 
         val grain = preset.grain
         val grainIntensity = if (grain.enabled) (grain.intensity + tuning.grainBoost).coerceAtLeast(0f) else 0f
+        val frameSeed = (frameCount % 1000).toFloat() * 1.6180339887f + (System.currentTimeMillis() % 100).toFloat() * 0.01f
         GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
         GLES30.glUniform1f(uGrainScaleLoc, grain.scale)
         GLES30.glUniform1i(uIsColorNoiseLoc, if (grain.isColorNoise) 1 else 0)
-        GLES30.glUniform1f(uRandomSeedLoc, (System.currentTimeMillis() % 10000).toFloat() / 1000f)
+        GLES30.glUniform1f(uRandomSeedLoc, frameSeed)
 
         val halation = preset.halation
         val halationActive = tuning.halationEnabled && halation?.enabled == true

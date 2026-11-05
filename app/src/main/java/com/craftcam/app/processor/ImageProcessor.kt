@@ -193,6 +193,18 @@ object ImageProcessor {
         val satBoost  = (1.0f + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
         val contBoost = (1.0f + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
 
+        // Combined preset color grading + user tuning
+        val effectiveTemp = (grading.temperature + tempShift).coerceIn(-1.0f, 1.0f)
+        val effectiveTint = (grading.tint + tintShift).coerceIn(-1.0f, 1.0f)
+        val effectiveContrast = (grading.contrast * contBoost).coerceAtLeast(0.1f)
+        val effectiveSat = (grading.saturation * satBoost).coerceAtLeast(0.0f)
+        val effectiveGamma = grading.gamma
+        val effectiveFade = grading.fade
+        val shadowR = grading.shadowTintR
+        val shadowG = grading.shadowTintG
+        val shadowB = grading.shadowTintB
+        val rollOff = grading.highlightRollOff
+
         // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
         val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0.0f, 1.0f)
         val hasVig = vigIntensity > 0.03f
@@ -213,7 +225,7 @@ object ImageProcessor {
             grainTex.getPixels(gp, 0, gw, 0, 0, gw, gh)
             gp
         } else null
-        val grainStrength = effectiveGrain * 24.0f
+        val grainStrength = effectiveGrain * 0.45f
 
         // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
         val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
@@ -304,6 +316,63 @@ object ImageProcessor {
                             b = applyFilmicCurve(bi / 255.0f, grading.contrast, grading.fade)
                         }
 
+                        // A. Preset & User Temperature / Tint (Warm/Cool Shift)
+                        if (abs(effectiveTemp) > 0.001f) {
+                            r += 0.10f * effectiveTemp
+                            b -= 0.10f * effectiveTemp
+                        }
+                        if (abs(effectiveTint) > 0.001f) {
+                            g += 0.06f * effectiveTint
+                            r -= 0.03f * effectiveTint
+                            b -= 0.03f * effectiveTint
+                        }
+
+                        // B. Preset & User Contrast
+                        if (abs(effectiveContrast - 1.0f) > 0.01f) {
+                            r = (r - 0.5f) * effectiveContrast + 0.5f
+                            g = (g - 0.5f) * effectiveContrast + 0.5f
+                            b = (b - 0.5f) * effectiveContrast + 0.5f
+                        }
+
+                        // C. Preset & User Saturation
+                        var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                        if (abs(effectiveSat - 1.0f) > 0.01f) {
+                            r = curLuma + effectiveSat * (r - curLuma)
+                            g = curLuma + effectiveSat * (g - curLuma)
+                            b = curLuma + effectiveSat * (b - curLuma)
+                            curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                        }
+
+                        // D. Gamma Curve
+                        if (abs(effectiveGamma - 1.0f) > 0.01f) {
+                            val invGamma = 1.0f / effectiveGamma
+                            r = r.coerceAtLeast(0.0f).pow(invGamma)
+                            g = g.coerceAtLeast(0.0f).pow(invGamma)
+                            b = b.coerceAtLeast(0.0f).pow(invGamma)
+                            curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                        }
+
+                        // E. Shadow Tint
+                        val shadowWeight = (1.0f - curLuma * 3.0f).coerceIn(0.0f, 1.0f)
+                        r += shadowR * shadowWeight
+                        g += shadowG * shadowWeight
+                        b += shadowB * shadowWeight
+
+                        // F. Highlight Roll-off
+                        if (curLuma > rollOff) {
+                            val excess = curLuma - rollOff
+                            r -= excess * 0.25f
+                            g -= excess * 0.25f
+                            b -= excess * 0.25f
+                        }
+
+                        // G. Film Fade (Lifted blacks)
+                        if (effectiveFade > 0.001f) {
+                            r = r * (1.0f - effectiveFade) + effectiveFade
+                            g = g * (1.0f - effectiveFade) + effectiveFade
+                            b = b * (1.0f - effectiveFade) + effectiveFade
+                        }
+
                         // Flattering Skin Tone Radiance (Dazz Cam HighPassSkinSmoothing parity)
                         if (r > g && g > b && r > 0.22f && r < 0.90f) {
                             val skinFactor = ((r - b) * 2.2f).coerceIn(0.0f, 1.0f)
@@ -311,34 +380,6 @@ object ImageProcessor {
                             val peachWeight = (1.0f - abs(midLuma - 0.55f) * 2.2f).coerceIn(0.0f, 1.0f) * skinFactor
                             r = (r + 0.025f * peachWeight).coerceIn(0f, 1f)
                             g = (g + 0.010f * peachWeight).coerceIn(0f, 1f)
-                        }
-
-                        // User contrast fine-tuning (if slider moved)
-                        if (abs(contBoost - 1.0f) > 0.02f) {
-                            r = applyFilmicCurve(r, contBoost, 0.0f)
-                            g = applyFilmicCurve(g, contBoost, 0.0f)
-                            b = applyFilmicCurve(b, contBoost, 0.0f)
-                        }
-
-                        // User temperature / tint fine adjustment (if slider moved)
-                        if (abs(tempShift) > 0.01f || abs(tintShift) > 0.01f) {
-                            val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            val midW = (1.0f - abs(luma - 0.5f) * 2.2f).coerceIn(0.0f, 1.0f)
-                            r += 0.06f * tempShift * midW
-                            g += 0.02f * tempShift * midW
-                            b -= 0.05f * tempShift * midW
-
-                            g += 0.04f * tintShift * midW
-                            r -= 0.02f * tintShift * midW
-                            b -= 0.02f * tintShift * midW
-                        }
-
-                        // User saturation fine adjustment (if slider moved)
-                        if (abs(satBoost - 1.0f) > 0.01f) {
-                            val newLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            r = newLuma + satBoost * (r - newLuma)
-                            g = newLuma + satBoost * (g - newLuma)
-                            b = newLuma + satBoost * (b - newLuma)
                         }
 
                         val pxX = i % width
@@ -360,15 +401,24 @@ object ImageProcessor {
                             r *= v; g *= v; b *= v
                         }
 
-                        // Fused Film Halide Grain Texture (Organic midtone emulsion)
+                        // Fused Multi-Tone Film Halide Grain (Floating-point precision without premature truncation)
                         if (grainPixels != null) {
                             val gx = pxX % gw
                             val gy = (pxY % gh) * gw
                             val gp = grainPixels[gy + gx]
                             val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) * (1.0f / 128f)
-                            val luma = r * 0.299f + g * 0.587f + b * 0.114f
-                            val midWeight = 1.0f - (abs(luma - 0.5f) * 1.7f).coerceIn(0.0f, 0.85f)
-                            val delta = (gl * grainStrength * midWeight) * (1.0f / 255.0f)
+                            val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            val midD = postLuma - 0.45f
+                            val bell = (1.0f - 2.8f * midD * midD).coerceIn(0.0f, 1.0f)
+                            var grainWeight = 0.45f + 0.55f * bell - 0.15f * maxOf(0.0f, postLuma - 0.70f)
+
+                            // Flattering skin protection: gently attenuate grain on smooth skin
+                            if (r > g && g > b && r > 0.25f && r < 0.90f) {
+                                val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
+                                grainWeight *= (1.0f - 0.30f * skinWeight)
+                            }
+
+                            val delta = gl * grainStrength * grainWeight
                             r += delta; g += delta; b += delta
                         }
 
@@ -631,8 +681,7 @@ object ImageProcessor {
         val grainPixels = IntArray(gw * gh)
         grainTex.getPixels(grainPixels, 0, gw, 0, 0, gw, gh)
 
-        // Delicate organic silver halide variation (+/- 3-4 levels in midtones, never coarse noise)
-        val strength = intensity * 24.0f
+        val grainStrength = intensity * 0.45f
 
         for (y in 0 until height) {
             val gy = (y % gh) * gw
@@ -640,22 +689,33 @@ object ImageProcessor {
             for (x in 0 until width) {
                 val gx = x % gw
                 val gp = grainPixels[gy + gx]
-                val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) / 128f
+                val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) * (1.0f / 128f)
 
                 val i = row + x
                 val cp = pixels[i]
-                val cr = (cp shr 16 and 0xFF)
-                val cg = (cp shr 8 and 0xFF)
-                val cb = (cp and 0xFF)
-                val luma = cr * 0.299f + cg * 0.587f + cb * 0.114f
-                val midWeight = 1.0f - (kotlin.math.abs(luma - 128f) / 128f).coerceIn(0.0f, 0.85f)
-                val delta = (gl * strength * midWeight).toInt()
+                var r = ((cp shr 16 and 0xFF) / 255.0f)
+                var g = ((cp shr 8 and 0xFF) / 255.0f)
+                var b = ((cp and 0xFF) / 255.0f)
+                val luma = r * 0.299f + g * 0.587f + b * 0.114f
+                val midD = luma - 0.45f
+                val bell = (1.0f - 2.8f * midD * midD).coerceIn(0.0f, 1.0f)
+                var grainWeight = 0.45f + 0.55f * bell - 0.15f * maxOf(0.0f, luma - 0.70f)
+
+                if (r > g && g > b && r > 0.25f && r < 0.90f) {
+                    val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
+                    grainWeight *= (1.0f - 0.30f * skinWeight)
+                }
+
+                val delta = gl * grainStrength * grainWeight
+                r = (r + delta).coerceIn(0.0f, 1.0f)
+                g = (g + delta).coerceIn(0.0f, 1.0f)
+                b = (b + delta).coerceIn(0.0f, 1.0f)
 
                 val a = cp ushr 24
-                val r = (cr + delta).coerceIn(0, 255)
-                val g = (cg + delta).coerceIn(0, 255)
-                val b = (cb + delta).coerceIn(0, 255)
-                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+                val ir = (r * 255.0f).toInt()
+                val ig = (g * 255.0f).toInt()
+                val ib = (b * 255.0f).toInt()
+                pixels[i] = (a shl 24) or (ir shl 16) or (ig shl 8) or ib
             }
         }
     }
