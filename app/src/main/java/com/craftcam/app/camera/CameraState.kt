@@ -15,6 +15,13 @@ enum class CaptureMode(val displayName: String) {
     VIDEO("VIDEO")
 }
 
+/**
+ * Flag to pause video recording feature and focus all hardware pipeline,
+ * latency, and UI controls purely on still photography and authentic film rendering.
+ * Set to false to re-enable video recording.
+ */
+const val IS_VIDEO_FEATURE_PAUSED = true
+
 data class UserTuningConfig(
     val exposureCompensation: Float = 0.0f, // -2.0 to +2.0 EV
     val temperatureOffset: Float = 0.0f,    // -0.5 (cool) to +0.5 (warm)

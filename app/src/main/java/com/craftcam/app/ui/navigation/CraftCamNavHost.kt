@@ -6,6 +6,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.craftcam.app.camera.CameraManager
+import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
+import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.ui.collection.CollectionScreen
@@ -25,7 +27,20 @@ fun CraftCamNavHost(
     cameraManager: CameraManager,
     navController: NavHostController = rememberNavController()
 ) {
-    var selectedPreset by remember { mutableStateOf(PresetCatalog.allPresets.first()) }
+    var selectedPreset by remember {
+        val initial = if (IS_VIDEO_FEATURE_PAUSED) {
+            PresetCatalog.allPresets.first { it.category != CameraCategory.CAMCORDER }
+        } else {
+            PresetCatalog.allPresets.first()
+        }
+        mutableStateOf(initial)
+    }
+
+    LaunchedEffect(Unit) {
+        if (IS_VIDEO_FEATURE_PAUSED && selectedPreset.category == CameraCategory.CAMCORDER) {
+            selectedPreset = PresetCatalog.allPresets.first { it.category != CameraCategory.CAMCORDER }
+        }
+    }
 
     NavHost(
         navController = navController,

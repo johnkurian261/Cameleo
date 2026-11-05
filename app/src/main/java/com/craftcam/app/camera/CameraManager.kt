@@ -149,6 +149,10 @@ class CameraManager(private val context: Context) {
     }
 
     fun setCaptureMode(mode: CaptureMode) {
+        if (IS_VIDEO_FEATURE_PAUSED && mode == CaptureMode.VIDEO) {
+            Log.d(TAG, "Video mode is paused; keeping photo mode")
+            return
+        }
         if (_uiState.value.captureMode != mode) {
             _uiState.update { it.copy(captureMode = mode) }
             bindCameraUseCases()
@@ -211,7 +215,8 @@ class CameraManager(private val context: Context) {
                     }
                 }
 
-            if (_uiState.value.captureMode == CaptureMode.PHOTO) {
+            val effectiveMode = if (IS_VIDEO_FEATURE_PAUSED) CaptureMode.PHOTO else _uiState.value.captureMode
+            if (effectiveMode == CaptureMode.PHOTO) {
                 // 2A. Full native sensor resolution with hardware ISP multi-frame HDR & noise reduction
                 val photoResolutionSelector = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)

@@ -356,3 +356,4 @@ object CameraDiscovery {
         frontLenses = defaultFrontLenses()
     )
 }
+

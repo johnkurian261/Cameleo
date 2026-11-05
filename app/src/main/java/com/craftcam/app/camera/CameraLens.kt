@@ -12,3 +12,4 @@ data class CameraLens(
     val lensDescription: String,
     val isPhysicalLens: Boolean = true
 )
+

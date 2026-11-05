@@ -54,7 +54,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.craftcam.app.camera.AspectRatioMode
 import com.craftcam.app.camera.CameraManager
 import com.craftcam.app.camera.CaptureMode
+import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
 import com.craftcam.app.gl.GLViewfinderRenderer
+import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
@@ -87,6 +89,9 @@ fun ViewfinderScreen(
     }
 
     LaunchedEffect(Unit) {
+        if (IS_VIDEO_FEATURE_PAUSED) {
+            cameraManager.setCaptureMode(CaptureMode.PHOTO)
+        }
         SoundManager.initialize(context)
     }
 
@@ -307,48 +312,57 @@ fun ViewfinderScreen(
                 }
             )
 
-            // Mode Switcher (PHOTO | VIDEO)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
+            // Mode Switcher (PHOTO | VIDEO) - Paused for pure photo focus
+            if (!IS_VIDEO_FEATURE_PAUSED) {
+                Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(SurfaceElevated)
-                        .padding(3.dp)
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row {
-                        CaptureModeTab(
-                            title = "PHOTO",
-                            isSelected = uiState.captureMode == CaptureMode.PHOTO,
-                            onClick = {
-                                if (!uiState.isRecording) {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    cameraManager.setCaptureMode(CaptureMode.PHOTO)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(SurfaceElevated)
+                            .padding(3.dp)
+                    ) {
+                        Row {
+                            CaptureModeTab(
+                                title = "PHOTO",
+                                isSelected = uiState.captureMode == CaptureMode.PHOTO,
+                                onClick = {
+                                    if (!uiState.isRecording) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        cameraManager.setCaptureMode(CaptureMode.PHOTO)
+                                    }
                                 }
-                            }
-                        )
-                        CaptureModeTab(
-                            title = "VIDEO",
-                            isSelected = uiState.captureMode == CaptureMode.VIDEO,
-                            onClick = {
-                                if (!uiState.isRecording) {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    cameraManager.setCaptureMode(CaptureMode.VIDEO)
+                            )
+                            CaptureModeTab(
+                                title = "VIDEO",
+                                isSelected = uiState.captureMode == CaptureMode.VIDEO,
+                                onClick = {
+                                    if (!uiState.isRecording) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        cameraManager.setCaptureMode(CaptureMode.VIDEO)
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
 
             // Camera Presets Carousel Wheel
+            val photoPresets = remember {
+                if (IS_VIDEO_FEATURE_PAUSED) {
+                    PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
+                } else {
+                    PresetCatalog.allPresets
+                }
+            }
             CameraWheelSelector(
-                presets = PresetCatalog.allPresets,
+                presets = photoPresets,
                 selectedPreset = selectedPreset,
                 onPresetSelected = onPresetChange,
                 onOpenCollection = onNavigateToCollection
@@ -399,11 +413,11 @@ fun ViewfinderScreen(
 
                 // Shutter / Record Button
                 TactileShutterButton(
-                    captureMode = uiState.captureMode,
+                    captureMode = if (IS_VIDEO_FEATURE_PAUSED) CaptureMode.PHOTO else uiState.captureMode,
                     isCapturing = uiState.isCapturing || countdown != null,
-                    isRecording = uiState.isRecording,
+                    isRecording = !IS_VIDEO_FEATURE_PAUSED && uiState.isRecording,
                     onClick = {
-                        if (uiState.captureMode == CaptureMode.VIDEO) {
+                        if (!IS_VIDEO_FEATURE_PAUSED && uiState.captureMode == CaptureMode.VIDEO) {
                             // VIDEO RECORDING TOGGLE
                             if (uiState.isRecording) {
                                 cameraManager.stopRecording()

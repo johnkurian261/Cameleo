@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.craftcam.app.R
+import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
@@ -52,10 +53,23 @@ fun CollectionScreen(
     val context = LocalContext.current
 
     val displayedPresets = remember(selectedCategory) {
-        if (selectedCategory == null) {
-            PresetCatalog.allPresets
+        val base = if (IS_VIDEO_FEATURE_PAUSED) {
+            PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
         } else {
-            PresetCatalog.allPresets.filter { it.category == selectedCategory }
+            PresetCatalog.allPresets
+        }
+        if (selectedCategory == null) {
+            base
+        } else {
+            base.filter { it.category == selectedCategory }
+        }
+    }
+
+    val visibleCategories = remember {
+        if (IS_VIDEO_FEATURE_PAUSED) {
+            CameraCategory.values().filter { it != CameraCategory.CAMCORDER }
+        } else {
+            CameraCategory.values().toList()
         }
     }
 
@@ -76,7 +90,9 @@ fun CollectionScreen(
             ModelShelfItem("Warm Film", "cam_gr_f",      "analog_warm_film"),
             ModelShelfItem("D Exp",     "cam_d_exp",     "analog_vintage_color"),
             ModelShelfItem("Polaroid",  "cam_polaroid",  "inst_vintage"),
-            ModelShelfItem("Soft Film", "cam_ct2f",      "analog_soft_film")
+            ModelShelfItem("Soft Film", "cam_ct2f",      "analog_soft_film"),
+            ModelShelfItem("D FunS",    "cam_d_funs",    "ccd_flash"),
+            ModelShelfItem("Classic U", "cam_classic_u", "ccd_y2k_digital")
         )
     }
 
@@ -175,35 +191,37 @@ fun CollectionScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            // ==================== 1. ▷ VIDEO SHELF ====================
-            item {
-                ShelfSectionHeader(title = "▷ Video")
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp)
-                ) {
-                    items(videoModels) { item ->
-                        val isSelected = currentPreset.id == item.presetId
-                        Camera3DModelTile(
-                            item = item,
-                            isSelected = isSelected,
-                            onClick = {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                PresetCatalog.getPresetById(item.presetId)?.let { onSelectPreset(it) }
-                                onNavigateBack()
-                            }
-                        )
+            // ==================== 1. ▷ VIDEO SHELF (PAUSED) ====================
+            if (!IS_VIDEO_FEATURE_PAUSED) {
+                item {
+                    ShelfSectionHeader(title = "▷ Video")
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp)
+                    ) {
+                        items(videoModels) { item ->
+                            val isSelected = currentPreset.id == item.presetId
+                            Camera3DModelTile(
+                                item = item,
+                                isSelected = isSelected,
+                                onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    PresetCatalog.getPresetById(item.presetId)?.let { onSelectPreset(it) }
+                                    onNavigateBack()
+                                }
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(14.dp))
                 }
-                Spacer(modifier = Modifier.height(14.dp))
             }
 
             // ==================== 2. 📷 PHOTO SHELF ====================
             item {
-                ShelfSectionHeader(title = "📷 Photo")
+                ShelfSectionHeader(title = "📷 Photo Cameras")
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -229,7 +247,12 @@ fun CollectionScreen(
 
             // ==================== 3. CATALOG FILTER TABS ====================
             item {
-                ShelfSectionHeader(title = "🎞 All Camera Emulsions (${PresetCatalog.allPresets.size})")
+                ShelfSectionHeader(
+                    title = if (IS_VIDEO_FEATURE_PAUSED)
+                        "🎞 Film & Digital Emulsions (${displayedPresets.size})"
+                    else
+                        "🎞 All Camera Emulsions (${PresetCatalog.allPresets.size})"
+                )
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -247,7 +270,7 @@ fun CollectionScreen(
                             }
                         )
                     }
-                    items(CameraCategory.values()) { category ->
+                    items(visibleCategories) { category ->
                         CategoryFilterPill(
                             title = category.displayName.uppercase(),
                             isSelected = selectedCategory == category,
