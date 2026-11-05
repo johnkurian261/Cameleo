@@ -248,4 +248,4 @@ Bit-exact visual equivalence was mathematically and programmatically verified ac
 
 ## 14. Exact Checkpoint Commits
 - **Baseline Audit Commit**: `74c0484` (`feat: pause video feature to focus 100% on still photo pipeline and authentic film rendering`)
-- **Phase M1 Verification Commit**: `011ba9c` (`feat(perf): implement Phase M1 bitmap and buffer pooling in image processor`)
+- **Phase M1 Verification Commit**: `d8573e8` (`feat(perf): implement Phase M1 bitmap and buffer pooling in image processor`)
