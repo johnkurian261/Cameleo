@@ -227,6 +227,11 @@ object ImageProcessor {
         } else null
         val grainStrength = effectiveGrain * 0.45f
 
+        // ── Step 1b: Optical Lens Softness (Radial spherical aberration) ────
+        if (preset.lens.softness > 0.01f) {
+            applyOpticalSoftness(pixels, width, height, preset.lens.softness)
+        }
+
         // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
         val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
         val chunkSize = (pixels.size + numCores - 1) / numCores
@@ -358,12 +363,13 @@ object ImageProcessor {
                         g += shadowG * shadowWeight
                         b += shadowB * shadowWeight
 
-                        // F. Highlight Roll-off
-                        if (curLuma > rollOff) {
-                            val excess = curLuma - rollOff
-                            r -= excess * 0.25f
-                            g -= excess * 0.25f
-                            b -= excess * 0.25f
+                        // F. Filmic Highlight Rolloff (Soft-shoulder exponential compression)
+                        if (rollOff < 0.99f) {
+                            val knee = maxOf(0.01f, 1.0f - rollOff)
+                            if (r > rollOff) r = rollOff + knee * (1.0f - exp(-(r - rollOff) / knee))
+                            if (g > rollOff) g = rollOff + knee * (1.0f - exp(-(g - rollOff) / knee))
+                            if (b > rollOff) b = rollOff + knee * (1.0f - exp(-(b - rollOff) / knee))
+                            curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                         }
 
                         // G. Film Fade (Lifted blacks)
@@ -401,25 +407,39 @@ object ImageProcessor {
                             r *= v; g *= v; b *= v
                         }
 
-                        // Fused Multi-Tone Film Halide Grain (Floating-point precision without premature truncation)
+                        // Fused Multi-Tone Film Halide Grain with Tri-Pack Dye Cloud Separation
                         if (grainPixels != null) {
                             val gx = pxX % gw
                             val gy = (pxY % gh) * gw
                             val gp = grainPixels[gy + gx]
                             val gl = (((gp shr 16 and 0xFF) * 0.299f + (gp shr 8 and 0xFF) * 0.587f + (gp and 0xFF) * 0.114f) - 128f) * (1.0f / 128f)
                             val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            val midD = postLuma - 0.45f
-                            val bell = (1.0f - 2.8f * midD * midD).coerceIn(0.0f, 1.0f)
-                            var grainWeight = 0.45f + 0.55f * bell - 0.15f * maxOf(0.0f, postLuma - 0.70f)
+                            
+                            val sRise = ((postLuma / 0.42f).coerceIn(0f, 1f)).let { t -> t * t * (3f - 2f * t) }
+                            val hFall = (((postLuma - 0.42f) / 0.58f).coerceIn(0f, 1f)).let { t -> t * t * (3f - 2f * t) }
+                            var grainWeight = (0.28f + 0.72f * sRise) * (1.0f - 0.88f * hFall)
 
                             // Flattering skin protection: gently attenuate grain on smooth skin
                             if (r > g && g > b && r > 0.25f && r < 0.90f) {
                                 val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
-                                grainWeight *= (1.0f - 0.30f * skinWeight)
+                                grainWeight *= (1.0f - 0.35f * skinWeight)
                             }
 
-                            val delta = gl * grainStrength * grainWeight
-                            r += delta; g += delta; b += delta
+                            val deltaG = gl * grainStrength * grainWeight
+                            val deltaR = gl * (grainStrength * 1.08f) * grainWeight
+                            val deltaB = gl * (grainStrength * 0.92f) * grainWeight
+
+                            if (preset.grain.isColorNoise) {
+                                val chroma = gl * 0.35f * grainStrength * grainWeight
+                                r += deltaR + chroma
+                                g += deltaG
+                                b += deltaB - chroma
+                            } else {
+                                val dyeCloud = gl * 0.12f * grainStrength * grainWeight
+                                r += deltaR + dyeCloud
+                                g += deltaG
+                                b += deltaB - dyeCloud
+                            }
                         }
 
                         val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
@@ -589,6 +609,48 @@ object ImageProcessor {
                 rSum += (btmPx shr 16 and 0xFF) - (topPx shr 16 and 0xFF)
                 gSum += (btmPx shr 8 and 0xFF) - (topPx shr 8 and 0xFF)
                 bSum += (btmPx and 0xFF) - (topPx and 0xFF)
+            }
+        }
+    }
+
+    // ─── Optical Lens Softness (Radial spherical aberration) ────────────────
+    private fun applyOpticalSoftness(pixels: IntArray, width: Int, height: Int, softness: Float) {
+        val cx = width / 2f
+        val cy = height / 2f
+        val maxDistSq = (cx * cx + cy * cy).coerceAtLeast(1f)
+        val copy = pixels.clone()
+        val step = maxOf(1, minOf(width, height) / 900)
+
+        for (y in step until height - step) {
+            val row = y * width
+            val dy = y - cy
+            val dySq = dy * dy
+            for (x in step until width - step) {
+                val dx = x - cx
+                val r2 = (dx * dx + dySq) / maxDistSq
+                val rSoftness = (r2 * 2.5f * softness).coerceIn(0f, 0.85f)
+                if (rSoftness > 0.02f) {
+                    val pL = copy[row + (x - step)]
+                    val pR = copy[row + (x + step)]
+                    val pT = copy[(y - step) * width + x]
+                    val pB = copy[(y + step) * width + x]
+
+                    val rAvg = (((pL shr 16 and 0xFF) + (pR shr 16 and 0xFF) + (pT shr 16 and 0xFF) + (pB shr 16 and 0xFF)) shr 2)
+                    val gAvg = (((pL shr 8 and 0xFF) + (pR shr 8 and 0xFF) + (pT shr 8 and 0xFF) + (pB shr 8 and 0xFF)) shr 2)
+                    val bAvg = (((pL and 0xFF) + (pR and 0xFF) + (pT and 0xFF) + (pB and 0xFF)) shr 2)
+
+                    val orig = copy[row + x]
+                    val rOrig = (orig shr 16) and 0xFF
+                    val gOrig = (orig shr 8) and 0xFF
+                    val bOrig = orig and 0xFF
+
+                    val blend = rSoftness * 0.50f
+                    val rNew = (rOrig * (1f - blend) + rAvg * blend).toInt().coerceIn(0, 255)
+                    val gNew = (gOrig * (1f - blend) + gAvg * blend).toInt().coerceIn(0, 255)
+                    val bNew = (bOrig * (1f - blend) + bAvg * blend).toInt().coerceIn(0, 255)
+
+                    pixels[row + x] = (0xFF shl 24) or (rNew shl 16) or (gNew shl 8) or bNew
+                }
             }
         }
     }

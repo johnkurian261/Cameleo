@@ -67,6 +67,7 @@ class GLViewfinderRenderer(
     private var uVignetteRadiusLoc = -1
     private var uChromaticAberrationLoc = -1
     private var uBarrelDistortionLoc = -1
+    private var uSoftnessLoc = -1
 
     private var uGrainIntensityLoc = -1
     private var uGrainScaleLoc = -1
@@ -247,6 +248,7 @@ class GLViewfinderRenderer(
         uVignetteRadiusLoc = GLES30.glGetUniformLocation(programId, "uVignetteRadius")
         uChromaticAberrationLoc = GLES30.glGetUniformLocation(programId, "uChromaticAberration")
         uBarrelDistortionLoc = GLES30.glGetUniformLocation(programId, "uBarrelDistortion")
+        uSoftnessLoc = GLES30.glGetUniformLocation(programId, "uSoftness")
 
         uGrainIntensityLoc = GLES30.glGetUniformLocation(programId, "uGrainIntensity")
         uGrainScaleLoc = GLES30.glGetUniformLocation(programId, "uGrainScale")
@@ -368,14 +370,15 @@ class GLViewfinderRenderer(
         GLES30.glUniform3f(uShadowTintLoc, color.shadowTintR, color.shadowTintG, color.shadowTintB)
 
         val lens = preset.lens
-        val vigIntensity = (lens.vignetteIntensity + tuning.vignetteBoost).coerceAtLeast(0f)
+        val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0f, 1f)
         GLES30.glUniform1f(uVignetteIntensityLoc, vigIntensity)
         GLES30.glUniform1f(uVignetteRadiusLoc, lens.vignetteRadius)
         GLES30.glUniform1f(uChromaticAberrationLoc, lens.chromaticAberration)
         GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion)
+        GLES30.glUniform1f(uSoftnessLoc, lens.softness)
 
         val grain = preset.grain
-        val grainIntensity = if (grain.enabled) (grain.intensity + tuning.grainBoost).coerceAtLeast(0f) else 0f
+        val grainIntensity = if (grain.enabled) (grain.intensity * tuning.grainBoost).coerceIn(0f, 1f) else 0f
         val frameSeed = (frameCount % 60).toFloat() / 60.0f
         GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
         GLES30.glUniform1f(uGrainScaleLoc, grain.scale)

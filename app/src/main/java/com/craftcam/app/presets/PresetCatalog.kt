@@ -21,13 +21,14 @@ object PresetCatalog {
                 tint = -0.05f,
                 gamma = 1.02f,
                 fade = 0.04f,
-                highlightRollOff = 0.82f,
+                highlightRollOff = 0.80f,
                 shadowTintR = 0.02f,
                 shadowTintG = 0.03f,
                 shadowTintB = 0.05f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.14f, scale = 1.0f),
-            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.82f, chromaticAberration = 0.003f),
+            lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.85f, chromaticAberration = 0.003f, softness = 0.12f),
+            halation = HalationConfig(enabled = true, threshold = 0.82f, intensity = 0.25f, radius = 14f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -28),
             border = BorderConfig(style = BorderStyle.NONE)
         ),
@@ -46,14 +47,14 @@ object PresetCatalog {
                 tint = 0.08f,
                 gamma = 0.98f,
                 fade = 0.05f,
-                highlightRollOff = 0.80f,
+                highlightRollOff = 0.76f,
                 shadowTintR = 0.06f,
                 shadowTintG = 0.04f,
                 shadowTintB = 0.01f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 1.2f),
-            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.75f, chromaticAberration = 0.004f),
-            lightLeak = LightLeakConfig(enabled = true, intensity = 0.30f, warmColorBias = 0.9f),
+            grain = GrainConfig(enabled = true, intensity = 0.16f, scale = 1.15f),
+            lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.004f, softness = 0.15f),
+            halation = HalationConfig(enabled = true, threshold = 0.78f, intensity = 0.32f, radius = 16f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -30)
         ),
         CameraPreset(
@@ -71,10 +72,11 @@ object PresetCatalog {
                 tint = -0.04f,
                 gamma = 1.08f,
                 fade = 0.08f,
-                highlightRollOff = 0.75f
+                highlightRollOff = 0.72f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.10f, scale = 0.9f),
-            lens = LensConfig(vignetteIntensity = 0.25f, vignetteRadius = 0.90f, softness = 0.2f),
+            grain = GrainConfig(enabled = true, intensity = 0.10f, scale = 0.85f),
+            lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.90f, chromaticAberration = 0.002f, softness = 0.30f),
+            halation = HalationConfig(enabled = true, threshold = 0.76f, intensity = 0.22f, radius = 18f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MINIMAL_WHITE)
         ),
         CameraPreset(
@@ -91,12 +93,14 @@ object PresetCatalog {
                 temperature = 0.25f,
                 tint = -0.15f,
                 fade = 0.07f,
+                highlightRollOff = 0.78f,
                 shadowTintR = 0.05f,
                 shadowTintG = 0.06f,
                 shadowTintB = 0.01f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.3f, isColorNoise = true),
-            lens = LensConfig(vignetteIntensity = 0.50f, vignetteRadius = 0.70f, chromaticAberration = 0.006f),
+            grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 1.25f, isColorNoise = true),
+            lens = LensConfig(vignetteIntensity = 0.42f, vignetteRadius = 0.75f, chromaticAberration = 0.005f, softness = 0.14f),
+            halation = HalationConfig(enabled = true, threshold = 0.80f, intensity = 0.30f, radius = 15f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -35)
         ),
         CameraPreset(
@@ -114,10 +118,10 @@ object PresetCatalog {
                 tint = 0.05f,
                 gamma = 1.12f,
                 fade = 0.14f,
-                highlightRollOff = 0.78f
+                highlightRollOff = 0.76f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.16f, scale = 1.1f),
-            lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f),
+            lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.85f, chromaticAberration = 0.003f, softness = 0.16f),
             dateStamp = DateStampConfig(enabled = false)
         ),
         CameraPreset(
@@ -134,13 +138,13 @@ object PresetCatalog {
                 temperature = -0.08f,
                 tint = 0.02f,
                 fade = 0.03f,
-                highlightRollOff = 0.80f,
+                highlightRollOff = 0.78f,
                 shadowTintR = -0.03f,
                 shadowTintG = 0.04f,
                 shadowTintB = 0.08f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.15f, scale = 1.0f),
-            lens = LensConfig(vignetteIntensity = 0.42f, vignetteRadius = 0.78f, chromaticAberration = 0.005f),
+            grain = GrainConfig(enabled = true, intensity = 0.13f, scale = 0.95f),
+            lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.004f, softness = 0.12f),
             halation = HalationConfig(enabled = true, threshold = 0.80f, intensity = 0.42f, radius = 20f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE)
         ),
@@ -161,10 +165,10 @@ object PresetCatalog {
                 tint = 0.02f,
                 gamma = 0.96f,
                 fade = 0.01f,
-                highlightRollOff = 0.95f
+                highlightRollOff = 0.92f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.06f, scale = 0.8f, isColorNoise = true),
-            lens = LensConfig(vignetteIntensity = 0.20f, vignetteRadius = 0.90f),
+            grain = GrainConfig(enabled = true, intensity = 0.05f, scale = 0.7f, isColorNoise = true),
+            lens = LensConfig(vignetteIntensity = 0.18f, vignetteRadius = 0.92f, chromaticAberration = 0.002f, softness = 0.0f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -22)
         ),
         CameraPreset(
@@ -419,12 +423,13 @@ object PresetCatalog {
                 temperature = -0.04f,
                 tint = -0.08f,
                 fade = 0.08f,
+                highlightRollOff = 0.85f,
                 shadowTintR = 0.02f,
                 shadowTintG = 0.05f,
                 shadowTintB = 0.03f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.30f, scale = 2.0f, isColorNoise = true),
-            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.75f, chromaticAberration = 0.014f),
+            grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.8f, isColorNoise = true),
+            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.010f, softness = 0.28f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -35)
         ),

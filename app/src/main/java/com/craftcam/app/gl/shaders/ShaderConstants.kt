@@ -41,6 +41,7 @@ uniform float uVignetteIntensity;
 uniform float uVignetteRadius;
 uniform float uChromaticAberration;
 uniform float uBarrelDistortion;
+uniform float uSoftness;
 
 // Film Grain
 uniform float uGrainIntensity;
@@ -128,9 +129,24 @@ void main() {
     }
 
     vec3 color = srcColor.rgb;
+
+    // 2b. Optical Softness (Radial spherical aberration edge diffusion)
+    if (uSoftness > 0.005) {
+        float rSoftness = clamp(r2 * 2.8 * uSoftness, 0.0, 0.85);
+        if (rSoftness > 0.01) {
+            vec2 sStep = (2.5 / uViewportSize) * (1.0 + rSoftness * 2.0);
+            vec3 sL = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(sStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 sR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(sStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 sT = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, sStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 sB = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, sStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 softSample = (sL + sR + sT + sB) * 0.25;
+            color = mix(color, softSample, rSoftness * 0.50);
+        }
+    }
+
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
-    // 2b. Photochemical 3D Film Emulsion LUT
+    // 2c. Photochemical 3D Film Emulsion LUT
     if (uLutEnabled) {
         color = sampleHaldLut(uLutTexture, color);
     }
@@ -168,10 +184,12 @@ void main() {
     float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
     color += uShadowTint * shadowWeight;
 
-    // 8. Highlight Roll-off (Gentle shoulder compression)
-    if (luma > uHighlightRollOff) {
-        float excess = luma - uHighlightRollOff;
-        color -= vec3(excess * 0.25);
+    // 8. Filmic Highlight Rolloff (Soft-shoulder exponential compression preventing harsh digital clipping)
+    if (uHighlightRollOff < 0.99) {
+        float knee = max(0.01, 1.0 - uHighlightRollOff);
+        vec3 over = max(vec3(0.0), color - vec3(uHighlightRollOff));
+        color = min(color, vec3(uHighlightRollOff)) + knee * (vec3(1.0) - exp(-over / knee));
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
 
     // 9. Film Fade (Lifted blacks / aged paper floor)
@@ -179,18 +197,47 @@ void main() {
         color = color * (1.0 - uFade) + uFade;
     }
 
-    // 10. Halation (Film red glow around high-contrast speculars)
-    if (uHalationEnabled && luma > uHalationThreshold) {
-        float haloAmount = (luma - uHalationThreshold) / (1.0 - uHalationThreshold);
-        vec3 haloColor = vec3(1.0, 0.22, 0.04) * (haloAmount * uHalationIntensity);
-        color += haloColor;
+    // 10. Localized Film Halation (Red-orange highlight glow spreading into adjacent emulsion)
+    if (uHalationEnabled && uHalationIntensity > 0.01) {
+        vec2 hStep = (12.0 / uViewportSize);
+        vec4 tapL = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(hStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+        vec4 tapR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(hStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+        vec4 tapT = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, hStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+        vec4 tapB = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, hStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+
+        vec2 diag = hStep * 0.7071;
+        vec4 tapTL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+        vec4 tapTR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+        vec4 tapBL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+        vec4 tapBR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+
+        float lL = dot(tapL.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lR = dot(tapR.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lT = dot(tapT.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lB = dot(tapB.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+        float lTL = dot(tapTL.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lTR = dot(tapTR.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lBL = dot(tapBL.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lBR = dot(tapBR.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+        float kThresh = uHalationThreshold;
+        float hCenter = max(0.0, luma - kThresh);
+        float hCross = max(0.0, lL - kThresh) + max(0.0, lR - kThresh) + max(0.0, lT - kThresh) + max(0.0, lB - kThresh);
+        float hDiag = max(0.0, lTL - kThresh) + max(0.0, lTR - kThresh) + max(0.0, lBL - kThresh) + max(0.0, lBR - kThresh);
+
+        float spreadHighlight = (hCenter * 0.30 + hCross * 0.10 + hDiag * 0.075) / max(0.01, 1.0 - kThresh);
+        if (spreadHighlight > 0.001) {
+            vec3 haloColor = vec3(1.0, 0.28, 0.05) * (spreadHighlight * uHalationIntensity * 0.40);
+            color += haloColor;
+        }
     }
 
     // 11. Subtle Edge Light Leak Emulation
     if (uLightLeakEnabled && uLightLeakIntensity > 0.01) {
-        float leakDist = length(uv - vec2(0.95, 0.05));
-        float leakMask = smoothstep(0.45, 0.05, leakDist);
-        vec3 leakColor = vec3(1.0, 0.50, 0.15) * (leakMask * uLightLeakIntensity * 0.50);
+        float edgeDist = length(vec2(max(0.0, uv.x - 0.75) * 2.0, max(0.0, 0.25 - uv.y) * 2.0));
+        float leakMask = smoothstep(0.40, 0.0, edgeDist);
+        vec3 leakColor = vec3(1.0, 0.45, 0.12) * (leakMask * uLightLeakIntensity * 0.35);
         // Screen blend
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
@@ -203,42 +250,45 @@ void main() {
         color *= vignette;
     }
 
-    // 13. Authentic Multi-Octave Analogue Film Grain
+    // 13. Authentic Multi-Octave Tri-Pack Film Grain (Channel dye clumping)
     if (uGrainIntensity > 0.005) {
-        // Physical film density luminance envelope:
-        // Shadows retain ~65% grain texture, midtones peak at 100%, highlights softly roll off
-        float midD = luma - 0.45;
-        float bell = clamp(1.0 - 2.8 * midD * midD, 0.0, 1.0);
-        float grainWeight = 0.45 + 0.55 * bell - 0.15 * max(0.0, luma - 0.70);
+        // Asymmetric film density luminance envelope:
+        // Shadows retain ~28% grain, midtones peak at 100% around luma=0.42, highlights roll off to 12%
+        float sRise = smoothstep(0.0, 0.42, luma);
+        float hFall = smoothstep(0.42, 1.0, luma);
+        float grainWeight = (0.28 + 0.72 * sRise) * (1.0 - 0.88 * hFall);
 
         // Flattering skin protection: gently attenuate grain on smooth skin tones
         if (color.r > color.g && color.g > color.b && color.r > 0.25 && color.r < 0.90) {
             float skinWeight = clamp((color.r - color.b) * 2.0, 0.0, 1.0);
-            grainWeight *= (1.0 - 0.30 * skinWeight);
+            grainWeight *= (1.0 - 0.35 * skinWeight);
         }
 
-        // Calibrated to viewport resolution so grain scale is physically screen-pixel relative
-        vec2 grainCoord = vQuadCoord * uViewportSize.xy * (uGrainScale * 0.40);
+        // Screen-pixel calibrated coordinate: fine crystals
+        vec2 grainCoord = vQuadCoord * uViewportSize.xy * (uGrainScale * 0.45);
+        
+        // Multi-octave synthesis for R, G, B channels with dye cloud separation
+        float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
+        float clumpG = filmNoise(grainCoord * 0.45, uRandomSeed + 0.42);
+        float noiseG = fineG * 0.85 + clumpG * 0.15;
 
-        // Multi-octave synthesis: fine microscopic crystals (72%) + natural organic clumps (28%)
-        float fineNoise = filmNoise(grainCoord, uRandomSeed);
-        float clumpNoise = filmNoise(grainCoord * 0.45, uRandomSeed + 13.37);
-        float noise = fineNoise * 0.72 + clumpNoise * 0.28;
+        float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
+        float clumpR = filmNoise(grainCoord * 0.45, uRandomSeed + 0.67);
+        float noiseR = fineR * 0.75 + clumpR * 0.25;
 
+        float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
+        float clumpB = filmNoise(grainCoord * 0.45, uRandomSeed + 0.89);
+        float noiseB = fineB * 0.65 + clumpB * 0.35;
+
+        vec3 grainDelta;
         if (uIsColorNoise) {
-            float fineG = filmNoise(grainCoord, uRandomSeed + 2.71);
-            float clumpG = filmNoise(grainCoord * 0.45, uRandomSeed + 16.18);
-            float noiseG = fineG * 0.72 + clumpG * 0.28;
-
-            float fineB = filmNoise(grainCoord, uRandomSeed + 4.14);
-            float clumpB = filmNoise(grainCoord * 0.45, uRandomSeed + 19.41);
-            float noiseB = fineB * 0.72 + clumpB * 0.28;
-
-            vec3 colorNoise = vec3(noise, noiseG, noiseB);
-            color += colorNoise * (grainWeight * uGrainIntensity * 0.50);
+            grainDelta = vec3(noiseR, noiseG, noiseB);
         } else {
-            color += vec3(noise * grainWeight * uGrainIntensity * 0.50);
+            // Monochromatic base with subtle 18% dye cloud variance for natural analog look
+            grainDelta = mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
         }
+
+        color += grainDelta * (grainWeight * uGrainIntensity * 0.42);
     }
 
     // 14. Retro Camcorder Scanlines (subtle authentic tape texture)
@@ -287,6 +337,7 @@ uniform float uVignetteIntensity;
 uniform float uVignetteRadius;
 uniform float uChromaticAberration;
 uniform float uBarrelDistortion;
+uniform float uSoftness;
 
 // Film Grain
 uniform float uGrainIntensity;
@@ -366,55 +417,114 @@ void main() {
 
     vec3 color = srcColor.rgb;
 
-    // 2b. Photochemical 3D Film Emulsion LUT
+    // 2b. Optical Softness (Radial spherical aberration edge diffusion)
+    if (uSoftness > 0.005) {
+        float rSoftness = clamp(r2 * 2.8 * uSoftness, 0.0, 0.85);
+        if (rSoftness > 0.01) {
+            vec2 sStep = vec2(0.0018) * (1.0 + rSoftness * 2.0);
+            vec3 sL = texture(sTexture, uv - vec2(sStep.x, 0.0)).rgb;
+            vec3 sR = texture(sTexture, uv + vec2(sStep.x, 0.0)).rgb;
+            vec3 sT = texture(sTexture, uv - vec2(0.0, sStep.y)).rgb;
+            vec3 sB = texture(sTexture, uv + vec2(0.0, sStep.y)).rgb;
+            vec3 softSample = (sL + sR + sT + sB) * 0.25;
+            color = mix(color, softSample, rSoftness * 0.50);
+        }
+    }
+
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+
+    // 2c. Photochemical 3D Film Emulsion LUT
     if (uLutEnabled) {
         color = sampleHaldLut(uLutTexture, color);
     }
 
     // 3. White Balance
-    color.r += 0.12 * uTemperature;
-    color.b -= 0.12 * uTemperature;
-    color.g += 0.10 * uTint;
-    color.r -= 0.05 * uTint;
-    color.b -= 0.05 * uTint;
+    color.r += 0.10 * uTemperature;
+    color.b -= 0.10 * uTemperature;
+    color.g += 0.06 * uTint;
+    color.r -= 0.03 * uTint;
+    color.b -= 0.03 * uTint;
 
     // 4. Contrast
-    color = (color - 0.5) * uContrast + 0.5;
+    if (abs(uContrast - 1.0) > 0.01) {
+        color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
+    }
 
     // 5. Saturation
-    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    color = mix(vec3(luma), color, uSaturation);
+    luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    if (abs(uSaturation - 1.0) > 0.01) {
+        color = mix(vec3(luma), color, uSaturation);
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    }
 
     // 6. Gamma
-    color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
+    if (abs(uGamma - 1.0) > 0.01) {
+        color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    }
 
-    // 7. Film Fade
-    color = color * (1.0 - uFade) + uFade;
-
-    // 8. Shadow Tint and Highlight Roll-off
+    // 7. Shadow Tint
     float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
     color += uShadowTint * shadowWeight;
-    if (luma > uHighlightRollOff) {
-        float excess = luma - uHighlightRollOff;
-        color -= vec3(excess * 0.25);
+
+    // 8. Filmic Highlight Rolloff (Soft-shoulder exponential compression preventing harsh digital clipping)
+    if (uHighlightRollOff < 0.99) {
+        float knee = max(0.01, 1.0 - uHighlightRollOff);
+        vec3 over = max(vec3(0.0), color - vec3(uHighlightRollOff));
+        color = min(color, vec3(uHighlightRollOff)) + knee * (vec3(1.0) - exp(-over / knee));
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
 
-    // 9. Halation
-    if (uHalationEnabled && luma > uHalationThreshold) {
-        float haloAmount = (luma - uHalationThreshold) / (1.0 - uHalationThreshold);
-        vec3 haloColor = vec3(1.0, 0.22, 0.04) * (haloAmount * uHalationIntensity);
-        color += haloColor;
+    // 9. Film Fade
+    if (uFade > 0.001) {
+        color = color * (1.0 - uFade) + uFade;
     }
 
-    // 10. Light Leak
+    // 10. Localized Film Halation (Red-orange highlight glow spreading into adjacent emulsion)
+    if (uHalationEnabled && uHalationIntensity > 0.01) {
+        vec2 hStep = vec2(0.0035);
+        vec4 tapL = texture(sTexture, uv - vec2(hStep.x, 0.0));
+        vec4 tapR = texture(sTexture, uv + vec2(hStep.x, 0.0));
+        vec4 tapT = texture(sTexture, uv - vec2(0.0, hStep.y));
+        vec4 tapB = texture(sTexture, uv + vec2(0.0, hStep.y));
+
+        vec2 diag = hStep * 0.7071;
+        vec4 tapTL = texture(sTexture, uv + vec2(-diag.x, -diag.y));
+        vec4 tapTR = texture(sTexture, uv + vec2( diag.x, -diag.y));
+        vec4 tapBL = texture(sTexture, uv + vec2(-diag.x,  diag.y));
+        vec4 tapBR = texture(sTexture, uv + vec2( diag.x,  diag.y));
+
+        float lL = dot(tapL.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lR = dot(tapR.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lT = dot(tapT.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lB = dot(tapB.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+        float lTL = dot(tapTL.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lTR = dot(tapTR.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lBL = dot(tapBL.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lBR = dot(tapBR.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+        float kThresh = uHalationThreshold;
+        float hCenter = max(0.0, luma - kThresh);
+        float hCross = max(0.0, lL - kThresh) + max(0.0, lR - kThresh) + max(0.0, lT - kThresh) + max(0.0, lB - kThresh);
+        float hDiag = max(0.0, lTL - kThresh) + max(0.0, lTR - kThresh) + max(0.0, lBL - kThresh) + max(0.0, lBR - kThresh);
+
+        float spreadHighlight = (hCenter * 0.30 + hCross * 0.10 + hDiag * 0.075) / max(0.01, 1.0 - kThresh);
+        if (spreadHighlight > 0.001) {
+            vec3 haloColor = vec3(1.0, 0.28, 0.05) * (spreadHighlight * uHalationIntensity * 0.40);
+            color += haloColor;
+        }
+    }
+
+    // 11. Subtle Edge Light Leak Emulation
     if (uLightLeakEnabled && uLightLeakIntensity > 0.01) {
         float leakDist = length(uv - vec2(0.95, 0.05));
-        float leakMask = smoothstep(0.85, 0.15, leakDist);
-        vec3 leakColor = vec3(1.0, 0.45, 0.08) * (leakMask * uLightLeakIntensity);
+        float leakMask = smoothstep(0.45, 0.05, leakDist);
+        vec3 leakColor = vec3(1.0, 0.50, 0.15) * (leakMask * uLightLeakIntensity * 0.50);
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
-    // 11. Lens Vignette (matches ImageProcessor.kt quadratic falloff)
+    // 12. Lens Vignette (matches ImageProcessor.kt quadratic falloff)
     if (uVignetteIntensity > 0.01) {
         float dist = length(p) / 0.7071068;
         float dn = dist / uVignetteRadius;
@@ -422,36 +532,38 @@ void main() {
         color *= vignette;
     }
 
-    // 12. Authentic Multi-Octave Analogue Film Grain
+    // 13. Authentic Multi-Octave Tri-Pack Film Grain (Channel dye clumping)
     if (uGrainIntensity > 0.005) {
-        float midD = luma - 0.45;
-        float bell = clamp(1.0 - 2.8 * midD * midD, 0.0, 1.0);
-        float grainWeight = 0.45 + 0.55 * bell - 0.15 * max(0.0, luma - 0.70);
+        float sRise = smoothstep(0.0, 0.42, luma);
+        float hFall = smoothstep(0.42, 1.0, luma);
+        float grainWeight = (0.28 + 0.72 * sRise) * (1.0 - 0.88 * hFall);
 
         if (color.r > color.g && color.g > color.b && color.r > 0.25 && color.r < 0.90) {
             float skinWeight = clamp((color.r - color.b) * 2.0, 0.0, 1.0);
-            grainWeight *= (1.0 - 0.30 * skinWeight);
+            grainWeight *= (1.0 - 0.35 * skinWeight);
         }
 
-        vec2 grainCoord = uv * 1400.0 * (uGrainScale * 0.40);
-        float fineNoise = filmNoise(grainCoord, uRandomSeed);
-        float clumpNoise = filmNoise(grainCoord * 0.45, uRandomSeed + 13.37);
-        float noise = fineNoise * 0.72 + clumpNoise * 0.28;
+        vec2 grainCoord = uv * 1400.0 * (uGrainScale * 0.45);
+        float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
+        float clumpG = filmNoise(grainCoord * 0.45, uRandomSeed + 0.42);
+        float noiseG = fineG * 0.85 + clumpG * 0.15;
 
+        float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
+        float clumpR = filmNoise(grainCoord * 0.45, uRandomSeed + 0.67);
+        float noiseR = fineR * 0.75 + clumpR * 0.25;
+
+        float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
+        float clumpB = filmNoise(grainCoord * 0.45, uRandomSeed + 0.89);
+        float noiseB = fineB * 0.65 + clumpB * 0.35;
+
+        vec3 grainDelta;
         if (uIsColorNoise) {
-            float fineG = filmNoise(grainCoord, uRandomSeed + 2.71);
-            float clumpG = filmNoise(grainCoord * 0.45, uRandomSeed + 16.18);
-            float noiseG = fineG * 0.72 + clumpG * 0.28;
-
-            float fineB = filmNoise(grainCoord, uRandomSeed + 4.14);
-            float clumpB = filmNoise(grainCoord * 0.45, uRandomSeed + 19.41);
-            float noiseB = fineB * 0.72 + clumpB * 0.28;
-
-            vec3 colorNoise = vec3(noise, noiseG, noiseB);
-            color += colorNoise * (grainWeight * uGrainIntensity * 0.50);
+            grainDelta = vec3(noiseR, noiseG, noiseB);
         } else {
-            color += vec3(noise * grainWeight * uGrainIntensity * 0.50);
+            grainDelta = mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
         }
+
+        color += grainDelta * (grainWeight * uGrainIntensity * 0.42);
     }
 
     // 13. Retro Camcorder Scanlines
