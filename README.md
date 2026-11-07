@@ -16,11 +16,11 @@ Anyone can download and install Cameleo directly on an Android device:
 
 | Release | Format | Link |
 |---|---|---|
-| **Latest Stable Build** | APK (Ready to install) | [**Download Cameleo.apk**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) |
-| **All Releases & Archives** | Asset Catalog | [**GitHub Releases Tab**](https://github.com/johnkurian261/Cameleo/releases) |
+| **v1.0.0 (Latest Build)** | APK (Ready to install) | [**Download Cameleo.apk (v1.0.0)**](https://github.com/johnkurian261/Cameleo/releases/download/v1.0.0/Cameleo.apk) |
+| **All Releases & Release Notes** | Asset Catalog | [**GitHub Releases (v1.0.0)**](https://github.com/johnkurian261/Cameleo/releases/tag/v1.0.0) |
 
 ### 📲 Quick Installation Guide (Android Phone)
-1. **Download**: Tap [**Cameleo.apk**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) from Chrome or your phone's browser.
+1. **Download**: Tap [**Cameleo.apk**](https://github.com/johnkurian261/Cameleo/releases/download/v1.0.0/Cameleo.apk) from Chrome or your phone's browser.
 2. **Enable Unknown Apps**: If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **"Allow from this source"**.
 3. **Install**: Return to the installer and tap **Install**.
 4. **Permissions**: Open **Cameleo** and grant Camera, Audio, and Storage permissions.

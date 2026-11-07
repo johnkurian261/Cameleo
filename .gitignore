@@ -46,6 +46,7 @@ __pycache__/
 convert_cgbi.py
 copy_textures.py
 generate_luts.py
+publish_release.py
 
 # ===== Reverse engineering analysis scratch and extraction artifacts =====
 assemble_audit_text.py
