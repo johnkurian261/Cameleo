@@ -73,3 +73,4 @@ All tests were benchmarked on 4032×3024 still photo captures using Dispatchers.
 | **Specular Highlights ($L > 0.85$)** | **Smooth, pristine roll-off** | Highlight attenuation factor ($0.08$ - $0.18$) keeps direct sun reflections and light bulbs clean and luminous. |
 | **Color Fidelity / White Balance** | **Preserved 100%** | Mean luminance of scanned assets is centered at 135.4 (mid-gray), ensuring no uncalibrated color shifts or exposure drift. |
 | **Push-Processed Street Look (`disp_night`)** | **Authentic silver halide lift** | `SCREEN` blend mode illuminates dark emulsion crystals naturally without washing out true blacks. |
+

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.craftcam.app.R
 import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
+import com.craftcam.app.camera.profile.CameraProfileCatalog
+import com.craftcam.app.camera.profile.LensProfile
+import com.craftcam.app.camera.profile.LensType
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
@@ -44,11 +48,12 @@ data class ModelShelfItem(
 @Composable
 fun CollectionScreen(
     currentPreset: CameraPreset,
+    selectedLens: LensProfile = LensProfile.NORMAL,
     onSelectPreset: (CameraPreset) -> Unit,
+    onSelectLens: (LensType) -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     var selectedCategory by remember { mutableStateOf<CameraCategory?>(null) }
-    var showSamplesOnly by remember { mutableStateOf(false) }
     val view = LocalView.current
     val context = LocalContext.current
 
@@ -73,27 +78,65 @@ fun CollectionScreen(
         }
     }
 
-    // 3D Model Shelves — using Dazz camera icons mapped to Cameleo presets
+    // 3D Model Shelves — dynamically mapped to all Cameleo presets
     val videoModels = remember {
-        listOf(
-            ModelShelfItem("Bessa",     "cam_bessa",     "cam_retro_vhs"),
-            ModelShelfItem("QuickSnap", "cam_quicksnap", "cam_analog_video"),
-            ModelShelfItem("Lomo",      "cam_lomo",      "cam_90s_camcorder"),
-            ModelShelfItem("Classic U", "cam_classic_u", "ccd_y2k_digital"),
-            ModelShelfItem("D FunS",    "cam_d_funs",    "ccd_flash")
-        )
+        PresetCatalog.allPresets
+            .filter { it.category == CameraCategory.CAMCORDER }
+            .map { preset ->
+                val shortLabel = when (preset.id) {
+                    "cam_retro_vhs"     -> "Bessa"
+                    "cam_analog_video"  -> "QuickSnap"
+                    "cam_90s_camcorder" -> "Lomo"
+                    else                -> preset.name
+                }
+                ModelShelfItem(
+                    label = shortLabel,
+                    iconResName = preset.iconResName,
+                    presetId = preset.id
+                )
+            }
     }
 
+    // Complete Photo Camera models shelf — includes EVERY photo camera in CAMELEO (16 cameras)
     val photoModels = remember {
-        listOf(
-            ModelShelfItem("D Classic", "cam_d_classic", "analog_35mm_classic"),
-            ModelShelfItem("Warm Film", "cam_gr_f",      "analog_warm_film"),
-            ModelShelfItem("D Exp",     "cam_d_exp",     "analog_vintage_color"),
-            ModelShelfItem("Polaroid",  "cam_polaroid",  "inst_vintage"),
-            ModelShelfItem("Soft Film", "cam_ct2f",      "analog_soft_film"),
-            ModelShelfItem("D FunS",    "cam_d_funs",    "ccd_flash"),
-            ModelShelfItem("Classic U", "cam_classic_u", "ccd_y2k_digital")
-        )
+        val photoPresets = PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
+        photoPresets.map { preset ->
+            val shortLabel = when (preset.id) {
+                "zero"                 -> "Zero"
+                "analog_35mm_classic"  -> "D Classic"
+                "analog_fxn_r"         -> "FXNR"
+                "analog_fisheye_f"     -> "Fisheye"
+                "analog_warm_film"     -> "Warm Film"
+                "analog_soft_film"     -> "CT2F"
+                "analog_vintage_color" -> "D Exp"
+                "analog_cinema_film"   -> "D3D"
+                "ccd_r"                -> "CCD R"
+                "ccd_flash"            -> "D FunS"
+                "ccd_y2k_digital"      -> "Classic U"
+                "ccd_retro_compact"    -> "DQS"
+                "disp_classic"         -> "Golf"
+                "disp_flash"           -> "CPM35"
+                "disp_warm"            -> "135SR"
+                "disp_night"           -> "D Half"
+                "inst_vintage"         -> "Polaroid"
+                else                   -> preset.name
+            }
+            ModelShelfItem(
+                label = shortLabel,
+                iconResName = preset.iconResName,
+                presetId = preset.id
+            )
+        }
+    }
+
+    val photoShelfState = rememberLazyListState()
+
+    // Smoothly scroll shelf to active camera on launch or selection change
+    LaunchedEffect(currentPreset.id, photoModels) {
+        val activeIdx = photoModels.indexOfFirst { it.presetId == currentPreset.id }
+        if (activeIdx >= 0) {
+            photoShelfState.animateScrollToItem(activeIdx)
+        }
     }
 
     Column(
@@ -145,45 +188,20 @@ fun CollectionScreen(
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // SAMPLE toggle button
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (showSamplesOnly) VintageAmber else SurfaceElevated)
-                        .border(1.dp, DividerSubtle, RoundedCornerShape(16.dp))
-                        .clickable {
-                            showSamplesOnly = !showSamplesOnly
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "📷 SAMPLE",
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = if (showSamplesOnly) CameraBlack else TextPrimary
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Close / Back button
-                IconButton(
-                    onClick = onNavigateBack,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceElevated)
-                ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = TextPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            // Close / Back button
+            IconButton(
+                onClick = onNavigateBack,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(SurfaceElevated)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = TextPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 
@@ -221,15 +239,16 @@ fun CollectionScreen(
 
             // ==================== 2. 📷 PHOTO SHELF ====================
             item {
-                ShelfSectionHeader(title = "📷 Photo Cameras")
+                ShelfSectionHeader(title = "📷 Photo Cameras (${photoModels.size})")
                 LazyRow(
+                    state = photoShelfState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp)
                 ) {
-                    items(photoModels) { item ->
+                    items(photoModels, key = { it.presetId }) { item ->
                         val isSelected = currentPreset.id == item.presetId
                         Camera3DModelTile(
                             item = item,
@@ -290,12 +309,16 @@ fun CollectionScreen(
                     CameraCard(
                         preset = preset,
                         isSelected = preset.id == currentPreset.id,
-                        showSampleAlways = showSamplesOnly,
+                        selectedLens = selectedLens,
                         onSelect = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             onSelectPreset(preset)
                             onNavigateBack()
-                        }
+                        },
+                        onSelectPresetDirect = { p ->
+                            onSelectPreset(p)
+                        },
+                        onSelectLens = onSelectLens
                     )
                 }
             }
@@ -406,10 +429,13 @@ private fun CategoryFilterPill(
 private fun CameraCard(
     preset: CameraPreset,
     isSelected: Boolean,
-    showSampleAlways: Boolean,
-    onSelect: () -> Unit
+    selectedLens: LensProfile,
+    onSelect: () -> Unit,
+    onSelectPresetDirect: (CameraPreset) -> Unit,
+    onSelectLens: (LensType) -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val iconResId = remember(preset.iconResName) {
         context.resources.getIdentifier(preset.iconResName, "drawable", context.packageName)
     }
@@ -515,12 +541,110 @@ private fun CameraCard(
                 )
             }
 
+            // ── Optical Lens Accessory System ───────────────────────────────────
+            val profile = remember(preset.id) { CameraProfileCatalog.getProfileForPreset(preset) }
+            val supportedLenses = profile.supportedLenses
+            if (supportedLenses.size > 1) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OPTICAL LENSES",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = VintageAmber,
+                        letterSpacing = 1.sp
+                    )
+                    if (isSelected) {
+                        Text(
+                            text = "MOUNTED: ${selectedLens.name.uppercase()}",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            color = VintageAmberGlow
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(supportedLenses) { lensType ->
+                        val isMounted = isSelected && selectedLens.type == lensType
+                        val icon = when (lensType) {
+                            LensType.NORMAL -> "⊙"
+                            LensType.WIDE -> "⊞"
+                            LensType.FISHEYE_F -> "◉"
+                            LensType.FISHEYE_W -> "⊚"
+                            LensType.PRISM -> "⟡"
+                            LensType.STARBURST -> "★"
+                            LensType.ND -> "◐"
+                            LensType.COLOR_FLASH -> "⚡"
+                        }
+                        val label = when (lensType) {
+                            LensType.NORMAL -> "Normal"
+                            LensType.WIDE -> "Wide"
+                            LensType.FISHEYE_F -> "Fisheye F"
+                            LensType.FISHEYE_W -> "Fisheye W"
+                            LensType.PRISM -> "Prism"
+                            LensType.STARBURST -> "Star"
+                            LensType.ND -> "ND"
+                            LensType.COLOR_FLASH -> "Color Flash"
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isMounted) VintageAmber else SurfaceElevated)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isMounted) VintageAmberGlow else DividerSubtle,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    if (!isSelected) {
+                                        onSelectPresetDirect(preset)
+                                    }
+                                    onSelectLens(lensType)
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Text(
+                                    text = icon,
+                                    fontSize = 11.sp,
+                                    color = if (isMounted) CameraBlack else VintageAmber
+                                )
+                                Text(
+                                    text = label,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isMounted) CameraBlack else TextPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
 
             // Optical & Chemical Emulsion Specification Badges
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 SpecBadge("Contrast ${String.format("%.2f", preset.colorGrading.contrast)}")
                 if (preset.grain.enabled) {
@@ -552,7 +676,9 @@ private fun SpecBadge(text: String) {
             text = text,
             fontSize = 9.sp,
             fontFamily = FontFamily.Monospace,
-            color = TextSecondary
+            color = TextSecondary,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

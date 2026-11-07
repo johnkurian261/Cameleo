@@ -54,18 +54,20 @@ fun TactileShutterButton(
         label = "rec_alpha"
     )
 
+    val activeRed = Color(0xFFFF3B30)
+    val pressedRed = Color(0xFFD32F2F)
+
     val buttonColor by animateColorAsState(
         targetValue = when {
-            captureMode == CaptureMode.VIDEO -> VintageRed
-            isPressed -> VintageAmber.copy(alpha = 0.85f)
-            else -> ShutterCenter
+            isPressed -> pressedRed
+            else -> activeRed
         },
         label = "btn_color"
     )
 
     Box(
         modifier = modifier
-            .size(84.dp)
+            .size(86.dp)
             .pointerInput(isCapturing, isRecording) {
                 if (!isCapturing) {
                     detectTapGestures(
@@ -81,48 +83,41 @@ fun TactileShutterButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(80.dp)) {
+        Canvas(modifier = Modifier.size(82.dp)) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val outerRadius = (size.minDimension / 2f) - 2.dp.toPx()
 
-            // 1. Outer ring (pulses red if recording)
-            val ringColor = if (isRecording) VintageRed.copy(alpha = pulseAlpha) else ShutterRing
+            // 1. Outer ring (thin white outer ring / pulses red if recording)
+            val ringColor = if (isRecording) activeRed.copy(alpha = pulseAlpha) else Color.White.copy(alpha = 0.85f)
             drawCircle(
                 color = ringColor,
                 radius = outerRadius,
                 center = center,
-                style = Stroke(width = if (isRecording) 5.dp.toPx() else 4.dp.toPx())
+                style = Stroke(width = if (isRecording) 5.dp.toPx() else 3.5.dp.toPx())
             )
 
-            // 2. Inner mechanical recess
+            // 2. Inner dark mechanical recess
             drawCircle(
-                color = Color(0xFF15171C),
-                radius = outerRadius - 4.dp.toPx(),
+                color = Color(0xFF121418),
+                radius = outerRadius - 3.5.dp.toPx(),
                 center = center
             )
 
-            // 3. Central button
+            // 3. Central dominant white circular button
             if (isRecording) {
                 // Rounded square stop icon
                 val squareSize = (outerRadius * 0.7f) * scale
                 drawRoundRect(
-                    color = VintageRed,
+                    color = activeRed,
                     topLeft = Offset(center.x - squareSize / 2f, center.y - squareSize / 2f),
                     size = Size(squareSize, squareSize),
                     cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
                 )
             } else {
-                // Circular button
-                val coreRadius = (outerRadius - 8.dp.toPx()) * scale
+                val coreRadius = (outerRadius - 7.5.dp.toPx()) * scale
                 drawCircle(
                     color = buttonColor,
                     radius = coreRadius,
-                    center = center
-                )
-                // Gloss highlight
-                drawCircle(
-                    color = Color.White.copy(alpha = if (isPressed) 0.08f else 0.18f),
-                    radius = coreRadius * 0.75f,
                     center = center
                 )
             }

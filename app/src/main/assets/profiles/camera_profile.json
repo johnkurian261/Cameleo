@@ -1,0 +1,57 @@
+{
+  "cameraProfiles": [
+    {
+      "cameraId": "0",
+      "facing": "REAR",
+      "sensor": "Sony IMX555 / Samsung S5K2LD 12.2MP",
+      "profileName": "CAMELEO Natural v1.0",
+      "version": "1.0.0",
+      "date": "2026-11-06",
+      "illuminant": "D65",
+      "colorMatrix": [
+        1.025, -0.015, -0.010,
+        -0.012, 1.018, -0.006,
+        -0.008, 0.015, 0.993
+      ],
+      "whitePoint": { "x": 0.31271, "y": 0.32902 },
+      "toneCurve": {
+        "blackPoint": 0.0,
+        "shadowLift": 0.12,
+        "midtoneContrast": 1.02,
+        "highlightKnee": 0.65,
+        "highlightCompression": 0.35,
+        "whitePoint": 1.0
+      },
+      "saturation": 1.02,
+      "vibrance": 0.18,
+      "skinProtectionStrength": 0.85
+    },
+    {
+      "cameraId": "1",
+      "facing": "FRONT",
+      "sensor": "Sony IMX374 10MP",
+      "profileName": "CAMELEO Front Natural v1.0",
+      "version": "1.0.0",
+      "date": "2026-11-06",
+      "illuminant": "D65",
+      "colorMatrix": [
+        1.015, -0.010, -0.005,
+        -0.008, 1.010, -0.002,
+        -0.005, 0.012, 0.993
+      ],
+      "whitePoint": { "x": 0.31271, "y": 0.32902 },
+      "toneCurve": {
+        "blackPoint": 0.0,
+        "shadowLift": 0.15,
+        "midtoneContrast": 1.00,
+        "highlightKnee": 0.62,
+        "highlightCompression": 0.38,
+        "whitePoint": 1.0
+      },
+      "saturation": 1.00,
+      "vibrance": 0.15,
+      "skinProtectionStrength": 0.95
+    }
+  ]
+}
+

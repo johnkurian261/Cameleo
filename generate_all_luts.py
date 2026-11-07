@@ -440,6 +440,91 @@ def grade_bw_silver(r, g, b):
     l = film_s_curve(luma, contrast=1.42, toe=0.02, shoulder=0.92)
     return l, l, l
 
+# 23. FXNR (Warm Negative Film Emulation - Warm Amber Bias, Golden Highlights, Brown Shadows, Creamy Whites)
+def grade_analog_fxn_r(r, g, b):
+    # 1. Filmic S-curve with gentle, soft contrast and lifted toe (warm brown shadows)
+    r_c = film_s_curve(r, contrast=1.06, toe=0.048, shoulder=0.80)
+    g_c = film_s_curve(g, contrast=1.05, toe=0.040, shoulder=0.82)
+    b_c = film_s_curve(b, contrast=1.03, toe=0.030, shoulder=0.85)
+    
+    luma = 0.2126 * r_c + 0.7152 * g_c + 0.0722 * b_c
+    
+    # 2. Golden Yellow Highlights & Specular Bloom
+    highlight_weight = clamp((luma - 0.50) * 2.1)
+    r_c += 0.078 * highlight_weight
+    g_c += 0.046 * highlight_weight
+    b_c -= 0.072 * highlight_weight
+    
+    # 3. Deep Brown / Burnt Red Shadows (lifted black point, rich mahogany toe)
+    shadow_weight = clamp((0.44 - luma) * 2.3)
+    r_c += 0.054 * shadow_weight
+    g_c += 0.024 * shadow_weight
+    b_c += 0.008 * shadow_weight
+    
+    # 4. Color Separation & Selective Spectral Warping:
+    # A. Rich Reds & Burnt Oranges (dominant in warm midtones)
+    if r_c > g_c:
+        # Check human skin tone protection
+        if g_c > b_c and r_c > 0.22 and r_c < 0.90:
+            skin_factor = clamp(1.0 - abs(luma - 0.54) * 2.2) * clamp((r_c - b_c) * 2.0)
+            # Retain healthy peach/rose undertone, dampening harsh radioactive orange
+            r_c += 0.012 * skin_factor
+            g_c += 0.022 * skin_factor
+            b_c += 0.015 * skin_factor
+        else:
+            # Burnt orange / terracotta / red boost in wood, brick, textiles
+            r_c = clamp(r_c * 1.09)
+            g_c = clamp(g_c * 1.02)
+    
+    # B. Muted Olive Greens (de-neonized foliage)
+    if g_c > r_c and g_c > b_c:
+        g_c = clamp(g_c * 0.92)
+        r_c = clamp(r_c + 0.052)  # shift green toward warm olive/amber
+        b_c = clamp(b_c * 0.82)
+    
+    # C. Strongly Subdued Blue/Cyan (cool tones restrained into slate/charcoal)
+    if b_c > r_c or b_c > g_c:
+        b_c = clamp(b_c * 0.76)   # strongly subdued cool tones
+        r_c = clamp(r_c + 0.048)  # warm atmospheric pull
+        g_c = clamp(g_c + 0.018)
+    
+    # 5. Creamy Ivory Highlight Rolloff (prevent harsh digital clipping)
+    if luma > 0.78:
+        r_c = min(0.985, r_c)
+        g_c = min(0.965, g_c)
+        b_c = min(0.920, b_c)
+    
+    # 6. Global Saturation Adjustment: restrained, sophisticated analog negative look
+    r_out, g_out, b_out = adjust_saturation(r_c, g_c, b_c, 0.97)
+    
+    return clamp(r_out), clamp(g_out), clamp(b_out)
+
+# 24. CCD R (Olympus Camedia C-70 Zoom 2000s Compact CCD Digital Camera)
+def grade_ccd_r(r, g, b):
+    r = film_s_curve(r, contrast=1.28, toe=0.01, shoulder=0.94)
+    g = film_s_curve(g, contrast=1.26, toe=0.01, shoulder=0.94)
+    b = film_s_curve(b, contrast=1.30, toe=0.02, shoulder=0.96)
+    luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    
+    # Deep clean blacks
+    sh = clamp(1.0 - luma * 3.0)
+    r -= 0.03 * sh
+    g -= 0.02 * sh
+    b += 0.06 * sh
+    
+    # Iconic CCD electric cyan/blue skies
+    if b > r:
+        b = clamp(b * 1.25)
+        g = clamp(g * 1.04)
+        r = clamp(r * 0.94)
+    
+    # Sun-kissed digital skin warmth
+    if r > g and g > b:
+        r = clamp(r * 1.06)
+        g = clamp(g * 1.02)
+    
+    return adjust_saturation(r, g, b, 1.30)
+
 ALL_GRADES = {
     "lut_analog_35mm_classic.png": grade_analog_35mm_classic,
     "lut_analog_warm_film.png":    grade_analog_warm_film,
@@ -447,6 +532,10 @@ ALL_GRADES = {
     "lut_analog_vintage_color.png": grade_analog_vintage_color,
     "lut_analog_faded_film.png":   grade_analog_faded_film,
     "lut_analog_cinema_film.png":  grade_analog_cinema_film,
+    "lut_fxn_r.png":               grade_analog_fxn_r,
+    "lut_analog_fxn_r.png":        grade_analog_fxn_r,
+    "lut_ccd_r.png":               grade_ccd_r,
+    "lut_ccdr.png":                grade_ccd_r,
     "lut_ccd_classic.png":         grade_ccd_classic,
     "lut_ccd_flash.png":           grade_ccd_flash,
     "lut_ccd_cool_digital.png":    grade_ccd_cool_digital,
@@ -466,7 +555,7 @@ ALL_GRADES = {
     # Compatibility aliases
     "lut_dclassic.png":            grade_analog_35mm_classic,
     "lut_dexp.png":                grade_analog_vintage_color,
-    "lut_nt16.png":                grade_analog_faded_film,
+    "lut_nt16.png":                grade_analog_fxn_r,
     "lut_ct2f.png":                grade_analog_soft_film,
     "lut_135ne.png":               grade_ccd_classic,
     "lut_dfuns.png":               grade_ccd_flash,

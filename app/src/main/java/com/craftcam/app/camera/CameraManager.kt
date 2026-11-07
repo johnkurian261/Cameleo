@@ -22,13 +22,34 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
+import android.hardware.camera2.*
+import android.hardware.camera2.params.RggbChannelVector
+import androidx.camera.camera2.interop.Camera2CameraControl
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.CaptureRequestOptions
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.craftcam.app.gl.GLViewfinderRenderer
 import com.craftcam.app.gl.GPUVideoProcessor
-import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.model.*
+import com.craftcam.app.model.ProCameraFormatters.kelvinToRggbGains
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
+import com.craftcam.app.camera.profile.*
+import com.craftcam.app.captureframe.CaptureFrameSnapshot
+import com.craftcam.app.captureframe.CaptureFrameState
+import com.craftcam.app.computational.CapturedFrame
+import com.craftcam.app.computational.FrameSequence
+import com.craftcam.app.computational.ComputationalPhotoConfig
+import com.craftcam.app.computational.ComputationalStats
+import com.craftcam.app.config.ProcessingProfile
+import com.craftcam.app.config.SceneProcessingConfig
+import com.craftcam.app.scene.SceneAnalysisEngine
+import com.craftcam.app.scene.SceneType
+import com.craftcam.app.portrait.HardwareFaceDetector
+import com.craftcam.app.portrait.FaceRegion
+import android.os.SystemClock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,18 +87,48 @@ class CameraManager(private val context: Context) {
     var onCameraOrientationChanged: ((rotationDegrees: Int, isFront: Boolean, width: Int, height: Int) -> Unit)? = null
 
     private var lastSelectedRearLens: CameraLens? = null
+    private val sceneAnalysisEngine = SceneAnalysisEngine()
+    private val cameraProfileManager = com.craftcam.app.color.CameraProfileManager(context)
+    private var lastSceneAnalysisTime = 0L
+
+    val zoomModel = ZoomModel(context)
+    var isCameraActive: Boolean = false
+        private set
+    private var zoomOverlayJob: Job? = null
 
     init {
         try {
             val discovered = CameraDiscovery.discover(context)
             val defaultRear = discovered.rearLenses.firstOrNull { kotlin.math.abs(it.equivalentZoom - 1.0f) < 0.1f }
                 ?: discovered.rearLenses.firstOrNull()
+            val telemetry = cameraProfileManager.querySensorTelemetry(defaultRear?.cameraId ?: "0")
+
+            val zoomProfile = zoomModel.queryProfile(defaultRear?.cameraId ?: "0")
+            val baseEq = defaultRear?.equivalentFocalLength35mm ?: zoomProfile.baseEquivalentFocalLength35mm
+            val initialZoom = defaultRear?.equivalentZoom ?: 1.0f
+            val initialMm = zoomModel.calculateDisplayFocalLengthMm(baseEq, initialZoom)
+            val initialZoomState = ZoomState(
+                zoomRatio = initialZoom,
+                displayFocalLengthMm = initialMm,
+                minZoomRatio = zoomProfile.minZoomRatio,
+                maxZoomRatio = zoomProfile.maxZoomRatio,
+                activeCameraId = defaultRear?.cameraId ?: "0",
+                baseFocalLength35mm = baseEq,
+                isOverlayVisible = false,
+                isDebugVisible = false
+            )
+
             _uiState.update {
                 it.copy(
                     rearLenses = discovered.rearLenses,
                     frontLenses = discovered.frontLenses,
                     selectedLens = defaultRear,
-                    zoomRatio = defaultRear?.equivalentZoom ?: 1.0f
+                    zoomRatio = initialZoom,
+                    minZoom = zoomProfile.minZoomRatio,
+                    maxZoom = zoomProfile.maxZoomRatio,
+                    zoomState = initialZoomState,
+                    captureFrameState = it.captureFrameState.copy(baseFocalLengthMm = baseEq),
+                    sensorTelemetry = telemetry
                 )
             }
             lastSelectedRearLens = defaultRear
@@ -86,20 +137,383 @@ class CameraManager(private val context: Context) {
         }
     }
 
+    fun setCameraActive(active: Boolean) {
+        isCameraActive = active
+    }
+
+    fun triggerZoomOverlay(durationMs: Long = 1500L) {
+        _uiState.update { state ->
+            state.copy(zoomState = state.zoomState.copy(isOverlayVisible = true))
+        }
+        zoomOverlayJob?.cancel()
+        zoomOverlayJob = CoroutineScope(Dispatchers.Main).launch {
+            delay(durationMs)
+            _uiState.update { state ->
+                state.copy(zoomState = state.zoomState.copy(isOverlayVisible = false))
+            }
+        }
+    }
+
     fun setGLRenderer(renderer: GLViewfinderRenderer) {
         glRenderer = renderer
         glRenderer?.updatePreset(currentPreset)
         glRenderer?.updateTuning(_uiState.value.tuning)
+        glRenderer?.setNaturalMode(
+            _uiState.value.engineMode == CameraEngineMode.NATURAL,
+            _uiState.value.naturalProfile
+        )
+        glRenderer?.updateColorScience(_uiState.value.colorScienceConfig)
+        glRenderer?.setProMode(
+            _uiState.value.engineMode == CameraEngineMode.PRO,
+            _uiState.value.proConfig
+        )
+        glRenderer?.updateLensProfile(
+            _uiState.value.shootingState.selectedLens,
+            isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF
+        )
+        glRenderer?.onHistogramUpdated = { bins ->
+            _uiState.update { it.copy(histogramBins = bins) }
+        }
+    }
+
+    fun setEngineMode(mode: CameraEngineMode) {
+        if (_uiState.value.engineMode != mode) {
+            _uiState.update { it.copy(engineMode = mode) }
+            val isNatural = mode == CameraEngineMode.NATURAL
+            val isPro = mode == CameraEngineMode.PRO
+
+            glRenderer?.setNaturalMode(isNatural, _uiState.value.naturalProfile)
+            glRenderer?.setProMode(isPro, _uiState.value.proConfig)
+
+            if (isPro) {
+                applyProCameraControls()
+            } else {
+                clearProCameraControls()
+                // Adjust hardware exposure bias for the active engine mode
+                val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
+                val targetIndex = if (isNatural) {
+                    (_uiState.value.naturalProfile.exposureBias / step).roundToInt()
+                        .coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
+                } else {
+                    _uiState.value.exposureIndex
+                }
+                camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
+            }
+        }
+    }
+
+    // ─── Pro Camera Controls & Hardware Interop ─────────────────────────────
+
+    fun queryHardwareCapabilities(cameraId: String): CameraHardwareCapabilities {
+        val cameraService = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+            ?: return CameraHardwareCapabilities(cameraId = cameraId)
+        return try {
+            val chars = cameraService.getCameraCharacteristics(cameraId)
+            val hwLevel = chars.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+                ?: CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
+            val isoRange = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+            val shutterRange = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+            val minFocus = chars.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0.0f
+            val evRange = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+            val evStepVal = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)?.toFloat() ?: 0.5f
+
+            val capabilities = chars.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
+            val manualSensor = capabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR) ||
+                    hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL ||
+                    hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3
+
+            val supportsManualPostProcessing = capabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING) ||
+                    hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL ||
+                    hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3
+
+            CameraHardwareCapabilities(
+                cameraId = cameraId,
+                hardwareLevel = hwLevel,
+                minIso = isoRange?.lower ?: 50,
+                maxIso = isoRange?.upper ?: 3200,
+                minShutterNs = shutterRange?.lower ?: 100_000L,
+                maxShutterNs = shutterRange?.upper ?: 15_000_000_000L,
+                supportsManualExposure = manualSensor || (isoRange != null && shutterRange != null),
+                minFocusDistance = minFocus,
+                supportsManualFocus = minFocus > 0.0f,
+                minEv = evRange?.lower ?: -4,
+                maxEv = evRange?.upper ?: 4,
+                evStep = evStepVal,
+                supportsManualWb = supportsManualPostProcessing,
+                supportsColorGains = supportsManualPostProcessing
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to query hardware capabilities for camera $cameraId", e)
+            CameraHardwareCapabilities(cameraId = cameraId)
+        }
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun applyProCameraControls() {
+        val cam = camera ?: return
+        try {
+            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+
+            if (_uiState.value.engineMode != CameraEngineMode.PRO) {
+                camera2Control.clearCaptureRequestOptions()
+                return
+            }
+
+            val config = _uiState.value.proConfig
+            val caps = _uiState.value.hardwareCapabilities
+            val builder = CaptureRequestOptions.Builder()
+
+            // 1. Exposure (ISO & Shutter)
+            val isManualExposure = config.exposureMode == ExposureMode.MANUAL ||
+                    (config.isoMode == IsoMode.MANUAL && config.shutterMode == ShutterMode.MANUAL)
+            val isManualShutterAutoIso = config.shutterMode == ShutterMode.MANUAL && config.isoMode == IsoMode.AUTO
+
+            if (isManualExposure && (caps?.supportsManualExposure != false)) {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                val minIso = caps?.minIso ?: 50
+                val maxIso = caps?.maxIso ?: 3200
+                val minShutter = caps?.minShutterNs ?: 100_000L
+                val maxShutter = caps?.maxShutterNs ?: 15_000_000_000L
+
+                val clampedIso = config.iso.coerceIn(minIso, maxIso)
+                val clampedShutter = config.exposureTimeNs.coerceIn(minShutter, maxShutter)
+                builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, clampedIso)
+                builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, clampedShutter)
+            } else if (isManualShutterAutoIso && (caps?.supportsManualExposure != false)) {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                val minIso = caps?.minIso ?: 50
+                val maxIso = caps?.maxIso ?: 3200
+                val minShutter = caps?.minShutterNs ?: 100_000L
+                val maxShutter = caps?.maxShutterNs ?: 15_000_000_000L
+
+                val liveIso = _uiState.value.liveIso.coerceIn(minIso, maxIso)
+                val clampedShutter = config.exposureTimeNs.coerceIn(minShutter, maxShutter)
+                builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, liveIso)
+                builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, clampedShutter)
+            } else {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
+                val targetIndex = (config.evCompensation / step).roundToInt()
+                    .coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
+                cam.cameraControl.setExposureCompensationIndex(targetIndex)
+            }
+
+            // 2. Focus
+            if (config.focusMode == FocusMode.MANUAL && (caps?.supportsManualFocus == true)) {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+                val clampedDist = config.focusDistance.coerceIn(0f, caps.minFocusDistance)
+                builder.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, clampedDist)
+            } else {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+            }
+
+            // 3. White Balance
+            if (config.wbMode == WhiteBalanceMode.MANUAL && (caps?.supportsManualWb == true)) {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+                val gains = kelvinToRggbGains(config.kelvin, config.tint)
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_GAINS, gains)
+            } else {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+            }
+
+            camera2Control.setCaptureRequestOptions(builder.build())
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to apply Pro Camera2 controls", t)
+        }
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun clearProCameraControls() {
+        val cam = camera ?: return
+        try {
+            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+            camera2Control.clearCaptureRequestOptions()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Error clearing Pro Camera2 controls", t)
+        }
+    }
+
+    fun updateProConfig(update: (ProCameraConfig) -> ProCameraConfig) {
+        _uiState.update { state ->
+            val updated = update(state.proConfig)
+            if (state.engineMode == CameraEngineMode.PRO) {
+                glRenderer?.setProMode(true, updated)
+            }
+            state.copy(proConfig = updated)
+        }
+        if (_uiState.value.engineMode == CameraEngineMode.PRO) {
+            applyProCameraControls()
+        }
+    }
+
+    fun setProIso(mode: IsoMode, iso: Int) {
+        updateProConfig { it.copy(isoMode = mode, iso = iso) }
+    }
+
+    fun setProShutter(mode: ShutterMode, exposureNs: Long) {
+        updateProConfig { it.copy(shutterMode = mode, exposureTimeNs = exposureNs) }
+    }
+
+    fun setProFocus(mode: FocusMode, diopters: Float) {
+        updateProConfig { it.copy(focusMode = mode, focusDistance = diopters) }
+    }
+
+    fun setProWb(mode: WhiteBalanceMode, kelvin: Int, tint: Float) {
+        updateProConfig { it.copy(wbMode = mode, kelvin = kelvin, tint = tint) }
+    }
+
+    fun setProEv(ev: Float) {
+        updateProConfig { it.copy(evCompensation = ev) }
+    }
+
+    fun setProActiveTab(tab: ProControlTab?) {
+        updateProConfig { it.copy(activeControl = if (it.activeControl == tab) null else tab) }
+    }
+
+    fun toggleFocusPeaking() {
+        updateProConfig { it.copy(focusPeakingEnabled = !it.focusPeakingEnabled) }
+    }
+
+    fun setPeakingColor(color: PeakingColor) {
+        updateProConfig { it.copy(peakingColor = color) }
+    }
+
+    fun toggleZebra() {
+        updateProConfig { it.copy(zebraEnabled = !it.zebraEnabled) }
+    }
+
+    fun setZebraThreshold(threshold: Float) {
+        updateProConfig { it.copy(zebraThreshold = threshold) }
+    }
+
+    fun toggleHistogram() {
+        updateProConfig { it.copy(histogramEnabled = !it.histogramEnabled) }
+    }
+
+    fun resetProConfig() {
+        updateProConfig { ProCameraConfig() }
+    }
+
+    // ─── Natural Camera Profile Methods ─────────────────────────────────────
+
+    fun updateNaturalProfile(update: (NaturalCameraProfile) -> NaturalCameraProfile) {
+        _uiState.update { state ->
+            val updatedProfile = update(state.naturalProfile)
+            if (state.engineMode == CameraEngineMode.NATURAL) {
+                glRenderer?.setNaturalMode(true, updatedProfile)
+                val step = if (state.exposureStep > 0f) state.exposureStep else 0.5f
+                val targetIndex = (updatedProfile.exposureBias / step).roundToInt()
+                    .coerceIn(state.minExposureIndex, state.maxExposureIndex)
+                camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
+            }
+            state.copy(naturalProfile = updatedProfile)
+        }
+    }
+
+    fun resetNaturalProfile() {
+        updateNaturalProfile { NaturalCameraProfile.S21_PROFILE }
+    }
+
+    fun setDebugCompareOriginal(enabled: Boolean) {
+        _uiState.update { it.copy(debugCompareOriginal = enabled) }
+    }
+
+    fun toggleNaturalDebug() {
+        _uiState.update { it.copy(showNaturalDebug = !it.showNaturalDebug) }
     }
 
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
             currentPreset = preset
             glRenderer?.updatePreset(preset)
+
+            val profile = CameraProfileCatalog.getProfileForPreset(preset)
+            val initialLens = LensProfile.forType(profile.defaultLens)
+            val initialFocal = profile.getDefaultFocalOption()
+            val initialRatio = profile.defaultRatio
+            val defaultFraction = (26.0f / profile.defaultFocalLengthMm).coerceIn(0.25f, 1.0f)
+
+            _uiState.update { state ->
+                state.copy(
+                    shootingState = state.shootingState.copy(
+                        cameraProfile = profile,
+                        selectedLens = initialLens,
+                        selectedFocalLength = initialFocal,
+                        selectedAspectRatio = initialRatio
+                    ),
+                    aspectRatio = initialRatio,
+                    captureFrameState = state.captureFrameState.copy(
+                        sizeFraction = defaultFraction,
+                        normalizedCenterX = 0.5f,
+                        normalizedCenterY = 0.5f
+                    )
+                )
+            }
+            glRenderer?.updateLensProfile(initialLens, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
+
             // If in video mode, re-bind overlay effect for the active preset's video recording profile
             if (_uiState.value.captureMode == CaptureMode.VIDEO) {
                 bindCameraUseCases()
             }
+        }
+    }
+
+    fun selectLensAccessory(lensType: LensType) {
+        val lensProfile = LensProfile.forType(lensType)
+        if (lensType == LensType.COLOR_FLASH && _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
+            setFlashMode(ImageCapture.FLASH_MODE_ON)
+        }
+        _uiState.update { state ->
+            state.copy(
+                shootingState = state.shootingState.copy(
+                    selectedLens = lensProfile
+                )
+            )
+        }
+        glRenderer?.updateLensProfile(lensProfile, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
+
+        // Physical sensor exposure adjustment for optical accessories
+        val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(currentPreset)
+        val ndParams = com.craftcam.app.gl.OpticalEffectEngine.resolveNd(unifiedProfile.exposureProfile, lensProfile)
+        if (ndParams.evStopsReduction > 0.01f) {
+            val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
+            val targetReductionSteps = (ndParams.evStopsReduction / step).roundToInt()
+            val ndEv = (_uiState.value.exposureIndex - targetReductionSteps).coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
+            camera?.cameraControl?.setExposureCompensationIndex(ndEv)
+        } else {
+            camera?.cameraControl?.setExposureCompensationIndex(_uiState.value.exposureIndex)
+        }
+    }
+
+    fun selectColorFlashTint(tint: ColorFlashTint) {
+        val lensProfile = LensProfile.forColorFlash(tint)
+        if (_uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
+            setFlashMode(ImageCapture.FLASH_MODE_ON)
+        }
+        _uiState.update { state ->
+            state.copy(
+                shootingState = state.shootingState.copy(
+                    selectedLens = lensProfile
+                )
+            )
+        }
+        glRenderer?.updateLensProfile(lensProfile, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
+    }
+
+    fun selectFocalLength(focalOption: FocalLengthOption) {
+        val targetFraction = (26.0f / focalOption.focalLengthMm).coerceIn(0.25f, 1.0f)
+        _uiState.update { state ->
+            state.copy(
+                shootingState = state.shootingState.copy(
+                    selectedFocalLength = focalOption
+                ),
+                captureFrameState = state.captureFrameState.copy(
+                    sizeFraction = targetFraction,
+                    normalizedCenterX = 0.5f,
+                    normalizedCenterY = 0.5f
+                )
+            )
         }
     }
 
@@ -189,9 +603,65 @@ class CameraManager(private val context: Context) {
                 .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                 .build()
 
-            preview = Preview.Builder()
+            val previewBuilder = Preview.Builder()
                 .setResolutionSelector(previewResolutionSelector)
-                .build()
+
+            // Attach Camera2Interop CaptureCallback to receive live sensor readouts & hardware face metadata
+            val camera2Extender = Camera2Interop.Extender(previewBuilder)
+            camera2Extender.setCaptureRequestOption(
+                CaptureRequest.STATISTICS_FACE_DETECT_MODE,
+                CaptureRequest.STATISTICS_FACE_DETECT_MODE_SIMPLE
+            )
+            camera2Extender.setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    val iso = result.get(CaptureResult.SENSOR_SENSITIVITY)
+                    val expNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME)
+                    val focusDist = result.get(CaptureResult.LENS_FOCUS_DISTANCE)
+
+                    // Hardware Face Detection Ingestion
+                    val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
+                    val rot = if (isFront) 270 else 90
+                    HardwareFaceDetector.updateFromCaptureResult(result, 4032, 3024, rot)
+                    val liveFaces = HardwareFaceDetector.getDetectedFaces()
+
+                    // Scene Intelligence Analysis at 5 Hz cadence
+                    val now = SystemClock.elapsedRealtime()
+                    val shouldRunSceneAnalysis = (now - lastSceneAnalysisTime >= 200) && (_uiState.value.engineMode == CameraEngineMode.NATURAL)
+                    val analysisResult = if (shouldRunSceneAnalysis) {
+                        lastSceneAnalysisTime = now
+                        sceneAnalysisEngine.analyze(
+                            downsampledPixels = IntArray(0),
+                            downsampledLuminance = FloatArray(0),
+                            width = 64,
+                            height = 48,
+                            histogram = _uiState.value.histogramBins,
+                            sensorIso = iso ?: _uiState.value.liveIso,
+                            exposureTimeNs = expNs ?: _uiState.value.liveExposureNs,
+                            overrideFaces = liveFaces
+                        )
+                    } else null
+
+                    if (iso != null || expNs != null || focusDist != null || analysisResult != null || liveFaces.isNotEmpty()) {
+                        val isPortraitBokehActive = when (_uiState.value.portraitConfig.portraitMode) {
+                            com.craftcam.app.portrait.PortraitMode.OFF -> false
+                            com.craftcam.app.portrait.PortraitMode.AUTO -> liveFaces.isNotEmpty() && liveFaces.any { it.confidence >= 0.40f || it.areaFraction >= 0.03f }
+                            com.craftcam.app.portrait.PortraitMode.ON -> true
+                        }
+                        _uiState.update { state ->
+                            state.copy(
+                                liveIso = iso ?: state.liveIso,
+                                liveExposureNs = expNs ?: state.liveExposureNs,
+                                liveFocusDistance = focusDist ?: state.liveFocusDistance,
+                                detectedFaces = liveFaces,
+                                sceneAnalysis = analysisResult ?: state.sceneAnalysis,
+                                portraitBokehActive = isPortraitBokehActive && (_uiState.value.engineMode == CameraEngineMode.NATURAL)
+                            )
+                        }
+                    }
+                }
+            })
+
+            preview = previewBuilder.build()
                 .also { prev ->
                     if (surfaceTex != null) {
                         prev.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { request ->
@@ -286,20 +756,57 @@ class CameraManager(private val context: Context) {
             // Update Zoom and Exposure capabilities
             camera?.cameraInfo?.let { info ->
                 info.zoomState.value?.let { zs ->
-                    _uiState.update { it.copy(minZoom = zs.minZoomRatio, maxZoom = zs.maxZoomRatio.coerceAtMost(10.0f)) }
+                    val minZ = zs.minZoomRatio
+                    val maxZ = zs.maxZoomRatio.coerceAtMost(10.0f)
                     val targetZoom = _uiState.value.selectedLens?.equivalentZoom ?: _uiState.value.zoomRatio
-                    val clamped = targetZoom.coerceIn(zs.minZoomRatio, zs.maxZoomRatio)
+                    val clamped = targetZoom.coerceIn(minZ, maxZ)
+                    val baseEq = _uiState.value.selectedLens?.equivalentFocalLength35mm
+                        ?: _uiState.value.zoomState.baseFocalLength35mm
+                    val displayMm = zoomModel.calculateDisplayFocalLengthMm(baseEq, clamped)
+
+                    _uiState.update { state ->
+                        state.copy(
+                            minZoom = minZ,
+                            maxZoom = maxZ,
+                            zoomRatio = clamped,
+                            zoomState = state.zoomState.copy(
+                                zoomRatio = clamped,
+                                displayFocalLengthMm = displayMm,
+                                minZoomRatio = minZ,
+                                maxZoomRatio = maxZ
+                            )
+                        )
+                    }
                     camera?.cameraControl?.setZoomRatio(clamped)
                 }
                 info.exposureState.let { es ->
+                    val step = es.exposureCompensationStep.toFloat()
                     _uiState.update {
                         it.copy(
                             minExposureIndex = es.exposureCompensationRange.lower,
                             maxExposureIndex = es.exposureCompensationRange.upper,
-                            exposureStep = es.exposureCompensationStep.toFloat()
+                            exposureStep = step
                         )
                     }
+                    val targetIndex = if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
+                        (_uiState.value.naturalProfile.exposureBias / (if (step > 0f) step else 0.5f)).roundToInt()
+                            .coerceIn(es.exposureCompensationRange.lower, es.exposureCompensationRange.upper)
+                    } else if (_uiState.value.engineMode == CameraEngineMode.PRO) {
+                        (_uiState.value.proConfig.evCompensation / (if (step > 0f) step else 0.5f)).roundToInt()
+                            .coerceIn(es.exposureCompensationRange.lower, es.exposureCompensationRange.upper)
+                    } else {
+                        _uiState.value.exposureIndex
+                    }
+                    camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
                 }
+            }
+
+            // Query dynamic hardware capabilities for active camera and apply active mode controls
+            val activeCamId = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
+            val caps = queryHardwareCapabilities(activeCamId)
+            _uiState.update { it.copy(hardwareCapabilities = caps) }
+            if (_uiState.value.engineMode == CameraEngineMode.PRO) {
+                applyProCameraControls()
             }
 
         } catch (e: Exception) {
@@ -309,25 +816,87 @@ class CameraManager(private val context: Context) {
 
     fun switchCamera() {
         val currentFacing = _uiState.value.lensFacing
+        val newFacing = if (currentFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+        val activeCamId = if (newFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
+        val caps = queryHardwareCapabilities(activeCamId)
+        val telemetry = cameraProfileManager.querySensorTelemetry(activeCamId)
+        val zoomProfile = zoomModel.queryProfile(activeCamId)
+
         if (currentFacing == CameraSelector.LENS_FACING_BACK) {
             lastSelectedRearLens = _uiState.value.selectedLens
             val frontLens = _uiState.value.frontLenses.firstOrNull()
-            _uiState.update {
-                it.copy(
+            val baseEq = frontLens?.equivalentFocalLength35mm ?: zoomProfile.baseEquivalentFocalLength35mm
+            val zRatio = frontLens?.equivalentZoom ?: 1.0f
+            val displayMm = zoomModel.calculateDisplayFocalLengthMm(baseEq, zRatio)
+            val newZoomState = ZoomState(
+                zoomRatio = zRatio,
+                displayFocalLengthMm = displayMm,
+                minZoomRatio = zoomProfile.minZoomRatio,
+                maxZoomRatio = zoomProfile.maxZoomRatio,
+                activeCameraId = activeCamId,
+                baseFocalLength35mm = baseEq,
+                isOverlayVisible = false,
+                isDebugVisible = _uiState.value.showNaturalDebug
+            )
+
+            _uiState.update { state ->
+                val adaptedPro = state.proConfig.copy(
+                    focusMode = if (caps.supportsManualFocus) state.proConfig.focusMode else FocusMode.AUTO,
+                    exposureMode = if (caps.supportsManualExposure) state.proConfig.exposureMode else ExposureMode.AUTO,
+                    isoMode = if (caps.supportsManualExposure) state.proConfig.isoMode else IsoMode.AUTO,
+                    shutterMode = if (caps.supportsManualExposure) state.proConfig.shutterMode else ShutterMode.AUTO,
+                    wbMode = if (caps.supportsManualWb) state.proConfig.wbMode else WhiteBalanceMode.AUTO
+                )
+                state.copy(
                     lensFacing = CameraSelector.LENS_FACING_FRONT,
                     selectedLens = frontLens,
-                    zoomRatio = frontLens?.equivalentZoom ?: 1.0f
+                    zoomRatio = zRatio,
+                    minZoom = zoomProfile.minZoomRatio,
+                    maxZoom = zoomProfile.maxZoomRatio,
+                    zoomState = newZoomState,
+                    captureFrameState = state.captureFrameState.copy(baseFocalLengthMm = baseEq),
+                    hardwareCapabilities = caps,
+                    proConfig = adaptedPro,
+                    sensorTelemetry = telemetry
                 )
             }
         } else {
             val restoreRear = lastSelectedRearLens
                 ?: _uiState.value.rearLenses.firstOrNull { kotlin.math.abs(it.equivalentZoom - 1.0f) < 0.1f }
                 ?: _uiState.value.rearLenses.firstOrNull()
-            _uiState.update {
-                it.copy(
+            val baseEq = restoreRear?.equivalentFocalLength35mm ?: zoomProfile.baseEquivalentFocalLength35mm
+            val zRatio = restoreRear?.equivalentZoom ?: 1.0f
+            val displayMm = zoomModel.calculateDisplayFocalLengthMm(baseEq, zRatio)
+            val newZoomState = ZoomState(
+                zoomRatio = zRatio,
+                displayFocalLengthMm = displayMm,
+                minZoomRatio = zoomProfile.minZoomRatio,
+                maxZoomRatio = zoomProfile.maxZoomRatio,
+                activeCameraId = activeCamId,
+                baseFocalLength35mm = baseEq,
+                isOverlayVisible = false,
+                isDebugVisible = _uiState.value.showNaturalDebug
+            )
+
+            _uiState.update { state ->
+                val adaptedPro = state.proConfig.copy(
+                    focusMode = if (caps.supportsManualFocus) state.proConfig.focusMode else FocusMode.AUTO,
+                    exposureMode = if (caps.supportsManualExposure) state.proConfig.exposureMode else ExposureMode.AUTO,
+                    isoMode = if (caps.supportsManualExposure) state.proConfig.isoMode else IsoMode.AUTO,
+                    shutterMode = if (caps.supportsManualExposure) state.proConfig.shutterMode else ShutterMode.AUTO,
+                    wbMode = if (caps.supportsManualWb) state.proConfig.wbMode else WhiteBalanceMode.AUTO
+                )
+                state.copy(
                     lensFacing = CameraSelector.LENS_FACING_BACK,
                     selectedLens = restoreRear,
-                    zoomRatio = restoreRear?.equivalentZoom ?: 1.0f
+                    zoomRatio = zRatio,
+                    minZoom = zoomProfile.minZoomRatio,
+                    maxZoom = zoomProfile.maxZoomRatio,
+                    zoomState = newZoomState,
+                    captureFrameState = state.captureFrameState.copy(baseFocalLengthMm = baseEq),
+                    hardwareCapabilities = caps,
+                    proConfig = adaptedPro,
+                    sensorTelemetry = telemetry
                 )
             }
         }
@@ -335,44 +904,161 @@ class CameraManager(private val context: Context) {
     }
 
     fun selectLens(lens: CameraLens) {
-        _uiState.update { it.copy(selectedLens = lens, zoomRatio = lens.equivalentZoom) }
         if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_BACK) {
             lastSelectedRearLens = lens
         }
-        val clamped = lens.equivalentZoom.coerceIn(_uiState.value.minZoom, _uiState.value.maxZoom)
-        camera?.cameraControl?.setZoomRatio(clamped)
+        _uiState.update { state ->
+            state.copy(
+                selectedLens = lens,
+                zoomState = state.zoomState.copy(
+                    baseFocalLength35mm = lens.equivalentFocalLength35mm
+                ),
+                captureFrameState = state.captureFrameState.copy(
+                    baseFocalLengthMm = lens.equivalentFocalLength35mm
+                )
+            )
+        }
+        setZoomRatio(lens.equivalentZoom, triggerOverlay = true)
     }
 
     fun setFlashMode(flashMode: Int) {
         _uiState.update { it.copy(flashMode = flashMode) }
         imageCapture?.flashMode = flashMode
+        glRenderer?.updateLensProfile(
+            _uiState.value.shootingState.selectedLens,
+            isFlashActive = flashMode != ImageCapture.FLASH_MODE_OFF
+        )
     }
 
     fun setExposureIndex(index: Int) {
         val clamped = index.coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
         val evVal = clamped * _uiState.value.exposureStep
-        _uiState.update {
-            it.copy(
-                exposureIndex = clamped,
-                tuning = it.tuning.copy(exposureCompensation = evVal)
-            )
+        if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
+            updateNaturalProfile { it.copy(exposureBias = evVal) }
+        } else if (_uiState.value.engineMode == CameraEngineMode.PRO) {
+            setProEv(evVal)
+        } else {
+            _uiState.update {
+                it.copy(
+                    exposureIndex = clamped,
+                    tuning = it.tuning.copy(exposureCompensation = evVal)
+                )
+            }
+            camera?.cameraControl?.setExposureCompensationIndex(clamped)
         }
-        camera?.cameraControl?.setExposureCompensationIndex(clamped)
     }
 
-    fun setZoomRatio(ratio: Float) {
-        val clamped = ratio.coerceIn(_uiState.value.minZoom, _uiState.value.maxZoom)
+    fun setZoomRatio(ratio: Float, triggerOverlay: Boolean = false) {
+        val minZ = _uiState.value.minZoom
+        val maxZ = _uiState.value.maxZoom
+        val clamped = ratio.coerceIn(minZ, maxZ)
         val activeLenses = _uiState.value.availableLenses
         val closest = activeLenses.minByOrNull { kotlin.math.abs(it.equivalentZoom - clamped) }
-        _uiState.update { it.copy(zoomRatio = clamped, selectedLens = closest) }
+
+        val baseEq = _uiState.value.selectedLens?.equivalentFocalLength35mm
+            ?: _uiState.value.zoomState.baseFocalLength35mm
+        val displayMm = zoomModel.calculateDisplayFocalLengthMm(baseEq, clamped)
+
+        _uiState.update { state ->
+            state.copy(
+                zoomRatio = clamped,
+                selectedLens = closest,
+                zoomState = state.zoomState.copy(
+                    zoomRatio = clamped,
+                    displayFocalLengthMm = displayMm,
+                    minZoomRatio = minZ,
+                    maxZoomRatio = maxZ
+                )
+            )
+        }
         if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_BACK && closest != null) {
             lastSelectedRearLens = closest
         }
         camera?.cameraControl?.setZoomRatio(clamped)
+
+        if (triggerOverlay) {
+            triggerZoomOverlay()
+        }
+    }
+
+    fun onPinchZoom(scaleFactor: Float) {
+        val currentZoom = _uiState.value.zoomRatio
+        val target = currentZoom * scaleFactor
+        setZoomRatio(target, triggerOverlay = true)
+    }
+
+    fun stepZoom(zoomIn: Boolean, stepPercent: Float = 0.08f) {
+        val current = _uiState.value.zoomRatio
+        val step = (current * stepPercent).coerceIn(0.08f, 0.40f)
+        val target = if (zoomIn) current + step else current - step
+        setZoomRatio(target, triggerOverlay = true)
     }
 
     fun setAspectRatio(mode: AspectRatioMode) {
-        _uiState.update { it.copy(aspectRatio = mode) }
+        val targetRatio = 1f / mode.ratio
+        _uiState.update {
+            it.copy(
+                aspectRatio = mode,
+                captureFrameState = it.captureFrameState.copy(aspectRatio = targetRatio)
+            )
+        }
+    }
+
+    fun moveCaptureFrame(dxNorm: Float, dyNorm: Float, previewAspect: Float) {
+        android.util.Log.d("CaptureFrame", "moveCaptureFrame: dxNorm=$dxNorm, dyNorm=$dyNorm, currentCenterX=${_uiState.value.captureFrameState.normalizedCenterX}, currentCenterY=${_uiState.value.captureFrameState.normalizedCenterY}")
+        _uiState.update { state ->
+            val newState = state.captureFrameState.moveBy(dxNorm, dyNorm, previewAspect)
+            android.util.Log.d("CaptureFrame", "moveCaptureFrame result: newCenterX=${newState.normalizedCenterX}, newCenterY=${newState.normalizedCenterY}")
+            state.copy(
+                captureFrameState = newState
+            )
+        }
+    }
+
+    fun resizeCaptureFrame(scaleMultiplier: Float, previewAspect: Float) {
+        _uiState.update { state ->
+            state.copy(
+                captureFrameState = state.captureFrameState.resizeBy(scaleMultiplier, previewAspect)
+            )
+        }
+    }
+
+    fun stepCaptureFrameSize(enlarge: Boolean, previewAspect: Float = 3f / 4f) {
+        _uiState.update { state ->
+            state.copy(
+                captureFrameState = state.captureFrameState.stepSize(enlarge, previewAspect)
+            )
+        }
+    }
+
+    fun resetCaptureFrame() {
+        val targetFraction = (26.0f / _uiState.value.shootingState.selectedFocalLength.focalLengthMm).coerceIn(0.25f, 1.0f)
+        _uiState.update { state ->
+            state.copy(
+                captureFrameState = state.captureFrameState.copy(
+                    sizeFraction = targetFraction,
+                    normalizedCenterX = 0.5f,
+                    normalizedCenterY = 0.5f
+                )
+            )
+        }
+    }
+
+    private fun createCaptureFrameSnapshot(aspectRatio: AspectRatioMode): CaptureFrameSnapshot {
+        val currentFrameState = _uiState.value.captureFrameState
+        val previewAspect = 1f / aspectRatio.ratio
+        val normRect = currentFrameState.getNormalizedRect(previewAspect)
+        val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
+        val rot = camera?.cameraInfo?.sensorRotationDegrees ?: (if (isFront) 270 else 90)
+
+        return CaptureFrameSnapshot(
+            normalizedRect = normRect,
+            previewAspect = previewAspect,
+            sensorOrientation = rot,
+            isFrontCamera = isFront,
+            baseFocalLengthMm = currentFrameState.baseFocalLengthMm,
+            effectiveFocalLengthMm = currentFrameState.effectiveFocalLengthMm
+        )
     }
 
     fun toggleGrid() {
@@ -458,6 +1144,15 @@ class CameraManager(private val context: Context) {
             return
         }
 
+        // Freeze immutable composition frame snapshot at shutter trigger instant
+        val frameSnapshot = createCaptureFrameSnapshot(aspectRatio)
+
+        // Branch into multi-frame computational photography pipeline when in NATURAL mode
+        if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
+            captureNaturalBurst(preset, aspectRatio, mirrorFrontCamera, frameSnapshot, onPhotoSaved, onError)
+            return
+        }
+
         // Keep isCapturing active across both hardware capture and background photo development
         _uiState.update { it.copy(isCapturing = true) }
 
@@ -477,7 +1172,13 @@ class CameraManager(private val context: Context) {
                                 preset = preset,
                                 tuning = _uiState.value.tuning,
                                 aspectRatio = aspectRatio,
-                                mirrorFrontCamera = mirrorFrontCamera
+                                mirrorFrontCamera = mirrorFrontCamera,
+                                engineMode = _uiState.value.engineMode,
+                                naturalProfile = _uiState.value.naturalProfile,
+                                compareWithOriginal = _uiState.value.debugCompareOriginal,
+                                captureFrameSnapshot = frameSnapshot,
+                                lensProfile = _uiState.value.shootingState.selectedLens,
+                                isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF
                             )
                             if (uri != null) {
                                 withContext(Dispatchers.Main) {
@@ -506,6 +1207,207 @@ class CameraManager(private val context: Context) {
                 }
             }
         )
+    }
+
+    private fun captureNaturalBurst(
+        preset: CameraPreset,
+        aspectRatio: AspectRatioMode,
+        mirrorFrontCamera: Boolean,
+        frameSnapshot: CaptureFrameSnapshot,
+        onPhotoSaved: (Uri) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val capture = imageCapture ?: run {
+            onError("Camera capture not ready")
+            return
+        }
+
+        val compConfig = _uiState.value.computationalConfig
+        val targetFrames = compConfig.burstFrameCount.coerceIn(1, 5)
+        val evOffsets = compConfig.evOffsets
+        val tapTime = SystemClock.elapsedRealtime()
+
+        _uiState.update { it.copy(isCapturing = true, isComputationalProcessing = true) }
+
+        val capturedFrames = ArrayList<CapturedFrame>()
+        val cam = camera
+
+        fun processCapturedSequence() {
+            _uiState.update { it.copy(isCapturing = false) }
+            val captureLatencyMs = SystemClock.elapsedRealtime() - tapTime
+
+            if (capturedFrames.isEmpty()) {
+                _uiState.update { it.copy(isComputationalProcessing = false) }
+                onError("No frames captured in computational burst")
+                return
+            }
+
+            val sequence = FrameSequence(capturedFrames)
+            val currentSceneProfile = _uiState.value.sceneAnalysis?.profile ?: ProcessingProfile.NaturalDefault
+            val currentDetectedFaces = _uiState.value.detectedFaces
+
+            processingScope.launch {
+                try {
+                    val uri = ImageProcessor.processComputationalPhoto(
+                        context = context,
+                        sequence = sequence,
+                        config = _uiState.value.computationalConfig,
+                        aspectRatio = aspectRatio,
+                        mirrorFrontCamera = mirrorFrontCamera,
+                        naturalProfile = _uiState.value.naturalProfile,
+                        compareWithOriginal = _uiState.value.debugCompareOriginal,
+                        captureLatencyMs = captureLatencyMs,
+                        processingProfile = currentSceneProfile,
+                        faces = currentDetectedFaces,
+                        portraitConfig = _uiState.value.portraitConfig,
+                        colorConfig = _uiState.value.colorScienceConfig,
+                        cameraId = _uiState.value.selectedLens?.cameraId ?: "0",
+                        captureFrameSnapshot = frameSnapshot,
+                        onStatsUpdated = { stats ->
+                            _uiState.update { it.copy(computationalStats = stats, isComputationalProcessing = false) }
+                        }
+                    )
+                    if (uri != null) {
+                        withContext(Dispatchers.Main) {
+                            onPhotoSaved(uri)
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            onError("Failed to develop computational photograph")
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Error developing computational photo", t)
+                    _uiState.update { it.copy(isComputationalProcessing = false) }
+                    withContext(Dispatchers.Main) {
+                        onError(t.message ?: "Computational photo processing failed")
+                    }
+                } finally {
+                    sequence.release()
+                }
+            }
+        }
+
+        fun captureNextFrame(frameIndex: Int) {
+            if (frameIndex >= targetFrames) {
+                // Restore exposure compensation to 0 after bracketing
+                cam?.cameraControl?.setExposureCompensationIndex(0)
+                processCapturedSequence()
+                return
+            }
+
+            // Apply exposure bracketing offset if configured
+            val ev = if (frameIndex < evOffsets.size) evOffsets[frameIndex] else 0.0f
+            val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
+            val targetIndex = (ev / step).roundToInt()
+                .coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
+            cam?.cameraControl?.setExposureCompensationIndex(targetIndex)
+
+            capture.takePicture(
+                cameraExecutor,
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        try {
+                            val rotation = image.imageInfo.rotationDegrees
+                            val timestamp = image.imageInfo.timestamp
+                            val width = image.width
+                            val height = image.height
+                            val buffer = image.planes[0].buffer
+                            val bytes = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+
+                            val captured = CapturedFrame(
+                                index = frameIndex,
+                                evOffset = ev,
+                                iso = _uiState.value.liveIso,
+                                exposureTimeNs = _uiState.value.liveExposureNs,
+                                jpegBytes = bytes,
+                                width = width,
+                                height = height,
+                                rotation = rotation,
+                                timestampNs = timestamp
+                            )
+                            capturedFrames.add(captured)
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Failed to read buffer for burst frame #$frameIndex", e)
+                        } finally {
+                            image.close() // Close ImageProxy immediately to free hardware surface
+                        }
+
+                        captureNextFrame(frameIndex + 1)
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        Log.w(TAG, "Burst frame #$frameIndex capture error: ${exception.message}", exception)
+                        if (capturedFrames.isNotEmpty()) {
+                            // Safe fallback: proceed with captured subset
+                            cam?.cameraControl?.setExposureCompensationIndex(0)
+                            processCapturedSequence()
+                        } else {
+                            _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false) }
+                            ContextCompat.getMainExecutor(context).execute {
+                                onError(exception.message ?: "Burst capture failed")
+                            }
+                        }
+                    }
+                }
+            )
+        }
+
+        captureNextFrame(0)
+    }
+
+    fun updateComputationalConfig(transform: (ComputationalPhotoConfig) -> ComputationalPhotoConfig) {
+        _uiState.update { it.copy(computationalConfig = transform(it.computationalConfig)) }
+    }
+
+    fun setForceMultiFrameHdr(force: Boolean) {
+        _uiState.update { it.copy(computationalConfig = it.computationalConfig.copy(forceMultiFrameHdr = force)) }
+    }
+
+    fun setComputationalDebug(show: Boolean) {
+        _uiState.update { it.copy(showComputationalDebug = show) }
+    }
+
+    fun updateSceneConfig(transform: (SceneProcessingConfig) -> SceneProcessingConfig) {
+        val updated = transform(_uiState.value.sceneConfig)
+        sceneAnalysisEngine.updateConfig(updated)
+        _uiState.update { it.copy(sceneConfig = updated) }
+    }
+
+    fun setForceSceneOverride(scene: SceneType?) {
+        updateSceneConfig { it.copy(forceSceneOverride = scene) }
+    }
+
+    fun updatePortraitConfig(transform: (com.craftcam.app.portrait.PortraitConfig) -> com.craftcam.app.portrait.PortraitConfig) {
+        val updated = transform(_uiState.value.portraitConfig)
+        _uiState.update { it.copy(portraitConfig = updated) }
+    }
+
+    fun setPortraitMode(mode: com.craftcam.app.portrait.PortraitMode) {
+        updatePortraitConfig { it.copy(portraitMode = mode) }
+    }
+
+    fun setBokehStrength(strength: com.craftcam.app.portrait.BokehStrength) {
+        updatePortraitConfig { it.copy(bokehStrength = strength) }
+    }
+
+    fun setPortraitDebugMode(mode: com.craftcam.app.portrait.DebugMaskMode) {
+        updatePortraitConfig { it.copy(debugMaskMode = mode) }
+    }
+
+    fun updateColorScienceConfig(transform: (com.craftcam.app.color.ColorScienceConfig) -> com.craftcam.app.color.ColorScienceConfig) {
+        val updated = transform(_uiState.value.colorScienceConfig)
+        _uiState.update { it.copy(colorScienceConfig = updated) }
+        glRenderer?.updateColorScience(updated)
+    }
+
+    fun setColorProfileType(type: com.craftcam.app.color.ColorProfileType) {
+        updateColorScienceConfig { it.copy(activeProfileType = type) }
+    }
+
+    fun setTargetColorSpace(colorSpace: com.craftcam.app.color.ColorSpaceType) {
+        updateColorScienceConfig { it.copy(targetColorSpace = colorSpace) }
     }
 
     fun capturePhoto(

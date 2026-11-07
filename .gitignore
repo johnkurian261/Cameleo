@@ -19,6 +19,9 @@ captures/
 *.keystore
 release/
 
+# ===== GitHub workflows (requires workflow PAT scope) =====
+.github/
+
 # ===== DazzCam IPA & extracted contents (proprietary, do not ship) =====
 DazzCam.ipa
 Payload/
@@ -43,6 +46,43 @@ __pycache__/
 convert_cgbi.py
 copy_textures.py
 generate_luts.py
+
+# ===== Reverse engineering analysis scratch and extraction artifacts =====
+assemble_audit_text.py
+audit_prompt.txt
+audit_prompt_full.txt
+chunk1.txt
+chunk2.txt
+deep_parse_all.py
+detailed_extract.py
+dump_vsco_effects.py
+extract_deep_filter_recipes.py
+extract_forensics.py
+find_lr_flare.py
+forensics_summary.json
+grains/
+inspect_lr_and_prequel.py
+inspect_prequel.py
+inspect_prequel_assets.py
+inspect_prequel_zip.py
+inspect_shaders.py
+inspect_vsco_db.py
+key_shaders.txt
+lightroom_lrtemplates_parsed.json
+lightroom_presets_parsed.json
+liit_recipes_parsed.json
+live_viewfinder_grain.png
+prequel_controls_parsed.json
+print_liit_recipes.py
+print_lr_retro.py
+print_lr_vintage.py
+print_summary.py
+read_flare_raw.py
+read_lr_flare.py
+read_prequel_effects.py
+split_chunks.py
+vsco_effects_dump.json
+CAMELEO_Research/
 
 # ===== Windows =====
 Thumbs.db

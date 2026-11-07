@@ -1,41 +1,32 @@
 package com.craftcam.app.ui.viewfinder
 
-import android.content.Context
 import android.content.ContentUris
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.opengl.GLSurfaceView
 import android.os.Build
 import android.provider.MediaStore
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import android.graphics.SurfaceTexture
-import android.opengl.GLSurfaceView
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
-import androidx.camera.view.PreviewView
-import androidx.core.content.ContextCompat
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
-import java.util.Locale
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,31 +34,39 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.craftcam.app.camera.AspectRatioMode
 import com.craftcam.app.camera.CameraManager
 import com.craftcam.app.camera.CaptureMode
 import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
+import com.craftcam.app.captureframe.CaptureFrameOverlay
 import com.craftcam.app.gl.GLViewfinderRenderer
-import com.craftcam.app.model.CameraCategory
-import com.craftcam.app.model.CameraPreset
-import com.craftcam.app.presets.PresetCatalog
-import com.craftcam.app.processor.ImageProcessor
-import com.craftcam.app.util.SoundManager
+import com.craftcam.app.model.*
 import com.craftcam.app.ui.components.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import com.craftcam.app.ui.theme.*
+import com.craftcam.app.util.SoundManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+/**
+ * Redesigned Minimal Vintage Camera Capture Page for CAMELEO.
+ * Provides a pure, photographic, dark, distraction-free shooting experience
+ * inspired by classic mechanical cameras and minimalist vintage camera apps.
+ */
 @Composable
 fun ViewfinderScreen(
     cameraManager: CameraManager,
@@ -95,347 +94,322 @@ fun ViewfinderScreen(
         SoundManager.initialize(context)
     }
 
+    DisposableEffect(Unit) {
+        cameraManager.setCameraActive(true)
+        onDispose {
+            cameraManager.setCameraActive(false)
+        }
+    }
+
+    var showControlMenu by remember { mutableStateOf(false) }
     var showTuningSheet by remember { mutableStateOf(false) }
+    var showNaturalTuningSheet by remember { mutableStateOf(false) }
     var showExposureSlider by remember { mutableStateOf(false) }
     var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
 
     LaunchedEffect(Unit) {
         latestThumbnail = loadLatestCameleoThumbnail(context)
     }
+
     var countdown by remember { mutableStateOf<Int?>(null) }
     var switchRotation by remember { mutableStateOf(0f) }
     val animatedRotation by animateFloatAsState(targetValue = switchRotation, label = "switch_rot")
-    val isTuned = uiState.tuning.temperatureOffset != 0f || 
-                  uiState.tuning.tintOffset != 0f || 
-                  uiState.tuning.contrastOffset != 0f || 
-                  uiState.tuning.saturationOffset != 0f || 
-                  uiState.tuning.exposureCompensation != 0f
+
+    val isTuned = when (uiState.engineMode) {
+        CameraEngineMode.NATURAL -> uiState.naturalProfile != NaturalCameraProfile.S21_PROFILE || uiState.debugCompareOriginal
+        CameraEngineMode.PRO -> uiState.proConfig.activeControl != null || uiState.proConfig.focusPeakingEnabled || uiState.proConfig.zebraEnabled
+        CameraEngineMode.FILM -> uiState.tuning.temperatureOffset != 0f ||
+                uiState.tuning.tintOffset != 0f ||
+                uiState.tuning.contrastOffset != 0f ||
+                uiState.tuning.saturationOffset != 0f ||
+                uiState.tuning.exposureCompensation != 0f
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(CameraBlack)
     ) {
-        // 1. Hardware-Accelerated OpenGL ES 3.0 Viewfinder with Real-Time 3D Film Emulation
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                GLSurfaceView(ctx).apply {
-                    setEGLContextClientVersion(3)
-                    var rendererRef: GLViewfinderRenderer? = null
-                    val renderer = GLViewfinderRenderer(ctx, this) { surfaceTexture ->
-                        ContextCompat.getMainExecutor(ctx).execute {
-                            cameraManager.initializeWithGLSurface(
-                                lifecycleOwner = lifecycleOwner,
-                                surfaceTexture = surfaceTexture
-                            ) { rot, isFront, bufW, bufH ->
-                                rendererRef?.setCameraOrientation(rot, isFront, bufW, bufH)
-                            }
-                        }
-                    }
-                    rendererRef = renderer
-                    setRenderer(renderer)
-                    cameraManager.setGLRenderer(renderer)
-                    renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-                }
-            }
-        )
-
-        // 2. Viewfinder Overlay (Vintage Simulation, Matte, Grid, Tap-To-Focus + Vertical Exposure Drag)
-        ViewfinderOverlay(
-            modifier = Modifier.fillMaxSize(),
-            preset = selectedPreset,
-            aspectRatio = uiState.aspectRatio,
-            showGrid = uiState.showGrid,
-            exposureIndex = uiState.exposureIndex,
-            minExposureIndex = uiState.minExposureIndex,
-            maxExposureIndex = uiState.maxExposureIndex,
-            exposureStep = uiState.exposureStep,
-            onTapFocus = { tapX, tapY ->
-                cameraManager.tapToFocus(tapX, tapY)
-            },
-            onExposureChange = { newIdx ->
-                cameraManager.setExposureIndex(newIdx)
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            }
-        )
-
-        // 3. Top Control Bar
         Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
+            modifier = Modifier.fillMaxSize()
         ) {
-            TopControlBar(
-                flashMode = uiState.flashMode,
-                aspectRatio = uiState.aspectRatio,
-                timerSeconds = uiState.timerSeconds,
-                showGrid = uiState.showGrid,
-                exposureIndex = uiState.exposureIndex,
-                exposureStep = uiState.exposureStep,
-                isExposureSliderVisible = showExposureSlider,
-                isTuned = isTuned,
-                onFlashToggle = {
-                    val next = when (uiState.flashMode) {
-                        ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
-                        ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
-                        else -> ImageCapture.FLASH_MODE_OFF
-                    }
-                    cameraManager.setFlashMode(next)
-                },
-                onAspectRatioCycle = {
-                    val next = when (uiState.aspectRatio) {
-                        AspectRatioMode.RATIO_4_3 -> AspectRatioMode.RATIO_1_1
-                        AspectRatioMode.RATIO_1_1 -> AspectRatioMode.RATIO_3_2
-                        AspectRatioMode.RATIO_3_2 -> AspectRatioMode.RATIO_16_9
-                        AspectRatioMode.RATIO_16_9 -> AspectRatioMode.RATIO_4_3
-                    }
-                    cameraManager.setAspectRatio(next)
-                },
-                onTimerCycle = {
-                    val next = when (uiState.timerSeconds) {
-                        0 -> 3
-                        3 -> 10
-                        else -> 0
-                    }
-                    cameraManager.setTimerSeconds(next)
-                },
-                onGridToggle = { cameraManager.toggleGrid() },
-                onExposureToggle = {
-                    showExposureSlider = !showExposureSlider
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                },
-                onTuneClick = {
-                    showTuningSheet = !showTuningSheet
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                },
-                onSettingsClick = onNavigateToSettings
-            )
-
-            // Quick Brightness / Exposure Slider (Dazz Cam style ☀️ slider)
-            AnimatedVisibility(
-                visible = showExposureSlider,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                QuickExposureSlider(
-                    exposureIndex = uiState.exposureIndex,
-                    minExposureIndex = uiState.minExposureIndex,
-                    maxExposureIndex = uiState.maxExposureIndex,
-                    exposureStep = uiState.exposureStep,
-                    onExposureChange = { newIdx ->
-                        cameraManager.setExposureIndex(newIdx)
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    },
-                    onReset = {
-                        cameraManager.setExposureIndex(0)
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    },
-                    onClose = { showExposureSlider = false }
-                )
-            }
-
-            // Vintage camera model badge or Recording Indicator
-            if (uiState.isRecording) {
-                val mins = uiState.recordingSeconds / 60
-                val secs = uiState.recordingSeconds % 60
-                Box(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(VintageRed.copy(alpha = 0.90f))
-                        .padding(horizontal = 14.dp, vertical = 4.dp)
-                        .align(Alignment.CenterHorizontally)
-                ) {
-                    Text(
-                        text = "● REC  ${String.format("%02d:%02d", mins, secs)}",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SurfaceElevated.copy(alpha = 0.85f))
-                        .padding(horizontal = 14.dp, vertical = 4.dp)
-                        .align(Alignment.CenterHorizontally)
-                ) {
-                    val evVal = uiState.exposureIndex * uiState.exposureStep
-                    val evSign = if (evVal > 0f) "+" else ""
-                    val evBadge = if (uiState.exposureIndex != 0) "  •  $evSign${String.format(Locale.US, "%.1f EV", evVal)}" else ""
-                    Text(
-                        text = "${selectedPreset.name.uppercase()} • ${selectedPreset.year}$evBadge",
-                        color = VintageAmber,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // 4. Timer Countdown Overlay
-        countdown?.let { count ->
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "$count",
-                    color = VintageAmber,
-                    fontSize = 96.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        // 5. Bottom Controls Section
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(CameraBlack.copy(alpha = 0.90f))
-                .padding(bottom = 24.dp)
-        ) {
-            // Camera Lens Wheel (Apple / Dazz Cam style lens selector)
-            CameraLensWheel(
-                modifier = Modifier.padding(bottom = 6.dp),
-                lenses = uiState.availableLenses,
-                selectedLens = uiState.selectedLens,
-                onLensSelected = { lens ->
-                    cameraManager.selectLens(lens)
-                }
-            )
-
-            // Mode Switcher (PHOTO | VIDEO) - Paused for pure photo focus
-            if (!IS_VIDEO_FEATURE_PAUSED) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(SurfaceElevated)
-                            .padding(3.dp)
-                    ) {
-                        Row {
-                            CaptureModeTab(
-                                title = "PHOTO",
-                                isSelected = uiState.captureMode == CaptureMode.PHOTO,
-                                onClick = {
-                                    if (!uiState.isRecording) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        cameraManager.setCaptureMode(CaptureMode.PHOTO)
-                                    }
-                                }
-                            )
-                            CaptureModeTab(
-                                title = "VIDEO",
-                                isSelected = uiState.captureMode == CaptureMode.VIDEO,
-                                onClick = {
-                                    if (!uiState.isRecording) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        cameraManager.setCaptureMode(CaptureMode.VIDEO)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Camera Presets Carousel Wheel
-            val photoPresets = remember {
-                if (IS_VIDEO_FEATURE_PAUSED) {
-                    PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
-                } else {
-                    PresetCatalog.allPresets
-                }
-            }
-            CameraWheelSelector(
-                presets = photoPresets,
-                selectedPreset = selectedPreset,
-                onPresetSelected = onPresetChange,
-                onOpenCollection = onNavigateToCollection
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Main Actions Bar (Gallery, Shutter, Switch Camera)
+            // ── 1. Minimal Top Bar: Camera Switch (Left) & Menu Button (Right) ─────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Gallery Shortcut with small preview of latest photo
+                // Top-left: Camera Switch Button (Rear / Front)
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
-                        .background(SurfaceElevated)
-                        .border(
-                            width = if (latestThumbnail != null) 2.dp else 1.dp,
-                            color = if (latestThumbnail != null) VintageAmber.copy(alpha = 0.85f) else DividerSubtle,
-                            shape = CircleShape
-                        )
-                        .clickable(onClick = onNavigateToGallery),
+                        .background(Color(0xA614161C))
+                        .border(1.dp, Color(0x33FFFFFF), CircleShape)
+                        .clickable {
+                            if (!uiState.isRecording) {
+                                switchRotation += 180f
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                cameraManager.switchCamera()
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (latestThumbnail != null) {
-                        Image(
-                            bitmap = latestThumbnail!!,
-                            contentDescription = "Gallery Preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape)
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.PhotoLibrary,
-                            contentDescription = "Gallery",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(24.dp)
+                    Icon(
+                        Icons.Default.Cameraswitch,
+                        contentDescription = "Switch Camera",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(animatedRotation)
+                    )
+                }
+
+                // Top-right: Subtle three-dot vertical menu button
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xA614161C))
+                        .border(1.dp, Color(0x33FFFFFF), CircleShape)
+                        .clickable {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            showControlMenu = !showControlMenu
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Menu",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // ── 2. Framed Viewfinder Window (Does NOT touch screen borders) ──────────
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(3f / 4f)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.Black)
+                ) {
+                    // OpenGL Live Viewfinder
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            GLSurfaceView(ctx).apply {
+                                setEGLContextClientVersion(3)
+                                var rendererRef: GLViewfinderRenderer? = null
+                                val renderer = GLViewfinderRenderer(ctx, this) { surfaceTexture ->
+                                    ContextCompat.getMainExecutor(ctx).execute {
+                                        cameraManager.initializeWithGLSurface(
+                                            lifecycleOwner = lifecycleOwner,
+                                            surfaceTexture = surfaceTexture
+                                        ) { rot, isFront, bufW, bufH ->
+                                            rendererRef?.setCameraOrientation(rot, isFront, bufW, bufH)
+                                        }
+                                    }
+                                }
+                                rendererRef = renderer
+                                setRenderer(renderer)
+                                cameraManager.setGLRenderer(renderer)
+                                renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                            }
+                        },
+                        update = { _ ->
+                            cameraManager.setPreset(selectedPreset)
+                        }
+                    )
+
+                    // Tap-To-Focus, Exposure Drag & Grid Overlay
+                    ViewfinderOverlay(
+                        modifier = Modifier.fillMaxSize(),
+                        preset = selectedPreset,
+                        tuning = uiState.tuning,
+                        aspectRatio = uiState.aspectRatio,
+                        showGrid = uiState.showGrid,
+                        isNaturalMode = uiState.engineMode != CameraEngineMode.FILM,
+                        exposureIndex = uiState.exposureIndex,
+                        minExposureIndex = uiState.minExposureIndex,
+                        maxExposureIndex = uiState.maxExposureIndex,
+                        exposureStep = uiState.exposureStep,
+                        onTapFocus = { tapX, tapY ->
+                            cameraManager.tapToFocus(tapX, tapY)
+                        },
+                        onExposureChange = { newIdx ->
+                            cameraManager.setExposureIndex(newIdx)
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        }
+                    )
+
+                    // Centered, Resizable Camera Framing Composition Window (bypassed for circular Fisheye)
+                    if (uiState.shootingState.selectedLens.type != com.craftcam.app.camera.profile.LensType.FISHEYE_F) {
+                        CaptureFrameOverlay(
+                            modifier = Modifier.fillMaxSize(),
+                            state = uiState.captureFrameState,
+                            aspectRatio = uiState.aspectRatio,
+                            onResize = { scale ->
+                                val previewAspect = 1f / uiState.aspectRatio.ratio
+                                cameraManager.resizeCaptureFrame(scale, previewAspect)
+                            }
                         )
                     }
                 }
+            }
 
-                // Shutter / Record Button
-                TactileShutterButton(
-                    captureMode = if (IS_VIDEO_FEATURE_PAUSED) CaptureMode.PHOTO else uiState.captureMode,
-                    isCapturing = uiState.isCapturing || countdown != null,
-                    isRecording = !IS_VIDEO_FEATURE_PAUSED && uiState.isRecording,
-                    onClick = {
-                        if (!IS_VIDEO_FEATURE_PAUSED && uiState.captureMode == CaptureMode.VIDEO) {
-                            // VIDEO RECORDING TOGGLE
-                            if (uiState.isRecording) {
-                                cameraManager.stopRecording()
-                            } else {
-                                cameraManager.startRecording(
-                                    onVideoSaved = { uri ->
-                                        Toast.makeText(context, "Video saved to Cameleo album", Toast.LENGTH_SHORT).show()
-                                        scope.launch {
-                                            latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
-                                        }
-                                    },
-                                    onError = { err ->
-                                        Toast.makeText(context, "Video error: $err", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
+            // ── 3. Pro Mode Manual Controls (only when PRO engine mode is active) ─────
+            if (uiState.engineMode == CameraEngineMode.PRO) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                ) {
+                    ProControlsBar(
+                        modifier = Modifier.fillMaxWidth(),
+                        config = uiState.proConfig,
+                        caps = uiState.hardwareCapabilities,
+                        liveIso = uiState.liveIso,
+                        liveExposureNs = uiState.liveExposureNs,
+                        liveFocusDistance = uiState.liveFocusDistance,
+                        onConfigChange = { cameraManager.updateProConfig { _ -> it } },
+                        onTabSelected = { cameraManager.setProActiveTab(it) }
+                    )
+                }
+            }
+
+            // ── 4. Bottom Controls: Information Pills + Shutter Control Bar ───────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Quick Brightness / Exposure Slider (Dazz-style ☀️ slider)
+                AnimatedVisibility(
+                    visible = showExposureSlider,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    QuickExposureSlider(
+                        exposureIndex = uiState.exposureIndex,
+                        minExposureIndex = uiState.minExposureIndex,
+                        maxExposureIndex = uiState.maxExposureIndex,
+                        exposureStep = uiState.exposureStep,
+                        onExposureChange = { newIdx ->
+                            cameraManager.setExposureIndex(newIdx)
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        },
+                        onReset = {
+                            cameraManager.setExposureIndex(0)
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        },
+                        onClose = { showExposureSlider = false }
+                    )
+                }
+
+                // Tactile Quick Controls Bar directly above the capture button
+                CameraInfoPills(
+                    shootingState = uiState.shootingState,
+                    exposureIndex = uiState.exposureIndex,
+                    exposureStep = uiState.exposureStep,
+                    isExposureSliderOpen = showExposureSlider,
+                    flashMode = uiState.flashMode,
+                    timerSeconds = uiState.timerSeconds,
+                    showGrid = uiState.showGrid,
+                    isTuned = isTuned,
+                    engineMode = uiState.engineMode,
+                    onFlashCycle = {
+                        val nextMode = when (uiState.flashMode) {
+                            ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
+                            ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
+                            else -> ImageCapture.FLASH_MODE_OFF
+                        }
+                        cameraManager.setFlashMode(nextMode)
+                    },
+                    onToggleExposure = {
+                        showExposureSlider = !showExposureSlider
+                    },
+                    onOpenTuning = {
+                        when (uiState.engineMode) {
+                            CameraEngineMode.PRO -> cameraManager.setProActiveTab(ProControlTab.TOOLS)
+                            CameraEngineMode.NATURAL -> showNaturalTuningSheet = true
+                            CameraEngineMode.FILM -> showTuningSheet = true
+                        }
+                    },
+                    onTimerCycle = {
+                        val nextTimer = when (uiState.timerSeconds) {
+                            0 -> 3
+                            3 -> 10
+                            else -> 0
+                        }
+                        cameraManager.setTimerSeconds(nextTimer)
+                    },
+                    onToggleGrid = {
+                        cameraManager.toggleGrid()
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Primary Bottom Actions Bar (Gallery Thumbnail, White Shutter Button, Current Camera Icon)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 36.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 1. Gallery Thumbnail
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF181A20))
+                            .border(1.dp, Color(0x38FFFFFF), CircleShape)
+                            .clickable {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                onNavigateToGallery()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (latestThumbnail != null) {
+                            Image(
+                                bitmap = latestThumbnail!!,
+                                contentDescription = "Gallery",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape)
+                            )
                         } else {
-                            // STILL PHOTO CAPTURE
+                            Icon(
+                                Icons.Default.PhotoLibrary,
+                                contentDescription = "Gallery",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // 2. Large Dominant White Circular Shutter Button
+                    TactileShutterButton(
+                        captureMode = CaptureMode.PHOTO,
+                        isCapturing = uiState.isCapturing || countdown != null,
+                        isRecording = false,
+                        onClick = {
                             scope.launch {
                                 if (uiState.timerSeconds > 0) {
                                     for (i in uiState.timerSeconds downTo 1) {
@@ -462,35 +436,94 @@ fun ViewfinderScreen(
                                 )
                             }
                         }
-                    }
-                )
-
-                // Lens Switcher (Rear / Front)
-                IconButton(
-                    onClick = {
-                        if (!uiState.isRecording) {
-                            switchRotation += 180f
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            cameraManager.switchCamera()
-                        }
-                    },
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceElevated)
-                        .border(1.dp, DividerSubtle, CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.Cameraswitch,
-                        contentDescription = "Switch Camera",
-                        tint = TextPrimary,
-                        modifier = Modifier.rotate(animatedRotation)
                     )
+
+                    // 3. Current Camera Icon (Tapping opens camera collection)
+                    val iconResId = remember(selectedPreset.iconResName) {
+                        try {
+                            context.resources.getIdentifier(selectedPreset.iconResName, "drawable", context.packageName)
+                        } catch (e: Exception) {
+                            0
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF181A20))
+                            .border(1.dp, Color(0x38FFFFFF), CircleShape)
+                            .clickable {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                onNavigateToCollection()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (iconResId != 0) {
+                            Image(
+                                painter = painterResource(id = iconResId),
+                                contentDescription = selectedPreset.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(34.dp)
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.PhotoCamera,
+                                contentDescription = selectedPreset.name,
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        // 6. Color Tuning & Analog Lab Bottom Sheet
+        // ── 7. Timer Countdown Overlay ────────────────────────────────────────────
+        countdown?.let { count ->
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "$count",
+                    color = Color.White,
+                    fontSize = 96.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // ── 8. Floating Three-Dot Control Menu Panel ──────────────────────────────
+        CameraControlMenu(
+            visible = showControlMenu,
+            flashMode = uiState.flashMode,
+            timerSeconds = uiState.timerSeconds,
+            aspectRatio = uiState.aspectRatio,
+            showGrid = uiState.showGrid,
+            engineMode = uiState.engineMode,
+            isTuned = isTuned,
+            onFlashSelect = { mode -> cameraManager.setFlashMode(mode) },
+            onTimerSelect = { seconds -> cameraManager.setTimerSeconds(seconds) },
+            onAspectRatioSelect = { ratio -> cameraManager.setAspectRatio(ratio) },
+            onToggleGrid = { cameraManager.toggleGrid() },
+            onResetFrame = { cameraManager.resetCaptureFrame() },
+            onEngineModeSelect = { mode -> cameraManager.setEngineMode(mode) },
+            onOpenTuning = {
+                when (uiState.engineMode) {
+                    CameraEngineMode.PRO -> cameraManager.setProActiveTab(ProControlTab.TOOLS)
+                    CameraEngineMode.NATURAL -> showNaturalTuningSheet = true
+                    CameraEngineMode.FILM -> showTuningSheet = true
+                }
+            },
+            onNavigateToSettings = onNavigateToSettings,
+            onNavigateToCollection = onNavigateToCollection,
+            onDismiss = { showControlMenu = false }
+        )
+
+        // ── 9. Color Tuning Bottom Sheet ─────────────────────────────────────────
         ColorTuningSheet(
             visible = showTuningSheet,
             tuning = uiState.tuning,
@@ -498,28 +531,28 @@ fun ViewfinderScreen(
             onReset = { cameraManager.resetTuning() },
             onDismiss = { showTuningSheet = false }
         )
-    }
-}
 
-@Composable
-private fun CaptureModeTab(
-    title: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (isSelected) VintageAmber else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 5.dp)
-    ) {
-        Text(
-            text = title,
-            color = if (isSelected) CameraBlack else TextSecondary,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold
+        // ── 11. Natural Lab Tuning Bottom Sheet ───────────────────────────────────
+        NaturalTuningSheet(
+            visible = showNaturalTuningSheet,
+            profile = uiState.naturalProfile,
+            compareWithOriginal = uiState.debugCompareOriginal,
+            computationalConfig = uiState.computationalConfig,
+            computationalStats = uiState.computationalStats,
+            sceneConfig = uiState.sceneConfig,
+            sceneAnalysis = uiState.sceneAnalysis,
+            portraitConfig = uiState.portraitConfig,
+            portraitActive = uiState.portraitBokehActive,
+            colorScienceConfig = uiState.colorScienceConfig,
+            sensorTelemetry = uiState.sensorTelemetry,
+            onProfileChange = { cameraManager.updateNaturalProfile(it) },
+            onCompareChange = { cameraManager.setDebugCompareOriginal(it) },
+            onComputationalConfigChange = { cameraManager.updateComputationalConfig(it) },
+            onSceneConfigChange = { cameraManager.updateSceneConfig(it) },
+            onPortraitConfigChange = { cameraManager.updatePortraitConfig(it) },
+            onColorScienceConfigChange = { cameraManager.updateColorScienceConfig(it) },
+            onReset = { cameraManager.resetNaturalProfile() },
+            onDismiss = { showNaturalTuningSheet = false }
         )
     }
 }
@@ -603,4 +636,3 @@ private suspend fun loadThumbnailForUri(context: Context, uri: Uri): ImageBitmap
         null
     }
 }
-

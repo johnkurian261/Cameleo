@@ -207,3 +207,4 @@ if (r > g && g > b && r > 0.25f && r < 0.90f) {
 1. **Licensing & Provenance**: Documented in [`README.md`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/assets/grains/README.md). These scanned assets are retained under research and development evaluation status. Commercial distribution requires verifying individual asset redistribution licenses or substituting laboratory-scanned film stocks.
 2. **Memory Safety**: No additional 12.2MP Bitmaps are allocated during grain processing. Textures are decoded into integer arrays and cached once, preserving Phase M1 memory guarantees.
 3. **Hardware Compatibility**: Shaders and parallel processing rely on standard OpenGL ES 3.0 and Android CPU SIMD instructions, verified for Mali-G78 and Exynos 2100 on Samsung Galaxy S21 5G.
+

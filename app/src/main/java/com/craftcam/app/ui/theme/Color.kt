@@ -2,7 +2,7 @@ package com.craftcam.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val CameraBlack = Color(0xFF0A0B0E)
+val CameraBlack = Color(0xFF000000)
 val SurfaceGraphite = Color(0xFF14161B)
 val SurfaceElevated = Color(0xFF1D2027)
 val SurfaceCard = Color(0xFF242731)

@@ -11,39 +11,42 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.craftcam.app.camera.AspectRatioMode
-import com.craftcam.app.model.CameraCategory
+import com.craftcam.app.camera.UserTuningConfig
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.ui.theme.CameraBlack
 import com.craftcam.app.ui.theme.VintageAmber
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.*
+import java.util.Locale
 import kotlin.math.abs
 
 @Composable
 fun ViewfinderOverlay(
     modifier: Modifier = Modifier,
     preset: CameraPreset,
+    tuning: UserTuningConfig = UserTuningConfig(),
     aspectRatio: AspectRatioMode,
     showGrid: Boolean,
+    isNaturalMode: Boolean = false,
     exposureIndex: Int = 0,
     minExposureIndex: Int = -4,
     maxExposureIndex: Int = 4,
     exposureStep: Float = 0.5f,
     onTapFocus: (Float, Float) -> Unit,
-    onExposureChange: (Int) -> Unit = {}
+    onExposureChange: (Int) -> Unit = {},
+    onPinchZoom: (Float) -> Unit = {}
 ) {
+    val context = LocalContext.current
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
     val focusScale = remember { Animatable(1.35f) }
     val focusAlpha = remember { Animatable(0f) }
@@ -71,65 +74,71 @@ fun ViewfinderOverlay(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startPos = down.position
+                    val downTime = System.currentTimeMillis()
 
                     var isDrag = false
+                    var isPinch = false
                     var totalDragY = 0f
-
-                    if (focusPoint == null) {
-                        focusPoint = startPos
-                        onTapFocus(startPos.x, startPos.y)
-                        scope.launch {
-                            focusScale.snapTo(1.35f)
-                            focusAlpha.snapTo(1.0f)
-                            focusScale.animateTo(1.0f, tween(180))
-                        }
-                    } else {
-                        val dist = (startPos - focusPoint!!).getDistance()
-                        if (dist > moveThresholdPx) {
-                            focusPoint = startPos
-                            onTapFocus(startPos.x, startPos.y)
-                            scope.launch {
-                                focusScale.snapTo(1.35f)
-                                focusAlpha.snapTo(1.0f)
-                                focusScale.animateTo(1.0f, tween(180))
-                            }
-                        } else {
-                            scope.launch {
-                                focusAlpha.snapTo(1.0f)
-                            }
-                        }
-                    }
-                    scheduleDismiss()
+                    var lastPinchSpan = 0f
 
                     while (true) {
                         val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) {
-                            scheduleDismiss()
-                            break
-                        }
+                        val pressedPointers = event.changes.filter { it.pressed }
 
-                        val dy = change.position.y - startPos.y
-                        val dx = change.position.x - startPos.x
-                        if (!isDrag && (abs(dy) > touchSlop || abs(dx) > touchSlop)) {
-                            isDrag = true
-                        }
+                        if (pressedPointers.size >= 2) {
+                            // Multi-touch pinch is smoothly and authoritatively handled by CaptureFrameOverlay
+                            isPinch = true
+                            isDrag = false
+                            focusPoint = null
+                            lastPinchSpan = 0f
+                        } else if (pressedPointers.size == 1 && !isPinch) {
+                            val change = pressedPointers[0]
+                            val dy = change.position.y - startPos.y
+                            val dx = change.position.x - startPos.x
 
-                        if (isDrag) {
-                            change.consume()
-                            scheduleDismiss()
+                            if (!isDrag && (abs(dy) > touchSlop || abs(dx) > touchSlop)) {
+                                isDrag = true
+                            }
 
-                            val dragDeltaY = change.position.y - change.previousPosition.y
-                            totalDragY -= dragDeltaY // Dragging up increases exposure
+                            if (isDrag) {
+                                change.consume()
+                                scheduleDismiss()
 
-                            val stepsDelta = (totalDragY / pixelsPerStep).toInt()
-                            if (stepsDelta != 0) {
-                                totalDragY -= stepsDelta * pixelsPerStep
-                                val targetIndex = (exposureIndex + stepsDelta).coerceIn(minExposureIndex, maxExposureIndex)
-                                if (targetIndex != exposureIndex) {
-                                    onExposureChange(targetIndex)
+                                val dragDeltaY = change.position.y - change.previousPosition.y
+                                totalDragY -= dragDeltaY // Dragging up increases exposure
+
+                                val stepsDelta = (totalDragY / pixelsPerStep).toInt()
+                                if (stepsDelta != 0) {
+                                    totalDragY -= stepsDelta * pixelsPerStep
+                                    val targetIndex = (exposureIndex + stepsDelta).coerceIn(minExposureIndex, maxExposureIndex)
+                                    if (targetIndex != exposureIndex) {
+                                        onExposureChange(targetIndex)
+                                    }
                                 }
                             }
+                        }
+
+                        if (pressedPointers.isEmpty()) {
+                            if (!isDrag && !isPinch) {
+                                val duration = System.currentTimeMillis() - downTime
+                                if (duration < 450) {
+                                    if (focusPoint == null || (startPos - focusPoint!!).getDistance() > moveThresholdPx) {
+                                        focusPoint = startPos
+                                        onTapFocus(startPos.x, startPos.y)
+                                        scope.launch {
+                                            focusScale.snapTo(1.35f)
+                                            focusAlpha.snapTo(1.0f)
+                                            focusScale.animateTo(1.0f, tween(180))
+                                        }
+                                    } else {
+                                        scope.launch {
+                                            focusAlpha.snapTo(1.0f)
+                                        }
+                                    }
+                                    scheduleDismiss()
+                                }
+                            }
+                            break
                         }
                     }
                 }
@@ -156,92 +165,7 @@ fun ViewfinderOverlay(
             val right = left + frameW
             val bottom = top + frameH
 
-            // 2. 8mm / 16mm Projector Rounded Film Gate
-            val is8mm = preset.id.contains("8mm") || preset.id.contains("16mm")
-            val isCamcorder = preset.category == CameraCategory.CAMCORDER
-            if (is8mm) {
-                val cornerRadius = frameW * 0.08f
-                val gatePath = Path().apply {
-                    addRoundRect(
-                        RoundRect(
-                            left = left,
-                            top = top,
-                            right = right,
-                            bottom = bottom,
-                            radiusX = cornerRadius,
-                            radiusY = cornerRadius
-                        )
-                    )
-                }
-                val outerPath = Path().apply {
-                    addRect(Rect(left, top, right, bottom))
-                    op(this, gatePath, PathOperation.Difference)
-                }
-                drawPath(outerPath, Color(0xFF0A0A0C))
-            }
-
-            // 3. Authentic Live Date Stamp in Viewfinder
-            if (preset.dateStamp?.enabled == true) {
-                val cal = Calendar.getInstance()
-                val offset = preset.dateStamp.customYearOffset
-                val yy = (cal.get(Calendar.YEAR) + offset) % 100
-                val mm = cal.get(Calendar.MONTH) + 1
-                val dd = cal.get(Calendar.DAY_OF_MONTH)
-                val dateStr = String.format(Locale.US, "'%02d  %2d  %2d", yy, mm, dd)
-
-                val dateColor = when {
-                    isCamcorder                                   -> android.graphics.Color.rgb(80, 255, 120)
-                    is8mm                                         -> android.graphics.Color.rgb(255, 140, 20)
-                    preset.category == CameraCategory.CCD_DIGITAL -> android.graphics.Color.rgb(255, 180, 30)
-                    else                                          -> android.graphics.Color.rgb(255, 130, 20)
-                }
-
-                drawContext.canvas.nativeCanvas.drawText(
-                    dateStr,
-                    right - 20.dp.toPx(),
-                    bottom - 18.dp.toPx(),
-                    android.graphics.Paint().apply {
-                        color = dateColor
-                        textSize = 14.sp.toPx()
-                        textAlign = android.graphics.Paint.Align.RIGHT
-                        isAntiAlias = true
-                        typeface = android.graphics.Typeface.MONOSPACE
-                        setShadowLayer(5f, 0f, 0f, android.graphics.Color.argb(180, 200, 40, 0))
-                    }
-                )
-            }
-
-            // 4. Camcorder OSD & Scanlines
-            if (isCamcorder) {
-                val cal = Calendar.getInstance()
-                val dateStr = java.text.SimpleDateFormat("MMM. dd yyyy", Locale.US).format(cal.time).uppercase(Locale.US)
-                drawContext.canvas.nativeCanvas.drawText(
-                    dateStr,
-                    right - 20.dp.toPx(),
-                    bottom - 18.dp.toPx(),
-                    android.graphics.Paint().apply {
-                        color = android.graphics.Color.rgb(80, 255, 120)
-                        textSize = 14.sp.toPx()
-                        textAlign = android.graphics.Paint.Align.RIGHT
-                        isAntiAlias = true
-                        typeface = android.graphics.Typeface.MONOSPACE
-                    }
-                )
-                drawContext.canvas.nativeCanvas.drawText(
-                    "SP  [■■■]",
-                    right - 20.dp.toPx(),
-                    top + 28.dp.toPx(),
-                    android.graphics.Paint().apply {
-                        color = android.graphics.Color.rgb(80, 255, 120)
-                        textSize = 13.sp.toPx()
-                        textAlign = android.graphics.Paint.Align.RIGHT
-                        isAntiAlias = true
-                        typeface = android.graphics.Typeface.MONOSPACE
-                    }
-                )
-            }
-
-            // 5. Draw Matte / Letterboxing Bars
+            // 2. Draw Matte / Letterboxing Bars outside active image frame
             if (top > 0) {
                 drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(canvasW, top))
                 drawRect(color = CameraBlack, topLeft = Offset(0f, bottom), size = Size(canvasW, canvasH - bottom))
@@ -251,7 +175,11 @@ fun ViewfinderOverlay(
                 drawRect(color = CameraBlack, topLeft = Offset(right, 0f), size = Size(canvasW - right, canvasH))
             }
 
-            // 6. Draw Rule of Thirds Grid if enabled
+            // Note: Asset overlays (border cutouts, film dust, and date stamp) are strictly omitted
+            // from the live viewfinder preview to keep framing clean and unobstructed, and are
+            // applied directly to the final captured photo during development in ImageProcessor.
+
+            // 3. Draw Rule of Thirds Grid if enabled
             if (showGrid) {
                 val gridColor = Color.White.copy(alpha = 0.22f)
                 val strokeWidth = 1.dp.toPx()
@@ -269,7 +197,7 @@ fun ViewfinderOverlay(
                 drawLine(gridColor, Offset(left, row2), Offset(right, row2), strokeWidth)
             }
 
-            // 7. Draw Viewfinder Frame Border
+            // 8. Draw Subtle Viewfinder Guide Frame
             drawRect(
                 color = Color.White.copy(alpha = 0.15f),
                 topLeft = Offset(left, top),
@@ -277,7 +205,7 @@ fun ViewfinderOverlay(
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // 8. Draw Tap-to-Focus Reticle & Vertical Sun Brightness Slider (Dazz Cam Style)
+            // 9. Draw Tap-to-Focus Reticle & Vertical Sun Brightness Slider (Dazz Cam Style)
             focusPoint?.let { pt ->
                 val alpha = focusAlpha.value
                 if (alpha > 0.01f) {

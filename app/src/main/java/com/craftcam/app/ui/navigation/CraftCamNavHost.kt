@@ -58,10 +58,16 @@ fun CraftCamNavHost(
         }
 
         composable(Screen.Collection.route) {
+            val uiState by cameraManager.uiState.collectAsState()
             CollectionScreen(
                 currentPreset = selectedPreset,
+                selectedLens = uiState.shootingState.selectedLens,
                 onSelectPreset = { preset ->
                     selectedPreset = preset
+                    cameraManager.setPreset(preset)
+                },
+                onSelectLens = { lensType ->
+                    cameraManager.selectLensAccessory(lensType)
                 },
                 onNavigateBack = { navController.popBackStack() }
             )

@@ -84,17 +84,38 @@ data class DateStampConfig(
     val customYearOffset: Int = 0 // e.g. -28 to show 1998
 )
 
+data class DustConfig(
+    val enabled: Boolean = true,
+    val assetPath: String = "dust_135.png",
+    val opacity: Float = 0.60f
+)
+
+data class FlashOverlayConfig(
+    val enabled: Boolean = false,
+    val assetPath: String = "flashc_01.jpg",
+    val opacity: Float = 0.65f
+)
+
 enum class BorderStyle {
     NONE,
-    CLASSIC_35MM_BLACK,
-    POLAROID_WHITE_CHIN,
-    SQUARE_INSTANT_WHITE,
-    ROUNDED_8MM,
-    CAMCORDER_FRAME
+    GOLF_FRAME,               // golf_border_*.png / golf_frame.jpg
+    HALF_FRAME,               // half_border.png
+    CLASSIC_35MM_RANGEFINDER, // dbalck_frame_in.png & dbalck_frame_out_*.png
+    FILM_STRIP_135,           // 135ne_frame_cut1.png
+    MEDIUM_FORMAT_67,         // s67_frame_t1.png & s67_frame_b_01.jpg
+    SLIDE_MOUNT,              // border_slidep1.jpg..4.jpg
+    POLAROID_WHITE_CHIN,      // vinst_border1.png..3.png
+    SQUARE_INSTANT_WHITE,     // Square instant white frame
+    ROUNDED_16MM_GATE,        // mask_16mm_01_r.jpg
+    CAMCORDER_FRAME,          // CRT scanline frame with REC indicator
+    CLASSIC_35MM_BLACK,       // Generic 35mm rebate
+    ROUNDED_8MM               // Legacy 8mm
 }
 
 data class BorderConfig(
-    val style: BorderStyle = BorderStyle.NONE
+    val style: BorderStyle = BorderStyle.NONE,
+    val assetPath: String? = null,
+    val showInViewfinder: Boolean = false
 )
 
 data class CameraPreset(
@@ -109,6 +130,8 @@ data class CameraPreset(
     val lens: LensConfig = LensConfig(),
     val lightLeak: LightLeakConfig? = null,
     val halation: HalationConfig? = null,
+    val dust: DustConfig? = null,
+    val flashOverlay: FlashOverlayConfig? = null,
     val dateStamp: DateStampConfig? = DateStampConfig(),
     val border: BorderConfig? = BorderConfig(),
     val sampleResName: String = "sample_${id}",

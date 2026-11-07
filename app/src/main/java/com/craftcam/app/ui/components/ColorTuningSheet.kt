@@ -211,6 +211,11 @@ fun ColorTuningSheet(
                                 onTuningChange { it.copy(grainBoost = 1.5f) }
                             }
                         }
+                        item {
+                            GrainOptionPill("200% (MAX)", tuning.grainBoost == 2.0f) {
+                                onTuningChange { it.copy(grainBoost = 2.0f) }
+                            }
+                        }
                     }
                 }
 
@@ -308,11 +313,17 @@ fun ColorTuningSheet(
                     }
                 }
 
-                // 8. Optical Toggles (Halation, Light Leaks, Soft Lens, Date Stamp)
+                // 8. Optical Toggles (Halation, Light Leaks, Soft Lens, Date Stamp, Dust, Frame Border)
                 item {
                     Text("OPTICAL FEATURES", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FeatureToggleRow("Vintage Frame Cutout", tuning.frameBorderEnabled) {
+                            onTuningChange { it.copy(frameBorderEnabled = !it.frameBorderEnabled) }
+                        }
+                        FeatureToggleRow("Film Dust & Patina", tuning.dustEnabled) {
+                            onTuningChange { it.copy(dustEnabled = !it.dustEnabled) }
+                        }
                         FeatureToggleRow("Red Halation Bloom", tuning.halationEnabled) {
                             onTuningChange { it.copy(halationEnabled = !it.halationEnabled) }
                         }

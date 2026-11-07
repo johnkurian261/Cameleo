@@ -14,13 +14,38 @@ void main() {
 }
 """
 
+    const val FRAGMENT_SHADER_PASSTHROUGH = """#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : require
+precision highp float;
+uniform samplerExternalOES sTexture;
+uniform mat4 uTexMatrix;
+in vec2 vQuadCoord;
+out vec4 fragColor;
+void main() {
+    vec2 oesUV = (uTexMatrix * vec4(vQuadCoord, 0.0, 1.0)).xy;
+    fragColor = texture(sTexture, oesUV);
+}
+"""
+
     const val FRAGMENT_SHADER_VIEWFINDER = """#version 300 es
 #extension GL_OES_EGL_image_external_essl3 : require
 precision highp float;
 
 uniform samplerExternalOES sTexture;
 uniform sampler2D uLutTexture;
+uniform mediump sampler3D sLut3D;
+uniform sampler2D uLutTextureB;
+uniform mediump sampler3D sLut3D_B;
 uniform bool uLutEnabled;
+uniform bool uUseLut3D;
+uniform bool uHasSecondaryLut;
+uniform float uDualLutMix;
+uniform int uLutInputSpace; // 0=SRGB, 1=LINEAR, 2=CUSTOM_PRETRANSFORM
+uniform bool uPreLinearizationEnabled;
+uniform float uPreLinearizationStrength;
+uniform float uFilterIntensity;
+uniform float uClarityStrength;
+uniform float uSkinProtection;
 uniform mat4 uTexMatrix;
 uniform vec2 uViewportSize;
 in vec2 vQuadCoord;
@@ -33,6 +58,8 @@ uniform float uTemperature;
 uniform float uTint;
 uniform float uGamma;
 uniform float uFade;
+uniform float uToeLift;
+uniform float uShoulderClip;
 uniform float uHighlightRollOff;
 uniform vec3 uShadowTint;
 
@@ -43,19 +70,61 @@ uniform float uChromaticAberration;
 uniform float uBarrelDistortion;
 uniform float uSoftness;
 
+// Dedicated Camera Lens System
+uniform int uLensType; // 0=NORMAL, 1=WIDE, 2=FISHEYE_F, 3=FISHEYE_W, 4=PRISM, 5=STARBURST, 6=ND, 7=COLOR_FLASH
+uniform float uLensDistortion;
+uniform float uLensEdgeCurvature;
+uniform float uLensVignette;
+uniform float uLensPrismDispersion;
+uniform float uLensStarburstStrength;
+uniform float uLensStarburstThreshold;
+uniform float uLensNdFactor;
+uniform vec3 uLensColorFlashTint;
+uniform bool uLensIsFlashActive;
+
 // Film Grain
 uniform float uGrainIntensity;
 uniform float uGrainScale;
 uniform bool uIsColorNoise;
 uniform float uRandomSeed;
+uniform sampler2D sGrainTexture;
+uniform bool uHasGrainTexture;
+uniform int uGrainBlendMode;
+uniform vec2 uGrainOffset;
+uniform float uGrainShadowStrength;
+uniform float uGrainHighlightStrength;
+uniform bool uGrainLumaWeightEnabled;
+uniform float uGrainLumaWeightPower;
 
 // Halation and Light Leaks
 uniform bool uHalationEnabled;
 uniform float uHalationThreshold;
 uniform float uHalationIntensity;
+uniform vec3 uHalationColorTint;
 uniform bool uLightLeakEnabled;
 uniform float uLightLeakIntensity;
 uniform float uScanlineIntensity;
+
+// Developer Visual A/B Stage Toggles (Section 24)
+uniform bool uDebugStagePreLinearization;
+uniform bool uDebugStageLut;
+uniform bool uDebugStageToneCurve;
+uniform bool uDebugStageGrain;
+uniform bool uDebugStageHalation;
+uniform bool uDebugStageOptics;
+uniform bool uDebugStageVignette;
+
+// Natural Camera Engine
+uniform bool uNaturalModeEnabled;
+uniform float uNaturalShadowLift;
+
+// Pro Camera Tools (Focus Peaking & Zebra Warning)
+uniform bool uFocusPeakingEnabled;
+uniform vec3 uPeakingColor;
+uniform float uPeakingThreshold;
+uniform bool uZebraEnabled;
+uniform float uZebraThreshold;
+uniform float uZebraTime;
 
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
@@ -112,39 +181,157 @@ vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     return mix(col0, col1, blueFract);
 }
 
-void main() {
-    vec2 p = vQuadCoord - 0.5;
-    float r2 = dot(p, p);
+// Rational pre-linearization curve: flattens aggressive ISP contrast before 3D LUT sampling (VSCO-style)
+vec3 preLinearizeLutInput(vec3 c, float strength) {
+    vec3 linearC;
+    linearC.r = (c.r <= 0.5) ? pow(c.r * 2.0, 1.25) * 0.5 : 1.0 - pow((1.0 - c.r) * 2.0, 1.25) * 0.5;
+    linearC.g = (c.g <= 0.5) ? pow(c.g * 2.0, 1.25) * 0.5 : 1.0 - pow((1.0 - c.g) * 2.0, 1.25) * 0.5;
+    linearC.b = (c.b <= 0.5) ? pow(c.b * 2.0, 1.25) * 0.5 : 1.0 - pow((1.0 - c.b) * 2.0, 1.25) * 0.5;
+    return mix(c, clamp(linearC, 0.0, 1.0), clamp(strength, 0.0, 1.0));
+}
 
-    // 1. Lens Distortion (Barrel/Pincushion in canonical visual space)
+// Hardware-accelerated 3D Texture single-sample trilinear lookup (GLES 3.0 GL_TEXTURE_3D)
+vec3 sample3DLut(mediump sampler3D lut3d, vec3 rgb) {
+    rgb = clamp(rgb, 0.0, 1.0);
+    vec3 lutCoord = rgb * (63.0 / 64.0) + (0.5 / 64.0);
+    return texture(lut3d, lutCoord).rgb;
+}
+
+void main() {
+    // Physical isotropic coordinates (aspect-corrected from uViewportSize)
+    float aspect = uViewportSize.x / max(uViewportSize.y, 1.0);
+    bool isPortrait = aspect <= 1.0;
+
+    vec2 pRaw = vQuadCoord - 0.5;
+    vec2 pPhys = isPortrait ? vec2(pRaw.x, pRaw.y / aspect) : vec2(pRaw.x * aspect, pRaw.y);
+    float rPhys = length(pPhys);
+
+    vec2 p = pRaw;
+    float r2 = dot(p, p);
+    float r = sqrt(r2);
+
+    // 1. Lens Optical Distortion (Fisheye F / Fisheye W / Wide / Barrel)
     vec2 uv = vQuadCoord;
-    if (abs(uBarrelDistortion) > 0.001) {
-        uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
-        uv = clamp(uv, vec2(0.001), vec2(0.999));
+    float fisheyeMask = 1.0;
+
+    if (uDebugStageOptics) {
+        if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
+            float rBubble = 0.465; // Radius of circular bubble (93% of frame width)
+            if (rPhys > rBubble) {
+                fisheyeMask = 0.0;
+                uv = vec2(0.5);
+            } else {
+                float rn = rPhys / rBubble;
+                // Authentic hemispherical fisheye warp: cubic radial expansion
+                // rn goes 0..1, rDist goes 0..1 with strong center magnification (2.78x) and perimeter compression
+                float rDistNorm = rn * (0.36 + 0.64 * rn * rn);
+                float rDistPhys = rDistNorm * 0.465;
+                vec2 dir = pPhys / max(rPhys, 0.0001);
+                vec2 pDistPhys = dir * rDistPhys;
+                vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+                uv = 0.5 + pDist;
+                fisheyeMask = 1.0 - smoothstep(rBubble - 0.012, rBubble, rPhys);
+            }
+        } else if (uLensType == 3) { // FISHEYE_W: Full-frame wide-angle curvilinear fisheye
+            float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
+            float rn = clamp(rPhys / rCorner, 0.0, 1.0);
+            float rDistNorm = rn * (0.55 + 0.45 * rn * rn);
+            float rDistPhys = rDistNorm * rCorner;
+            vec2 dir = pPhys / max(rPhys, 0.0001);
+            vec2 pDistPhys = dir * rDistPhys;
+            vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+            uv = 0.5 + pDist;
+        } else if (uLensType == 1) { // WIDE: Moderate barrel field expansion
+            uv = 0.5 + p * (1.0 + uLensDistortion * r2 * 0.45);
+        } else if (abs(uBarrelDistortion) > 0.001) {
+            uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
+        }
+    }
+    uv = clamp(uv, vec2(0.001), vec2(0.999));
+
+    // 2. Transverse Chromatic Aberration & Spectral Dispersion
+    vec4 srcColor;
+    float effCA = uDebugStageOptics ? uChromaticAberration : 0.0;
+    if (uDebugStageOptics) {
+        if (uLensType == 2) effCA = max(effCA, 0.022);
+        else if (uLensType == 3) effCA = max(effCA, 0.012);
+        else if (uLensType == 4) effCA = max(effCA, 0.014);
     }
 
-    // 2. Transverse Chromatic Aberration (Cauchy spectral dispersion)
-    vec4 srcColor;
-    if (uChromaticAberration > 0.0001) {
-        vec2 caOffset = p * (uChromaticAberration * r2 * 0.22);
+    if (effCA > 0.0001 && fisheyeMask > 0.001) {
+        vec2 caDir = pPhys / max(rPhys, 0.0001);
+        vec2 caPhysOffset = caDir * (effCA * rPhys * rPhys * 1.5);
+        vec2 caOffset = isPortrait ? vec2(caPhysOffset.x, caPhysOffset.y * aspect) : vec2(caPhysOffset.x / aspect, caPhysOffset.y);
         vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
         vec2 uvG = clamp(uv - caOffset * 0.15, vec2(0.001), vec2(0.999));
-        vec2 uvB = clamp(uv - caOffset * 1.35, vec2(0.001), vec2(0.999));
+        vec2 uvB = clamp(uv - caOffset * 1.25, vec2(0.001), vec2(0.999));
 
         vec2 oesR = (uTexMatrix * vec4(uvR, 0.0, 1.0)).xy;
         vec2 oesG = (uTexMatrix * vec4(uvG, 0.0, 1.0)).xy;
         vec2 oesB = (uTexMatrix * vec4(uvB, 0.0, 1.0)).xy;
 
-        float r = texture(sTexture, oesR).r;
-        float g = texture(sTexture, oesG).g;
-        float b = texture(sTexture, oesB).b;
-        srcColor = vec4(r, g, b, 1.0);
+        float rCh = texture(sTexture, oesR).r;
+        float gCh = texture(sTexture, oesG).g;
+        float bCh = texture(sTexture, oesB).b;
+        srcColor = vec4(rCh, gCh, bCh, 1.0);
     } else {
         vec2 oesUV = (uTexMatrix * vec4(uv, 0.0, 1.0)).xy;
         srcColor = texture(sTexture, oesUV);
     }
 
     vec3 color = srcColor.rgb;
+
+    // 2a. Prism Multi-Facet Refraction & Chromatic Splitting
+    if (uLensType == 4 && uLensPrismDispersion > 0.01) {
+        float disp = (0.038 + r * 0.028) * uLensPrismDispersion;
+        vec2 off1 = vec2(disp * 0.866, disp * 0.50);
+        vec2 off2 = vec2(-disp * 0.866, disp * 0.50);
+
+        vec2 oesP1 = (uTexMatrix * vec4(clamp(uv + off1, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy;
+        vec2 oesP2 = (uTexMatrix * vec4(clamp(uv + off2, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy;
+
+        vec3 prism1 = texture(sTexture, oesP1).rgb;
+        vec3 prism2 = texture(sTexture, oesP2).rgb;
+        prism1.r *= 1.08;
+        prism2.b *= 1.12;
+
+        float facetWeight = clamp(r * 1.35 * uLensPrismDispersion, 0.0, 0.45);
+        color = mix(color, (prism1 + prism2) * 0.5, facetWeight);
+    }
+
+    // 2a-star. Starburst Diffraction Rays
+    if (uLensType == 5 && uLensStarburstStrength > 0.01) {
+        float starThresh = uLensStarburstThreshold;
+        vec2 starStep = vec2(4.5) / uViewportSize;
+        vec3 starAccum = vec3(0.0);
+        for (int i = 1; i <= 3; i++) {
+            float fi = float(i) * 2.2;
+            vec2 d1 = vec2(fi * starStep.x, fi * starStep.y);
+            vec2 d2 = vec2(-fi * starStep.x, fi * starStep.y);
+
+            vec3 s1 = texture(sTexture, (uTexMatrix * vec4(clamp(uv + d1, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 s2 = texture(sTexture, (uTexMatrix * vec4(clamp(uv - d1, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 s3 = texture(sTexture, (uTexMatrix * vec4(clamp(uv + d2, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+            vec3 s4 = texture(sTexture, (uTexMatrix * vec4(clamp(uv - d2, vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb;
+
+            float w = 1.0 / float(i);
+            starAccum += (max(vec3(0.0), s1 - starThresh) +
+                          max(vec3(0.0), s2 - starThresh) +
+                          max(vec3(0.0), s3 - starThresh) +
+                          max(vec3(0.0), s4 - starThresh)) * w;
+        }
+        color += starAccum * (uLensStarburstStrength * 0.70);
+    }
+
+    // 2a-nd. Neutral Density Filter Light Attenuation
+    if (uLensType == 6 && uLensNdFactor < 0.99) {
+        color *= uLensNdFactor;
+    }
+
+    // 2a-flash. Color Gel Flash Tint
+    if (uLensType == 7 && uLensIsFlashActive) {
+        color = mix(color, color * uLensColorFlashTint * 1.30, 0.70);
+    }
 
     // 2b. Optical Softness (Contrast-preserving spherical veiling flare)
     if (uSoftness > 0.005) {
@@ -172,9 +359,49 @@ void main() {
 
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
-    // 2d. Photochemical 3D Film Emulsion LUT
-    if (uLutEnabled) {
-        color = sampleHaldLut(uLutTexture, color);
+    // 2d. Photochemical 3D Film Emulsion LUT with Dual-LUT Crossfading (Section 7)
+    if (uLutEnabled && uDebugStageLut) {
+        vec3 lutInput = color;
+        if (uLutInputSpace == 1) { // LINEAR
+            lutInput = pow(max(lutInput, vec3(0.0)), vec3(2.2));
+        } else if (uLutInputSpace == 2) { // CUSTOM_PRETRANSFORM (ISP Contrast Flattening)
+            if (uPreLinearizationEnabled && uDebugStagePreLinearization) {
+                lutInput = preLinearizeLutInput(lutInput, uPreLinearizationStrength);
+            }
+        }
+
+        vec3 lutColor;
+        if (uUseLut3D) {
+            lutColor = sample3DLut(sLut3D, lutInput);
+            if (uHasSecondaryLut && uDualLutMix > 0.001) {
+                vec3 lutColorB = sample3DLut(sLut3D_B, lutInput);
+                lutColor = mix(lutColor, lutColorB, clamp(uDualLutMix, 0.0, 1.0));
+            }
+        } else {
+            lutColor = sampleHaldLut(uLutTexture, lutInput);
+            if (uHasSecondaryLut && uDualLutMix > 0.001) {
+                vec3 lutColorB = sampleHaldLut(uLutTextureB, lutInput);
+                lutColor = mix(lutColor, lutColorB, clamp(uDualLutMix, 0.0, 1.0));
+            }
+        }
+        color = mix(color, lutColor, clamp(uFilterIntensity, 0.0, 1.0));
+    }
+
+    // 2e. CAMELEO Natural Mode Processing
+    if (uNaturalModeEnabled) {
+        vec3 rMat = vec3(1.02, -0.01, -0.01);
+        vec3 gMat = vec3(-0.01, 1.01, 0.00);
+        vec3 bMat = vec3(-0.01, 0.02, 0.99);
+        color = vec3(dot(color, rMat), dot(color, gMat), dot(color, bMat));
+
+        float knee = 0.65;
+        if (color.r > knee) color.r = knee + (1.0 - knee) * ((color.r - knee) / (color.r - knee + 0.35));
+        if (color.g > knee) color.g = knee + (1.0 - knee) * ((color.g - knee) / (color.g - knee + 0.35));
+        if (color.b > knee) color.b = knee + (1.0 - knee) * ((color.b - knee) / (color.b - knee + 0.35));
+
+        float yLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float lift = uNaturalShadowLift * (1.0 - clamp(yLuma, 0.0, 1.0)) * (1.0 - clamp(yLuma, 0.0, 1.0)) * clamp(yLuma, 0.0, 1.0) * 1.6;
+        color += vec3(lift);
     }
     
     // 3. Preset & User Temperature / Tint (Warm/Cool Shift)
@@ -189,45 +416,60 @@ void main() {
     }
 
     // 4. Preset & User Contrast
-    if (abs(uContrast - 1.0) > 0.01) {
-        color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
-    }
+    if (uDebugStageToneCurve) {
+        if (abs(uContrast - 1.0) > 0.01) {
+            color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
+        }
 
-    // 5. Preset & User Saturation
-    luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    if (abs(uSaturation - 1.0) > 0.01) {
-        color = mix(vec3(luma), color, uSaturation);
+        // 5. Preset & User Saturation
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    }
+        if (abs(uSaturation - 1.0) > 0.01) {
+            color = mix(vec3(luma), color, uSaturation);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
 
-    // 6. Gamma Response
-    if (abs(uGamma - 1.0) > 0.01) {
-        color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
-        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    }
+        // 6. Gamma Response
+        if (abs(uGamma - 1.0) > 0.01) {
+            color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
 
-    // 7. Shadow Tint (Photochemical dye bias in toe)
-    float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
-    color += uShadowTint * shadowWeight;
+        // 7. Shadow Tint (Photochemical dye bias in toe)
+        float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
+        color += uShadowTint * shadowWeight;
 
-    // 8. Filmic Highlight Rolloff & Desaturating Shoulder (Creamy soft transitions to white)
-    if (uHighlightRollOff < 0.99) {
-        float knee = max(0.01, 1.0 - uHighlightRollOff);
-        vec3 over = max(vec3(0.0), color - vec3(uHighlightRollOff));
-        color = min(color, vec3(uHighlightRollOff)) + knee * (vec3(1.0) - exp(-over / knee));
-        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-        
-        float highOver = max(0.0, luma - uHighlightRollOff) / knee;
-        color = mix(color, vec3(luma), clamp(highOver * 0.35, 0.0, 0.65));
-    }
+        // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
+        if (uHighlightRollOff < 0.99) {
+            float knee = uHighlightRollOff;
+            float maxCh = max(max(color.r, color.g), color.b);
+            if (maxCh > knee) {
+                float d = maxCh - knee;
+                float s = 1.0 - knee;
+                float rolledMax = knee + s * (d / (d + s * 0.75));
+                color = color * (rolledMax / maxCh);
+                
+                float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                float desat = clamp((coreLuma - knee) / (1.0 - knee), 0.0, 1.0);
+                color = mix(color, vec3(coreLuma), desat * 0.45);
+            }
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
 
-    // 9. Film Fade (Lifted blacks / aged paper floor)
-    if (uFade > 0.001) {
-        color = color * (1.0 - uFade) + uFade;
+        // 8b. Lifted Toe & Shoulder Compression (Lightroom Film Profile Parity)
+        if (uToeLift > 0.001 || uShoulderClip < 0.999) {
+            color = clamp(color, 0.0, 1.0);
+            color = uToeLift + color * (uShoulderClip - uToeLift);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        // 9. Film Fade (Lifted blacks / aged paper floor)
+        if (uFade > 0.001) {
+            color = color * (1.0 - uFade) + uFade;
+        }
     }
 
     // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with boundary confinement)
-    if (uHalationEnabled && uHalationIntensity > 0.01) {
+    if (uHalationEnabled && uHalationIntensity > 0.01 && uDebugStageHalation) {
         float kThresh = uHalationThreshold;
         if (luma > kThresh - 0.04) {
             vec2 hInner = (6.0 / uViewportSize);
@@ -261,7 +503,7 @@ void main() {
             if (spread > 0.001) {
                 // Highlight-core preservation: maintain neutral white in specular cores, concentrate red-orange fringe at boundaries
                 float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
-                vec3 haloBase = mix(vec3(1.0, 0.32, 0.10), vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
+                vec3 haloBase = mix(uHalationColorTint, vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
                 vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.45);
                 color += haloColor;
             }
@@ -271,54 +513,102 @@ void main() {
     // 11. Subtle Edge Light Leak Emulation
     if (uLightLeakEnabled && uLightLeakIntensity > 0.01) {
         float edgeDist = length(vec2(max(0.0, uv.x - 0.75) * 2.0, max(0.0, 0.25 - uv.y) * 2.0));
-        float leakMask = smoothstep(0.40, 0.0, edgeDist);
+        float leakMask = 1.0 - smoothstep(0.0, 0.40, edgeDist);
         vec3 leakColor = vec3(1.0, 0.45, 0.12) * (leakMask * uLightLeakIntensity * 0.35);
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
     // 12. Optical Cosine Fourth Lens Vignette
-    if (uVignetteIntensity > 0.01) {
-        float rNorm = length(p) / 0.7071068;
-        float rn = rNorm / uVignetteRadius;
-        float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
-        float vignette = mix(1.0, cos4Vig, clamp(uVignetteIntensity * 1.15, 0.0, 1.0));
-        color *= clamp(vignette, 0.25, 1.0);
+    if (uDebugStageVignette) {
+        float vigTotal = uVignetteIntensity + uLensVignette;
+        if (vigTotal > 0.01) {
+            float rNorm = length(p) / 0.7071068;
+            float rn = rNorm / uVignetteRadius;
+            float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
+            float vignette = mix(1.0, cos4Vig, clamp(vigTotal * 1.15, 0.0, 1.0));
+            color *= clamp(vignette, 0.25, 1.0);
+        }
     }
 
-    // 13. Authentic Multi-Scale Silver Halide Dye-Cloud Grain
-    if (uGrainIntensity > 0.005) {
-        float sRise = smoothstep(0.0, 0.42, luma);
-        float hFall = smoothstep(0.42, 1.0, luma);
-        float grainWeight = (0.28 + 0.72 * sRise) * (1.0 - 0.88 * hFall);
-
-        if (color.r > color.g && color.g > color.b && color.r > 0.25 && color.r < 0.90) {
-            float skinWeight = clamp((color.r - color.b) * 2.0, 0.0, 1.0);
-            grainWeight *= (1.0 - 0.35 * skinWeight);
+    // Fisheye Barrel Mask & Outer Boundary Falloff
+    if (uLensType == 2) { // FISHEYE_F: Classic circular hood vignette
+        color *= fisheyeMask;
+        if (rPhys <= 0.465) {
+            float rim = smoothstep(0.44, 0.462, rPhys) * (1.0 - smoothstep(0.462, 0.466, rPhys));
+            color += vec3(0.08, 0.075, 0.07) * rim;
         }
+    } else if (uLensType == 3) { // FISHEYE_W: Full-frame peripheral soft falloff
+        float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
+        float rn = clamp(rPhys / rCorner, 0.0, 1.0);
+        float wideVig = 1.0 - smoothstep(0.65, 1.05, rn);
+        color *= mix(1.0, wideVig, 0.30);
+    }
 
-        vec2 grainCoord = vQuadCoord * uViewportSize.xy * (uGrainScale * 0.45);
-        
-        float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
-        float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
-        float noiseG = fineG * 0.65 + clumpG * 0.35;
+    // 13. Authentic Scanned Photographic Film Halide Grain
+    if (uGrainIntensity > 0.005 && uDebugStageGrain) {
+        float shadowT = clamp(luma / 0.35, 0.0, 1.0);
+        float shadowMask = shadowT * shadowT * (3.0 - 2.0 * shadowT);
+        float highlightT = clamp((luma - 0.65) / 0.35, 0.0, 1.0);
+        float highlightMask = 1.0 - (highlightT * highlightT * (3.0 - 2.0 * highlightT));
+        float grainWeight = (uGrainShadowStrength + (1.0 - uGrainShadowStrength) * shadowMask) * 
+                            (uGrainHighlightStrength + (1.0 - uGrainHighlightStrength) * highlightMask);
 
-        float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
-        float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
-        float noiseR = fineR * 0.58 + clumpR * 0.42;
+        // Section 9: Parabolic midtone luminance weighting M(L) = 4L(1-L)
+        if (uGrainLumaWeightEnabled && uGrainLumaWeightPower > 0.01) {
+            float midtoneParabola = clamp(4.0 * luma * (1.0 - luma), 0.0, 1.0);
+            grainWeight = mix(grainWeight, grainWeight * midtoneParabola, uGrainLumaWeightPower);
+        }
+        grainWeight = max(0.35, grainWeight);
 
-        float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
-        float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
-        float noiseB = fineB * 0.50 + clumpB * 0.50;
-
-        vec3 grainDelta;
-        if (uIsColorNoise) {
-            grainDelta = vec3(noiseR, noiseG, noiseB);
+        if (uHasGrainTexture) {
+            vec2 grainUv = fract(vQuadCoord * (uViewportSize / 512.0) * (uGrainScale * 0.75) + uGrainOffset);
+            vec4 gSample = texture(sGrainTexture, grainUv);
+            float gLuma = dot(gSample.rgb, vec3(0.299, 0.587, 0.114));
+            float gDev = (gLuma - 0.5) * 4.5;
+            float effIntensity = uGrainIntensity * grainWeight * 2.0;
+            
+            if (uGrainBlendMode == 1) { // SCREEN
+                float gNorm = clamp((gDev + 1.0) * 0.5, 0.0, 1.0);
+                float sFactor = effIntensity * 0.90;
+                if (uIsColorNoise) {
+                    vec3 cDev = (gSample.rgb - vec3(0.5)) * 4.5;
+                    vec3 cNorm = clamp((cDev + 1.0) * 0.5, 0.0, 1.0);
+                    color = 1.0 - (1.0 - color) * (1.0 - cNorm * sFactor);
+                } else {
+                    color = 1.0 - (1.0 - color) * (1.0 - vec3(gNorm) * sFactor);
+                }
+            } else if (uGrainBlendMode == 2) { // MULTIPLY
+                float gNorm = clamp((gDev + 1.0) * 0.5, 0.0, 1.0);
+                float mFactor = 1.0 - (1.0 - gNorm) * effIntensity * 0.90;
+                color *= mFactor;
+            } else if (uGrainBlendMode == 3) { // NORMAL
+                float gNorm = clamp((gDev + 1.0) * 0.5, 0.0, 1.0);
+                color = mix(color, vec3(gNorm), effIntensity * 0.55);
+            } else { // OVERLAY (mode 0)
+                vec3 delta;
+                if (uIsColorNoise) {
+                    vec3 cDev = (gSample.rgb - vec3(0.5)) * 4.5;
+                    delta = cDev * effIntensity * 0.95;
+                } else {
+                    delta = vec3(gDev) * effIntensity * 0.95;
+                }
+                color += delta;
+            }
         } else {
-            grainDelta = mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
+            vec2 grainCoord = vQuadCoord * uViewportSize.xy * (uGrainScale * 0.45);
+            float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
+            float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
+            float noiseG = fineG * 0.65 + clumpG * 0.35;
+            float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
+            float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
+            float noiseR = fineR * 0.58 + clumpR * 0.42;
+            float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
+            float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
+            float noiseB = fineB * 0.50 + clumpB * 0.50;
+            vec3 grainDelta = uIsColorNoise ? vec3(noiseR, noiseG, noiseB) : mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
+            float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
+            color += grainDelta * (grainWeight * uGrainIntensity * 1.35 * grainDamp);
         }
-
-        float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
-        color += grainDelta * (grainWeight * uGrainIntensity * 0.40 * grainDamp);
     }
 
     // 14. Retro Camcorder Tape Texture & Line Modulation
@@ -329,6 +619,38 @@ void main() {
 
         float scanline = sin(vQuadCoord.y * 480.0 * 3.14159) * 0.5 + 0.5;
         color *= mix(1.0, 0.88 + 0.12 * scanline, uScanlineIntensity);
+    }
+
+    // 15. Pro Focus Peaking (Sobel-like gradient edge detection on camera preview)
+    if (uFocusPeakingEnabled) {
+        vec2 texel = 1.0 / uViewportSize;
+        vec2 sampleL = (uTexMatrix * vec4(uv - vec2(texel.x, 0.0), 0.0, 1.0)).xy;
+        vec2 sampleR = (uTexMatrix * vec4(uv + vec2(texel.x, 0.0), 0.0, 1.0)).xy;
+        vec2 sampleT = (uTexMatrix * vec4(uv - vec2(0.0, texel.y), 0.0, 1.0)).xy;
+        vec2 sampleB = (uTexMatrix * vec4(uv + vec2(0.0, texel.y), 0.0, 1.0)).xy;
+
+        float lumL = dot(texture(sTexture, sampleL).rgb, vec3(0.299, 0.587, 0.114));
+        float lumR = dot(texture(sTexture, sampleR).rgb, vec3(0.299, 0.587, 0.114));
+        float lumT = dot(texture(sTexture, sampleT).rgb, vec3(0.299, 0.587, 0.114));
+        float lumB = dot(texture(sTexture, sampleB).rgb, vec3(0.299, 0.587, 0.114));
+
+        float gx = lumR - lumL;
+        float gy = lumB - lumT;
+        float edge = length(vec2(gx, gy));
+
+        float peakMask = smoothstep(uPeakingThreshold, uPeakingThreshold + 0.08, edge);
+        color = mix(color, uPeakingColor, peakMask * 0.90);
+    }
+
+    // 16. Pro Zebra Exposure Warning (Diagonal animated stripes over highlights)
+    if (uZebraEnabled) {
+        float peakLuma = dot(color, vec3(0.299, 0.587, 0.114));
+        if (peakLuma >= uZebraThreshold) {
+            vec2 screenPx = vQuadCoord * uViewportSize;
+            float stripe = step(0.5, fract((screenPx.x + screenPx.y + uZebraTime * 45.0) / 22.0));
+            vec3 stripeColor = mix(vec3(0.05), vec3(0.95), stripe);
+            color = mix(color, stripeColor, 0.75);
+        }
     }
 
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
@@ -352,8 +674,21 @@ precision highp float;
 
 uniform sampler2D sTexture;
 uniform sampler2D uLutTexture;
+uniform mediump sampler3D sLut3D;
+uniform sampler2D uLutTextureB;
+uniform mediump sampler3D sLut3D_B;
 uniform bool uLutEnabled;
+uniform bool uUseLut3D;
+uniform bool uHasSecondaryLut;
+uniform float uDualLutMix;
+uniform int uLutInputSpace; // 0=SRGB, 1=LINEAR, 2=CUSTOM_PRETRANSFORM
+uniform bool uPreLinearizationEnabled;
+uniform float uPreLinearizationStrength;
+uniform float uFilterIntensity;
+uniform float uClarityStrength;
+uniform float uSkinProtection;
 in vec2 vTextureCoord;
+uniform vec2 uViewportSize;
 out vec4 fragColor;
 
 // Tonal and Color Grading
@@ -363,6 +698,8 @@ uniform float uTemperature;
 uniform float uTint;
 uniform float uGamma;
 uniform float uFade;
+uniform float uToeLift;
+uniform float uShoulderClip;
 uniform float uHighlightRollOff;
 uniform vec3 uShadowTint;
 
@@ -373,19 +710,61 @@ uniform float uChromaticAberration;
 uniform float uBarrelDistortion;
 uniform float uSoftness;
 
+// Dedicated Camera Lens System
+uniform int uLensType; // 0=NORMAL, 1=WIDE, 2=FISHEYE_F, 3=FISHEYE_W, 4=PRISM, 5=STARBURST, 6=ND, 7=COLOR_FLASH
+uniform float uLensDistortion;
+uniform float uLensEdgeCurvature;
+uniform float uLensVignette;
+uniform float uLensPrismDispersion;
+uniform float uLensStarburstStrength;
+uniform float uLensStarburstThreshold;
+uniform float uLensNdFactor;
+uniform vec3 uLensColorFlashTint;
+uniform bool uLensIsFlashActive;
+
 // Film Grain
 uniform float uGrainIntensity;
 uniform float uGrainScale;
 uniform bool uIsColorNoise;
 uniform float uRandomSeed;
+uniform sampler2D sGrainTexture;
+uniform bool uHasGrainTexture;
+uniform int uGrainBlendMode;
+uniform vec2 uGrainOffset;
+uniform float uGrainShadowStrength;
+uniform float uGrainHighlightStrength;
+uniform bool uGrainLumaWeightEnabled;
+uniform float uGrainLumaWeightPower;
 
 // Halation and Light Leaks
 uniform bool uHalationEnabled;
 uniform float uHalationThreshold;
 uniform float uHalationIntensity;
+uniform vec3 uHalationColorTint;
 uniform bool uLightLeakEnabled;
 uniform float uLightLeakIntensity;
 uniform float uScanlineIntensity;
+
+// Developer Visual A/B Stage Toggles (Section 24)
+uniform bool uDebugStagePreLinearization;
+uniform bool uDebugStageLut;
+uniform bool uDebugStageToneCurve;
+uniform bool uDebugStageGrain;
+uniform bool uDebugStageHalation;
+uniform bool uDebugStageOptics;
+uniform bool uDebugStageVignette;
+
+// Natural Camera Engine
+uniform bool uNaturalModeEnabled;
+uniform float uNaturalShadowLift;
+
+// Pro Camera Tools (Focus Peaking & Zebra Warning)
+uniform bool uFocusPeakingEnabled;
+uniform vec3 uPeakingColor;
+uniform float uPeakingThreshold;
+uniform bool uZebraEnabled;
+uniform float uZebraThreshold;
+uniform float uZebraTime;
 
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
@@ -439,33 +818,148 @@ vec3 sampleHaldLut(sampler2D lut, vec3 rgb) {
     return mix(col0, col1, blueFract);
 }
 
-void main() {
-    vec2 uv = vTextureCoord;
-    vec2 p = uv - 0.5;
-    float r2 = dot(p, p);
+// Rational pre-linearization curve: flattens aggressive ISP contrast before 3D LUT sampling (VSCO-style)
+vec3 preLinearizeLutInput(vec3 c, float strength) {
+    vec3 linearC;
+    linearC.r = (c.r <= 0.5) ? pow(c.r * 2.0, 1.25) * 0.5 : 1.0 - pow((1.0 - c.r) * 2.0, 1.25) * 0.5;
+    linearC.g = (c.g <= 0.5) ? pow(c.g * 2.0, 1.25) * 0.5 : 1.0 - pow((1.0 - c.g) * 2.0, 1.25) * 0.5;
+    linearC.b = (c.b <= 0.5) ? pow(c.b * 2.0, 1.25) * 0.5 : 1.0 - pow((1.0 - c.b) * 2.0, 1.25) * 0.5;
+    return mix(c, clamp(linearC, 0.0, 1.0), clamp(strength, 0.0, 1.0));
+}
 
-    // 1. Lens Distortion
-    if (abs(uBarrelDistortion) > 0.001) {
-        uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
-        uv = clamp(uv, vec2(0.001), vec2(0.999));
+// Hardware-accelerated 3D Texture single-sample trilinear lookup (GLES 3.0 GL_TEXTURE_3D)
+vec3 sample3DLut(mediump sampler3D lut3d, vec3 rgb) {
+    rgb = clamp(rgb, 0.0, 1.0);
+    vec3 lutCoord = rgb * (63.0 / 64.0) + (0.5 / 64.0);
+    return texture(lut3d, lutCoord).rgb;
+}
+
+void main() {
+    // Physical isotropic coordinates (aspect-corrected from uViewportSize or 3:4 fallback)
+    float aspect = (uViewportSize.x > 0.0) ? (uViewportSize.x / max(uViewportSize.y, 1.0)) : 0.75;
+    bool isPortrait = aspect <= 1.0;
+
+    vec2 pRaw = vTextureCoord - 0.5;
+    vec2 pPhys = isPortrait ? vec2(pRaw.x, pRaw.y / aspect) : vec2(pRaw.x * aspect, pRaw.y);
+    float rPhys = length(pPhys);
+
+    vec2 p = pRaw;
+    float r2 = dot(p, p);
+    float r = sqrt(r2);
+
+    // 1. Lens Optical Distortion (Fisheye F / Fisheye W / Wide / Barrel)
+    vec2 uv = vTextureCoord;
+    float fisheyeMask = 1.0;
+
+    if (uDebugStageOptics) {
+        if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
+            float rBubble = 0.465; // Radius of circular bubble (93% of frame width)
+            if (rPhys > rBubble) {
+                fisheyeMask = 0.0;
+                uv = vec2(0.5);
+            } else {
+                float rn = rPhys / rBubble;
+                // Authentic hemispherical fisheye warp: cubic radial expansion
+                // rn goes 0..1, rDist goes 0..1 with strong center magnification (2.78x) and perimeter compression
+                float rDistNorm = rn * (0.36 + 0.64 * rn * rn);
+                float rDistPhys = rDistNorm * 0.465;
+                vec2 dir = pPhys / max(rPhys, 0.0001);
+                vec2 pDistPhys = dir * rDistPhys;
+                vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+                uv = 0.5 + pDist;
+                fisheyeMask = 1.0 - smoothstep(rBubble - 0.012, rBubble, rPhys);
+            }
+        } else if (uLensType == 3) { // FISHEYE_W: Full-frame wide-angle curvilinear fisheye
+            float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
+            float rn = clamp(rPhys / rCorner, 0.0, 1.0);
+            float rDistNorm = rn * (0.55 + 0.45 * rn * rn);
+            float rDistPhys = rDistNorm * rCorner;
+            vec2 dir = pPhys / max(rPhys, 0.0001);
+            vec2 pDistPhys = dir * rDistPhys;
+            vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+            uv = 0.5 + pDist;
+        } else if (uLensType == 1) { // WIDE
+            uv = 0.5 + p * (1.0 + uLensDistortion * r2 * 0.45);
+        } else if (abs(uBarrelDistortion) > 0.001) {
+            uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
+        }
+    }
+    uv = clamp(uv, vec2(0.001), vec2(0.999));
+
+    // 2. Transverse Chromatic Aberration & Spectral Dispersion
+    vec4 srcColor;
+    float effCA = uDebugStageOptics ? uChromaticAberration : 0.0;
+    if (uDebugStageOptics) {
+        if (uLensType == 2) effCA = max(effCA, 0.022);
+        else if (uLensType == 3) effCA = max(effCA, 0.012);
+        else if (uLensType == 4) effCA = max(effCA, 0.014);
     }
 
-    // 2. Transverse Chromatic Aberration (Cauchy spectral dispersion)
-    vec4 srcColor;
-    if (uChromaticAberration > 0.0001) {
-        vec2 caOffset = p * (uChromaticAberration * r2 * 0.25);
+    if (effCA > 0.0001 && fisheyeMask > 0.001) {
+        vec2 caDir = pPhys / max(rPhys, 0.0001);
+        vec2 caPhysOffset = caDir * (effCA * rPhys * rPhys * 1.5);
+        vec2 caOffset = isPortrait ? vec2(caPhysOffset.x, caPhysOffset.y * aspect) : vec2(caPhysOffset.x / aspect, caPhysOffset.y);
         vec2 uvR = clamp(uv + caOffset, vec2(0.001), vec2(0.999));
         vec2 uvG = clamp(uv - caOffset * 0.15, vec2(0.001), vec2(0.999));
         vec2 uvB = clamp(uv - caOffset * 1.35, vec2(0.001), vec2(0.999));
-        float r = texture(sTexture, uvR).r;
-        float g = texture(sTexture, uvG).g;
-        float b = texture(sTexture, uvB).b;
-        srcColor = vec4(r, g, b, 1.0);
+        float rCh = texture(sTexture, uvR).r;
+        float gCh = texture(sTexture, uvG).g;
+        float bCh = texture(sTexture, uvB).b;
+        srcColor = vec4(rCh, gCh, bCh, 1.0);
     } else {
         srcColor = texture(sTexture, uv);
     }
 
     vec3 color = srcColor.rgb;
+
+    // 2a. Prism Multi-Facet Refraction & Chromatic Splitting
+    if (uLensType == 4 && uLensPrismDispersion > 0.01) {
+        float disp = (0.038 + r * 0.028) * uLensPrismDispersion;
+        vec2 off1 = vec2(disp * 0.866, disp * 0.50);
+        vec2 off2 = vec2(-disp * 0.866, disp * 0.50);
+
+        vec3 prism1 = texture(sTexture, clamp(uv + off1, vec2(0.001), vec2(0.999))).rgb;
+        vec3 prism2 = texture(sTexture, clamp(uv + off2, vec2(0.001), vec2(0.999))).rgb;
+        prism1.r *= 1.08;
+        prism2.b *= 1.12;
+
+        float facetWeight = clamp(r * 1.35 * uLensPrismDispersion, 0.0, 0.45);
+        color = mix(color, (prism1 + prism2) * 0.5, facetWeight);
+    }
+
+    // 2a-star. Starburst Diffraction Rays
+    if (uLensType == 5 && uLensStarburstStrength > 0.01) {
+        float starThresh = uLensStarburstThreshold;
+        vec2 starStep = vec2(0.0045, 0.0045);
+        vec3 starAccum = vec3(0.0);
+        for (int i = 1; i <= 3; i++) {
+            float fi = float(i) * 2.2;
+            vec2 d1 = vec2(fi * starStep.x, fi * starStep.y);
+            vec2 d2 = vec2(-fi * starStep.x, fi * starStep.y);
+
+            vec3 s1 = texture(sTexture, clamp(uv + d1, vec2(0.001), vec2(0.999))).rgb;
+            vec3 s2 = texture(sTexture, clamp(uv - d1, vec2(0.001), vec2(0.999))).rgb;
+            vec3 s3 = texture(sTexture, clamp(uv + d2, vec2(0.001), vec2(0.999))).rgb;
+            vec3 s4 = texture(sTexture, clamp(uv - d2, vec2(0.001), vec2(0.999))).rgb;
+
+            float w = 1.0 / float(i);
+            starAccum += (max(vec3(0.0), s1 - starThresh) +
+                          max(vec3(0.0), s2 - starThresh) +
+                          max(vec3(0.0), s3 - starThresh) +
+                          max(vec3(0.0), s4 - starThresh)) * w;
+        }
+        color += starAccum * (uLensStarburstStrength * 0.70);
+    }
+
+    // 2a-nd. Neutral Density Filter Light Attenuation
+    if (uLensType == 6 && uLensNdFactor < 0.99) {
+        color *= uLensNdFactor;
+    }
+
+    // 2a-flash. Color Gel Flash Tint
+    if (uLensType == 7 && uLensIsFlashActive) {
+        color = mix(color, color * uLensColorFlashTint * 1.30, 0.70);
+    }
 
     // 2b. Optical Softness (Contrast-preserving spherical veiling flare)
     if (uSoftness > 0.005) {
@@ -493,9 +987,49 @@ void main() {
 
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
-    // 2d. Photochemical 3D Film Emulsion LUT
-    if (uLutEnabled) {
-        color = sampleHaldLut(uLutTexture, color);
+    // 2d. Photochemical 3D Film Emulsion LUT with Dual-LUT Crossfading (Section 7)
+    if (uLutEnabled && uDebugStageLut) {
+        vec3 lutInput = color;
+        if (uLutInputSpace == 1) { // LINEAR
+            lutInput = pow(max(lutInput, vec3(0.0)), vec3(2.2));
+        } else if (uLutInputSpace == 2) { // CUSTOM_PRETRANSFORM (ISP Contrast Flattening)
+            if (uPreLinearizationEnabled && uDebugStagePreLinearization) {
+                lutInput = preLinearizeLutInput(lutInput, uPreLinearizationStrength);
+            }
+        }
+
+        vec3 lutColor;
+        if (uUseLut3D) {
+            lutColor = sample3DLut(sLut3D, lutInput);
+            if (uHasSecondaryLut && uDualLutMix > 0.001) {
+                vec3 lutColorB = sample3DLut(sLut3D_B, lutInput);
+                lutColor = mix(lutColor, lutColorB, clamp(uDualLutMix, 0.0, 1.0));
+            }
+        } else {
+            lutColor = sampleHaldLut(uLutTexture, lutInput);
+            if (uHasSecondaryLut && uDualLutMix > 0.001) {
+                vec3 lutColorB = sampleHaldLut(uLutTextureB, lutInput);
+                lutColor = mix(lutColor, lutColorB, clamp(uDualLutMix, 0.0, 1.0));
+            }
+        }
+        color = mix(color, lutColor, clamp(uFilterIntensity, 0.0, 1.0));
+    }
+
+    // 2e. CAMELEO Natural Mode Processing
+    if (uNaturalModeEnabled) {
+        vec3 rMat = vec3(1.02, -0.01, -0.01);
+        vec3 gMat = vec3(-0.01, 1.01, 0.00);
+        vec3 bMat = vec3(-0.01, 0.02, 0.99);
+        color = vec3(dot(color, rMat), dot(color, gMat), dot(color, bMat));
+
+        float knee = 0.65;
+        if (color.r > knee) color.r = knee + (1.0 - knee) * ((color.r - knee) / (color.r - knee + 0.35));
+        if (color.g > knee) color.g = knee + (1.0 - knee) * ((color.g - knee) / (color.g - knee + 0.35));
+        if (color.b > knee) color.b = knee + (1.0 - knee) * ((color.b - knee) / (color.b - knee + 0.35));
+
+        float yLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float lift = uNaturalShadowLift * (1.0 - clamp(yLuma, 0.0, 1.0)) * (1.0 - clamp(yLuma, 0.0, 1.0)) * clamp(yLuma, 0.0, 1.0) * 1.6;
+        color += vec3(lift);
     }
 
     // 3. White Balance
@@ -506,45 +1040,60 @@ void main() {
     color.b -= 0.03 * uTint;
 
     // 4. Contrast
-    if (abs(uContrast - 1.0) > 0.01) {
-        color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
-    }
+    if (uDebugStageToneCurve) {
+        if (abs(uContrast - 1.0) > 0.01) {
+            color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
+        }
 
-    // 5. Saturation
-    luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    if (abs(uSaturation - 1.0) > 0.01) {
-        color = mix(vec3(luma), color, uSaturation);
+        // 5. Saturation
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    }
+        if (abs(uSaturation - 1.0) > 0.01) {
+            color = mix(vec3(luma), color, uSaturation);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
 
-    // 6. Gamma
-    if (abs(uGamma - 1.0) > 0.01) {
-        color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
-        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    }
+        // 6. Gamma
+        if (abs(uGamma - 1.0) > 0.01) {
+            color = pow(max(color, vec3(0.0)), vec3(1.0 / uGamma));
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
 
-    // 7. Shadow Tint
-    float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
-    color += uShadowTint * shadowWeight;
+        // 7. Shadow Tint
+        float shadowWeight = clamp(1.0 - luma * 3.0, 0.0, 1.0);
+        color += uShadowTint * shadowWeight;
 
-    // 8. Filmic Highlight Rolloff & Desaturating Shoulder (Creamy soft transitions to white)
-    if (uHighlightRollOff < 0.99) {
-        float knee = max(0.01, 1.0 - uHighlightRollOff);
-        vec3 over = max(vec3(0.0), color - vec3(uHighlightRollOff));
-        color = min(color, vec3(uHighlightRollOff)) + knee * (vec3(1.0) - exp(-over / knee));
-        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-        
-        float highOver = max(0.0, luma - uHighlightRollOff) / knee;
-        color = mix(color, vec3(luma), clamp(highOver * 0.35, 0.0, 0.65));
-    }
+        // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
+        if (uHighlightRollOff < 0.99) {
+            float knee = uHighlightRollOff;
+            float maxCh = max(max(color.r, color.g), color.b);
+            if (maxCh > knee) {
+                float d = maxCh - knee;
+                float s = 1.0 - knee;
+                float rolledMax = knee + s * (d / (d + s * 0.75));
+                color = color * (rolledMax / maxCh);
+                
+                float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                float desat = clamp((coreLuma - knee) / (1.0 - knee), 0.0, 1.0);
+                color = mix(color, vec3(coreLuma), desat * 0.45);
+            }
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
 
-    // 9. Film Fade
-    if (uFade > 0.001) {
-        color = color * (1.0 - uFade) + uFade;
+        // 8b. Lifted Toe & Shoulder Compression (Lightroom Film Profile Parity)
+        if (uToeLift > 0.001 || uShoulderClip < 0.999) {
+            color = clamp(color, 0.0, 1.0);
+            color = uToeLift + color * (uShoulderClip - uToeLift);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        // 9. Film Fade
+        if (uFade > 0.001) {
+            color = color * (1.0 - uFade) + uFade;
+        }
     }
 
     // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with boundary confinement)
-    if (uHalationEnabled && uHalationIntensity > 0.01) {
+    if (uHalationEnabled && uHalationIntensity > 0.01 && uDebugStageHalation) {
         float kThresh = uHalationThreshold;
         if (luma > kThresh - 0.04) {
             vec2 hInner = vec2(0.0035);
@@ -578,7 +1127,7 @@ void main() {
             if (spread > 0.001) {
                 // Highlight-core preservation: maintain neutral white in specular cores, concentrate red-orange fringe at boundaries
                 float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
-                vec3 haloBase = mix(vec3(1.0, 0.32, 0.10), vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
+                vec3 haloBase = mix(uHalationColorTint, vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
                 vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.45);
                 color += haloColor;
             }
@@ -588,54 +1137,102 @@ void main() {
     // 11. Subtle Edge Light Leak Emulation
     if (uLightLeakEnabled && uLightLeakIntensity > 0.01) {
         float edgeDist = length(vec2(max(0.0, uv.x - 0.75) * 2.0, max(0.0, 0.25 - uv.y) * 2.0));
-        float leakMask = smoothstep(0.40, 0.0, edgeDist);
+        float leakMask = 1.0 - smoothstep(0.0, 0.40, edgeDist);
         vec3 leakColor = vec3(1.0, 0.45, 0.12) * (leakMask * uLightLeakIntensity * 0.35);
         color = 1.0 - (1.0 - color) * (1.0 - leakColor);
     }
 
     // 12. Optical Cosine Fourth Lens Vignette
-    if (uVignetteIntensity > 0.01) {
-        float rNorm = length(p) / 0.7071068;
-        float rn = rNorm / uVignetteRadius;
-        float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
-        float vignette = mix(1.0, cos4Vig, clamp(uVignetteIntensity * 1.15, 0.0, 1.0));
-        color *= clamp(vignette, 0.25, 1.0);
+    if (uDebugStageVignette) {
+        float vigTotal = uVignetteIntensity + uLensVignette;
+        if (vigTotal > 0.01) {
+            float rNorm = length(p) / 0.7071068;
+            float rn = rNorm / uVignetteRadius;
+            float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
+            float vignette = mix(1.0, cos4Vig, clamp(vigTotal * 1.15, 0.0, 1.0));
+            color *= clamp(vignette, 0.25, 1.0);
+        }
     }
 
-    // 13. Authentic Multi-Scale Silver Halide Dye-Cloud Grain
-    if (uGrainIntensity > 0.005) {
-        float sRise = smoothstep(0.0, 0.42, luma);
-        float hFall = smoothstep(0.42, 1.0, luma);
-        float grainWeight = (0.28 + 0.72 * sRise) * (1.0 - 0.88 * hFall);
-
-        if (color.r > color.g && color.g > color.b && color.r > 0.25 && color.r < 0.90) {
-            float skinWeight = clamp((color.r - color.b) * 2.0, 0.0, 1.0);
-            grainWeight *= (1.0 - 0.35 * skinWeight);
+    // Fisheye Barrel Mask & Outer Boundary Falloff
+    if (uLensType == 2) { // FISHEYE_F: Classic circular hood vignette
+        color *= fisheyeMask;
+        if (rPhys <= 0.465) {
+            float rim = smoothstep(0.44, 0.462, rPhys) * (1.0 - smoothstep(0.462, 0.466, rPhys));
+            color += vec3(0.08, 0.075, 0.07) * rim;
         }
+    } else if (uLensType == 3) { // FISHEYE_W: Full-frame peripheral soft falloff
+        float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
+        float rn = clamp(rPhys / rCorner, 0.0, 1.0);
+        float wideVig = 1.0 - smoothstep(0.65, 1.05, rn);
+        color *= mix(1.0, wideVig, 0.30);
+    }
 
-        vec2 grainCoord = uv * 1400.0 * (uGrainScale * 0.45);
-        
-        float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
-        float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
-        float noiseG = fineG * 0.65 + clumpG * 0.35;
+    // 13. Authentic Scanned Photographic Film Halide Grain
+    if (uGrainIntensity > 0.005 && uDebugStageGrain) {
+        float shadowT = clamp(luma / 0.35, 0.0, 1.0);
+        float shadowMask = shadowT * shadowT * (3.0 - 2.0 * shadowT);
+        float highlightT = clamp((luma - 0.65) / 0.35, 0.0, 1.0);
+        float highlightMask = 1.0 - (highlightT * highlightT * (3.0 - 2.0 * highlightT));
+        float grainWeight = (uGrainShadowStrength + (1.0 - uGrainShadowStrength) * shadowMask) * 
+                            (uGrainHighlightStrength + (1.0 - uGrainHighlightStrength) * highlightMask);
 
-        float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
-        float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
-        float noiseR = fineR * 0.58 + clumpR * 0.42;
+        // Section 9: Parabolic midtone luminance weighting M(L) = 4L(1-L)
+        if (uGrainLumaWeightEnabled && uGrainLumaWeightPower > 0.01) {
+            float midtoneParabola = clamp(4.0 * luma * (1.0 - luma), 0.0, 1.0);
+            grainWeight = mix(grainWeight, grainWeight * midtoneParabola, uGrainLumaWeightPower);
+        }
+        grainWeight = max(0.35, grainWeight);
 
-        float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
-        float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
-        float noiseB = fineB * 0.50 + clumpB * 0.50;
-
-        vec3 grainDelta;
-        if (uIsColorNoise) {
-            grainDelta = vec3(noiseR, noiseG, noiseB);
+        if (uHasGrainTexture) {
+            vec2 grainUv = fract(uv * 4.0 * (uGrainScale * 0.75) + uGrainOffset);
+            vec4 gSample = texture(sGrainTexture, grainUv);
+            float gLuma = dot(gSample.rgb, vec3(0.299, 0.587, 0.114));
+            float gDev = (gLuma - 0.5) * 4.5;
+            float effIntensity = uGrainIntensity * grainWeight * 2.0;
+            
+            if (uGrainBlendMode == 1) { // SCREEN
+                float gNorm = clamp((gDev + 1.0) * 0.5, 0.0, 1.0);
+                float sFactor = effIntensity * 0.90;
+                if (uIsColorNoise) {
+                    vec3 cDev = (gSample.rgb - vec3(0.5)) * 4.5;
+                    vec3 cNorm = clamp((cDev + 1.0) * 0.5, 0.0, 1.0);
+                    color = 1.0 - (1.0 - color) * (1.0 - cNorm * sFactor);
+                } else {
+                    color = 1.0 - (1.0 - color) * (1.0 - vec3(gNorm) * sFactor);
+                }
+            } else if (uGrainBlendMode == 2) { // MULTIPLY
+                float gNorm = clamp((gDev + 1.0) * 0.5, 0.0, 1.0);
+                float mFactor = 1.0 - (1.0 - gNorm) * effIntensity * 0.90;
+                color *= mFactor;
+            } else if (uGrainBlendMode == 3) { // NORMAL
+                float gNorm = clamp((gDev + 1.0) * 0.5, 0.0, 1.0);
+                color = mix(color, vec3(gNorm), effIntensity * 0.55);
+            } else { // OVERLAY (mode 0)
+                vec3 delta;
+                if (uIsColorNoise) {
+                    vec3 cDev = (gSample.rgb - vec3(0.5)) * 4.5;
+                    delta = cDev * effIntensity * 0.95;
+                } else {
+                    delta = vec3(gDev) * effIntensity * 0.95;
+                }
+                color += delta;
+            }
         } else {
-            grainDelta = mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
+            vec2 grainCoord = uv * 1400.0 * (uGrainScale * 0.45);
+            float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
+            float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
+            float noiseG = fineG * 0.65 + clumpG * 0.35;
+            float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
+            float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
+            float noiseR = fineR * 0.58 + clumpR * 0.42;
+            float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
+            float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
+            float noiseB = fineB * 0.50 + clumpB * 0.50;
+            vec3 grainDelta = uIsColorNoise ? vec3(noiseR, noiseG, noiseB) : mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
+            float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
+            color += grainDelta * (grainWeight * uGrainIntensity * 1.35 * grainDamp);
         }
-
-        float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
-        color += grainDelta * (grainWeight * uGrainIntensity * 0.40 * grainDamp);
     }
 
     // 14. Retro Camcorder Tape Texture & Line Modulation
@@ -653,11 +1250,15 @@ void main() {
 """
 
     fun getLutAssetForPreset(presetId: String): String = when (presetId) {
+        "zero"                 -> "lut_zero.png"
+        "analog_fxn_r"         -> "lut_fxn_r.png"
+        "ccd_r"                -> "lut_ccd_r.png"
         "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
         "analog_warm_film"     -> "lut_analog_warm_film.png"
         "analog_soft_film"     -> "lut_analog_soft_film.png"
         "analog_vintage_color" -> "lut_analog_vintage_color.png"
         "analog_cinema_film"   -> "lut_analog_cinema_film.png"
+        "analog_135ne", "135ne"-> "lut_135ne.png"
         "ccd_flash"            -> "lut_ccd_flash.png"
         "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
         "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
@@ -670,6 +1271,28 @@ void main() {
         "cam_analog_video"     -> "lut_cam_analog_video.png"
         "cam_90s_camcorder"    -> "lut_cam_90s_camcorder.png"
         else                   -> "lut_analog_35mm_classic.png"
+    }
+
+    fun getGrainAssetForPreset(presetId: String, isCamcorder: Boolean): String = when {
+        isCamcorder                            -> "grains/grain8mm_01.jpg"
+        presetId == "zero"                     -> "grains/grain_dclassic.jpg"
+        presetId == "analog_fxn_r"             -> "grains/grain_ou.jpg"
+        presetId == "ccd_r"                    -> "grains/grain_ccdr.jpg"
+        presetId == "analog_35mm_classic"      -> "grains/grain_dclassic.jpg"
+        presetId == "analog_warm_film"         -> "grains/grain_ou.jpg"
+        presetId == "analog_soft_film"         -> "grains/grain_s67.jpg"
+        presetId == "analog_vintage_color"     -> "grains/grain_dexp.jpg"
+        presetId == "analog_cinema_film"       -> "grains/grain_d3d1.jpg"
+        presetId == "analog_135ne" || presetId == "135ne" -> "grains/grain_135sr.jpg"
+        presetId == "ccd_flash"                -> "grains/grain_dfuns.jpg"
+        presetId == "ccd_y2k_digital"          -> "grains/grain_classicu.jpg"
+        presetId == "ccd_retro_compact"        -> "grains/grain_ccdr.jpg"
+        presetId == "disp_classic"             -> "grains/grain_dexp2.jpg"
+        presetId == "disp_flash"               -> "grains/grain_cpm35.jpg"
+        presetId == "disp_warm"                -> "grains540_01.jpg"
+        presetId == "disp_night"               -> "grains/grain_ou_lowlight.jpg"
+        presetId == "inst_vintage"             -> "grains/grain_instc.jpg"
+        else                                   -> "grains/grain_dclassic.jpg"
     }
 }
 
