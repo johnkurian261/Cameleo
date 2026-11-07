@@ -15,9 +15,15 @@ void main() {
 """
 
     const val FRAGMENT_SHADER_PASSTHROUGH = """#version 300 es
-#extension GL_OES_EGL_image_external_essl3 : require
+#extension GL_OES_EGL_image_external_essl3 : enable
+#extension GL_OES_EGL_image_external : enable
 precision highp float;
-uniform samplerExternalOES sTexture;
+precision mediump sampler2D;
+precision mediump sampler3D;
+#ifdef GL_OES_EGL_image_external
+precision mediump samplerExternalOES;
+#endif
+uniform lowp samplerExternalOES sTexture;
 uniform mat4 uTexMatrix;
 in vec2 vQuadCoord;
 out vec4 fragColor;
@@ -27,11 +33,40 @@ void main() {
 }
 """
 
-    const val FRAGMENT_SHADER_VIEWFINDER = """#version 300 es
-#extension GL_OES_EGL_image_external_essl3 : require
-precision highp float;
+    const val VERTEX_SHADER_PASSTHROUGH_ES2 = """attribute vec4 aPosition;
+attribute vec4 aTextureCoord;
+varying vec2 vQuadCoord;
+void main() {
+    gl_Position = aPosition;
+    vQuadCoord = aTextureCoord.xy;
+}
+"""
 
-uniform samplerExternalOES sTexture;
+    const val FRAGMENT_SHADER_PASSTHROUGH_ES2 = """#extension GL_OES_EGL_image_external : enable
+precision mediump float;
+#ifdef GL_OES_EGL_image_external
+precision mediump samplerExternalOES;
+#endif
+uniform lowp samplerExternalOES sTexture;
+uniform mat4 uTexMatrix;
+varying vec2 vQuadCoord;
+void main() {
+    vec2 oesUV = (uTexMatrix * vec4(vQuadCoord, 0.0, 1.0)).xy;
+    gl_FragColor = texture2D(sTexture, oesUV);
+}
+"""
+
+    const val FRAGMENT_SHADER_VIEWFINDER = """#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : enable
+#extension GL_OES_EGL_image_external : enable
+precision highp float;
+precision mediump sampler2D;
+precision mediump sampler3D;
+#ifdef GL_OES_EGL_image_external
+precision mediump samplerExternalOES;
+#endif
+
+uniform lowp samplerExternalOES sTexture;
 uniform sampler2D uLutTexture;
 uniform mediump sampler3D sLut3D;
 uniform sampler2D uLutTextureB;
@@ -671,6 +706,8 @@ void main() {
 
     const val FRAGMENT_SHADER_STILL = """#version 300 es
 precision highp float;
+precision mediump sampler2D;
+precision mediump sampler3D;
 
 uniform sampler2D sTexture;
 uniform sampler2D uLutTexture;

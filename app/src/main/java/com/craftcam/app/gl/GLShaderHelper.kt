@@ -48,6 +48,8 @@ object GLShaderHelper {
 
         GLES20.glAttachShader(program, vertexShader)
         GLES20.glAttachShader(program, fragmentShader)
+        GLES20.glBindAttribLocation(program, 0, "aPosition")
+        GLES20.glBindAttribLocation(program, 1, "aTextureCoord")
         GLES20.glLinkProgram(program)
 
         val linkStatus = IntArray(1)

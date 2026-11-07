@@ -608,10 +608,29 @@ class CameraManager(private val context: Context) {
 
             // Attach Camera2Interop CaptureCallback to receive live sensor readouts & hardware face metadata
             val camera2Extender = Camera2Interop.Extender(previewBuilder)
-            camera2Extender.setCaptureRequestOption(
-                CaptureRequest.STATISTICS_FACE_DETECT_MODE,
-                CaptureRequest.STATISTICS_FACE_DETECT_MODE_SIMPLE
-            )
+            try {
+                val cameraService = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+                val targetFacing = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                    CameraCharacteristics.LENS_FACING_FRONT
+                } else {
+                    CameraCharacteristics.LENS_FACING_BACK
+                }
+                val isFaceDetectSupported = cameraService?.cameraIdList?.any { id ->
+                    val chars = cameraService.getCameraCharacteristics(id)
+                    chars.get(CameraCharacteristics.LENS_FACING) == targetFacing &&
+                        chars.get(CameraCharacteristics.STATISTICS_INFO_AVAILABLE_FACE_DETECT_MODES)
+                            ?.contains(CaptureRequest.STATISTICS_FACE_DETECT_MODE_SIMPLE) == true
+                } ?: false
+
+                if (isFaceDetectSupported) {
+                    camera2Extender.setCaptureRequestOption(
+                        CaptureRequest.STATISTICS_FACE_DETECT_MODE,
+                        CaptureRequest.STATISTICS_FACE_DETECT_MODE_SIMPLE
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Hardware face detect query failed; skipping face detect mode setting", e)
+            }
             camera2Extender.setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
                     val iso = result.get(CaptureResult.SENSOR_SENSITIVITY)
@@ -670,10 +689,13 @@ class CameraManager(private val context: Context) {
                             previewSurface?.release()
                             val currentSurface = Surface(surfaceTex)
                             previewSurface = currentSurface
-                            request.provideSurface(currentSurface, ContextCompat.getMainExecutor(context)) {
-                                currentSurface.release()
-                                if (previewSurface == currentSurface) {
-                                    previewSurface = null
+                            request.provideSurface(currentSurface, ContextCompat.getMainExecutor(context)) { result ->
+                                Log.d(TAG, "CameraX SurfaceRequest result: ${result.resultCode}")
+                                if (result.resultCode != androidx.camera.core.SurfaceRequest.Result.RESULT_SURFACE_USED_SUCCESSFULLY) {
+                                    currentSurface.release()
+                                    if (previewSurface == currentSurface) {
+                                        previewSurface = null
+                                    }
                                 }
                             }
                             val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
@@ -1490,6 +1512,8 @@ class CameraManager(private val context: Context) {
     }
 
     fun shutdown() {
+        previewSurface?.release()
+        previewSurface = null
         stopRecording()
         cameraExecutor.shutdown()
         processingScope.cancel()

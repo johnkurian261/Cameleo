@@ -393,7 +393,7 @@ class GLViewfinderRenderer(
             ShaderConstants.FRAGMENT_SHADER_VIEWFINDER
         )
 
-        // Safe fallback: if complex shader ever fails compilation, fall back to minimal passthrough
+        // Safe fallback 1: if complex shader ever fails compilation, fall back to minimal passthrough
         if (programId == 0) {
             Log.e(TAG, "Failed to compile full viewfinder shader program, falling back to minimal passthrough")
             programId = GLShaderHelper.createProgram(
@@ -402,8 +402,17 @@ class GLViewfinderRenderer(
             )
         }
 
+        // Safe fallback 2: universal GLES 2.0 passthrough for any device driver limitations
         if (programId == 0) {
-            Log.e(TAG, "CRITICAL: Even passthrough shader failed to compile")
+            Log.e(TAG, "Failed to compile GLES3 passthrough, falling back to universal GLES2 passthrough")
+            programId = GLShaderHelper.createProgram(
+                ShaderConstants.VERTEX_SHADER_PASSTHROUGH_ES2,
+                ShaderConstants.FRAGMENT_SHADER_PASSTHROUGH_ES2
+            )
+        }
+
+        if (programId == 0) {
+            Log.e(TAG, "CRITICAL: All viewfinder shader compilation paths failed")
             return
         }
 

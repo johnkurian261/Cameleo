@@ -1,5 +1,6 @@
 package com.craftcam.app.ui.viewfinder
 
+import android.app.ActivityManager
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -11,6 +12,8 @@ import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
@@ -106,6 +109,21 @@ fun ViewfinderScreen(
     var showNaturalTuningSheet by remember { mutableStateOf(false) }
     var showExposureSlider by remember { mutableStateOf(false) }
     var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
+    var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> glSurfaceViewRef?.onResume()
+                Lifecycle.Event.ON_PAUSE -> glSurfaceViewRef?.onPause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(Unit) {
         latestThumbnail = loadLatestCameleoThumbnail(context)
@@ -209,8 +227,16 @@ fun ViewfinderScreen(
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
+                            val activityManager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                            val glEsVersion = activityManager?.deviceConfigurationInfo?.reqGlEsVersion ?: 0
+                            val supportsGLES3 = glEsVersion >= 0x00030000
+
                             GLSurfaceView(ctx).apply {
-                                setEGLContextClientVersion(3)
+                                if (supportsGLES3) {
+                                    setEGLContextClientVersion(3)
+                                } else {
+                                    setEGLContextClientVersion(2)
+                                }
                                 var rendererRef: GLViewfinderRenderer? = null
                                 val renderer = GLViewfinderRenderer(ctx, this) { surfaceTexture ->
                                     ContextCompat.getMainExecutor(ctx).execute {
@@ -226,6 +252,8 @@ fun ViewfinderScreen(
                                 setRenderer(renderer)
                                 cameraManager.setGLRenderer(renderer)
                                 renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                                onResume()
+                                glSurfaceViewRef = this
                             }
                         },
                         update = { _ ->
