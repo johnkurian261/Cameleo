@@ -598,28 +598,6 @@ object PresetCatalog {
         ),
 
         CameraPreset(
-            id = "analog_collage",
-            iconResName = "cam_collage",
-            name = "Collage",
-            subtitle = "Contact Sheet Film Strip",
-            category = CameraCategory.ANALOG_FILM,
-            year = "1988",
-            description = "Multi-shot photographic sequence arranged along negative film perforation margins for storytelling layouts.",
-            colorGrading = ColorGradingConfig(
-                contrast = 1.15f,
-                saturation = 1.08f,
-                temperature = 0.08f,
-                tint = 0.02f,
-                fade = 0.03f,
-                highlightRollOff = 0.78f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, assetPath = "grains/grain_collage.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.32f, highlightStrength = 0.15f),
-            lens = LensConfig(vignetteIntensity = 0.30f, vignetteRadius = 0.85f, chromaticAberration = 0.003f),
-            border = BorderConfig(style = BorderStyle.FILM_STRIP_135, assetPath = "135ne_frame_cut2.png"),
-            dateStamp = DateStampConfig(enabled = false)
-        ),
-
-        CameraPreset(
             id = "analog_kino",
             iconResName = "cam_kino",
             name = "Kino",

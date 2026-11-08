@@ -1412,7 +1412,6 @@ void main() {
         "analog_kv88", "analog_kv80" -> "lut_analog_35mm_classic.png"
         "analog_hoga"          -> "lut_analog_warm_film.png"
         "analog_original"      -> "lut_analog_35mm_classic.png"
-        "analog_collage"       -> "lut_analog_35mm_classic.png"
         "analog_kino"          -> "lut_analog_cinema_film.png"
         "analog_glow"          -> "lut_analog_soft_film.png"
         "ccd_dam"              -> "lut_ccd_r.png"
