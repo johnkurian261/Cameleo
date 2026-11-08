@@ -739,6 +739,320 @@ object CameraProfileCatalog {
         )
     )
 
+    val VSCO_A6 = CameleoCameraProfile(
+        id = "vsco_a6",
+        name = "A6",
+        subtitle = "Analog Portra Warm",
+        presetId = "vsco_a6",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM, LensType.STARBURST),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_vsco_a6",
+            name = "VSCO A6 Analog",
+            lutAssetPath = "lut_vsco_a6.png",
+            contrast = 1.12f,
+            saturation = 1.04f,
+            temperature = 0.14f,
+            tint = 0.02f,
+            toeLift = 0.038f,
+            shoulderClip = 0.965f,
+            highlightRollOff = 0.82f,
+            shadowTintR = 0.025f,
+            shadowTintG = 0.012f,
+            shadowTintB = 0.0f,
+            halationThreshold = 0.78f,
+            halationIntensity = 0.22f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.35f,
+            halationColorTintB = 0.08f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_a6",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_ou.jpg",
+            intensity = 0.20f,
+            scale = 1.0f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_vsco_a6",
+            vignetteStrength = 0.25f,
+            vignetteRadius = 0.85f,
+            chromaticAberration = 0.002f
+        )
+    )
+
+    val VSCO_C1 = CameleoCameraProfile(
+        id = "vsco_c1",
+        name = "C1",
+        subtitle = "Vibrant Color Negative",
+        presetId = "vsco_c1",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_vsco_c1",
+            name = "VSCO C1 Vibrant",
+            lutAssetPath = "lut_vsco_c1.png",
+            contrast = 1.18f,
+            saturation = 1.16f,
+            temperature = -0.02f,
+            tint = 0.01f,
+            toeLift = 0.025f,
+            shoulderClip = 0.980f,
+            highlightRollOff = 0.80f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_c1",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dclassic.jpg",
+            intensity = 0.18f,
+            scale = 0.95f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_F2 = CameleoCameraProfile(
+        id = "vsco_f2",
+        name = "F2",
+        subtitle = "Mellow Moody Film",
+        presetId = "vsco_f2",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_vsco_f2",
+            name = "VSCO F2 Mellow",
+            lutAssetPath = "lut_vsco_f2.png",
+            contrast = 1.05f,
+            saturation = 0.88f,
+            temperature = 0.08f,
+            tint = 0.02f,
+            toeLift = 0.055f,
+            shoulderClip = 0.940f,
+            highlightRollOff = 0.76f,
+            shadowTintB = 0.04f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_f2",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_s67.jpg",
+            intensity = 0.22f,
+            scale = 1.05f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_G3 = CameleoCameraProfile(
+        id = "vsco_g3",
+        name = "G3",
+        subtitle = "Luminous Portrait Glow",
+        presetId = "vsco_g3",
+        focalLengths = listOf(FocalLengthOption("50mm", 50f), FocalLengthOption("85mm", 85f)),
+        defaultFocalLengthMm = 50f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.STARBURST),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_vsco_g3",
+            name = "VSCO G3 Portraits",
+            lutAssetPath = "lut_vsco_g3.png",
+            contrast = 1.02f,
+            saturation = 1.06f,
+            temperature = 0.16f,
+            tint = 0.03f,
+            toeLift = 0.030f,
+            shoulderClip = 0.958f,
+            highlightRollOff = 0.84f,
+            shadowTintR = 0.03f,
+            shadowTintG = 0.015f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_g3",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_ou.jpg",
+            intensity = 0.16f,
+            scale = 0.90f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_M5 = CameleoCameraProfile(
+        id = "vsco_m5",
+        name = "M5",
+        subtitle = "1970s Vintage Mood",
+        presetId = "vsco_m5",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
+        filmProfile = FilmProfile(
+            id = "film_vsco_m5",
+            name = "VSCO M5 Vintage Mood",
+            lutAssetPath = "lut_vsco_m5.png",
+            contrast = 1.10f,
+            saturation = 0.96f,
+            temperature = 0.14f,
+            tint = -0.04f,
+            toeLift = 0.065f,
+            shoulderClip = 0.935f,
+            highlightRollOff = 0.74f,
+            shadowTintR = 0.055f,
+            shadowTintG = 0.030f,
+            shadowTintB = 0.008f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_m5",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dexp.jpg",
+            intensity = 0.26f,
+            scale = 1.15f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_HB1 = CameleoCameraProfile(
+        id = "vsco_hb1",
+        name = "HB1",
+        subtitle = "Hypebeast Street Film",
+        presetId = "vsco_hb1",
+        focalLengths = listOf(FocalLengthOption("28mm", 28f), FocalLengthOption("35mm", 35f)),
+        defaultFocalLengthMm = 28f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_vsco_hb1",
+            name = "VSCO HB1 Street",
+            lutAssetPath = "lut_vsco_hb1.png",
+            contrast = 1.26f,
+            saturation = 0.94f,
+            temperature = -0.06f,
+            tint = 0.01f,
+            toeLift = 0.012f,
+            shoulderClip = 0.985f,
+            highlightRollOff = 0.82f,
+            shadowTintR = -0.02f,
+            shadowTintG = 0.01f,
+            shadowTintB = 0.03f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_hb1",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_ou.jpg",
+            intensity = 0.22f,
+            scale = 1.0f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_B1 = CameleoCameraProfile(
+        id = "vsco_b1",
+        name = "B1",
+        subtitle = "B&W Classic Negative",
+        presetId = "vsco_b1",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
+        filmProfile = FilmProfile(
+            id = "film_vsco_b1",
+            name = "VSCO B1 Classic B&W",
+            lutAssetPath = "lut_vsco_b1.png",
+            contrast = 1.22f,
+            saturation = 0.0f,
+            toeLift = 0.035f,
+            shoulderClip = 0.970f,
+            highlightRollOff = 0.78f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_b1",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dclassic.jpg",
+            intensity = 0.28f,
+            scale = 1.10f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_X1 = CameleoCameraProfile(
+        id = "vsco_x1",
+        name = "X1",
+        subtitle = "B&W Matte Fade",
+        presetId = "vsco_x1",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
+        filmProfile = FilmProfile(
+            id = "film_vsco_x1",
+            name = "VSCO X1 Matte B&W",
+            lutAssetPath = "lut_vsco_x1.png",
+            contrast = 1.08f,
+            saturation = 0.0f,
+            toeLift = 0.080f,
+            shoulderClip = 0.925f,
+            highlightRollOff = 0.72f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_x1",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dexp.jpg",
+            intensity = 0.25f,
+            scale = 1.05f,
+            luminanceWeightingEnabled = true
+        )
+    )
+
+    val VSCO_HANDYCAM = CameleoCameraProfile(
+        id = "vsco_handycam",
+        name = "Handycam 85",
+        subtitle = "1985 Video8 Camcorder",
+        presetId = "vsco_handycam",
+        focalLengths = listOf(FocalLengthOption("8.5mm", 8.5f)),
+        defaultFocalLengthMm = 8.5f,
+        supportedLenses = listOf(LensType.NORMAL),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_vsco_handycam",
+            name = "VSCO Handycam 85",
+            lutAssetPath = "lut_vsco_handycam.png",
+            contrast = 1.12f,
+            saturation = 0.92f,
+            temperature = -0.04f,
+            tint = 0.03f,
+            toeLift = 0.045f,
+            shoulderClip = 0.950f,
+            highlightRollOff = 0.80f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_vsco_handycam",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain8mm_01.jpg",
+            intensity = 0.30f,
+            scale = 1.30f,
+            isColorNoise = true
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_vsco_handycam",
+            vignetteStrength = 0.35f,
+            vignetteRadius = 0.80f,
+            chromaticAberration = 0.0075f
+        )
+    )
+
     val allProfiles = listOf(
         FXN_R,
         D_CLASSIC,
@@ -754,7 +1068,16 @@ object CameraProfileCatalog {
         WARM_FILM,
         DISPOSABLE_FUNS,
         ONE_THREE_FIVE_NE,
-        ZERO_CAMERA
+        ZERO_CAMERA,
+        VSCO_A6,
+        VSCO_C1,
+        VSCO_F2,
+        VSCO_G3,
+        VSCO_M5,
+        VSCO_HB1,
+        VSCO_B1,
+        VSCO_X1,
+        VSCO_HANDYCAM
     )
 
     /**
@@ -764,20 +1087,29 @@ object CameraProfileCatalog {
     fun getProfileForPreset(preset: CameraPreset): CameleoCameraProfile {
         when (preset.id) {
             "zero" -> return ZERO_CAMERA
-            "analog_fxn_r" -> return FXN_R
+            "analog_fxn_r", "fxnr", "fxn_r" -> return FXN_R
             "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> return D_CLASSIC
             "analog_cinema_film", "d3d", "d_3d", "d 3d" -> return D_3D
-            "analog_vintage_color" -> return D_EXP
+            "analog_vintage_color", "dexp", "d exp" -> return D_EXP
             "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> return CCD_DIGITAL
             "ccd_flash", "d_funs", "dfuns" -> return CCD_FLASH
             "ccd_y2k_digital", "classic_u", "classicu" -> return CLASSIC_U
             "dqs", "ccd_retro_compact" -> return DQS_CAMERA
-            "inst_vintage" -> return INSTANT_CAMERA
-            "disp_classic", "disp_flash", "disp_warm", "disp_night" -> return DISPOSABLE_FUNS
-            "analog_135ne", "135ne" -> return ONE_THREE_FIVE_NE
-            "analog_fisheye_f" -> return FISHEYE_CAMERA
-            "analog_soft_film" -> return SOFT_FILM
-            "analog_warm_film" -> return WARM_FILM
+            "inst_vintage", "inst_c", "inst_paf", "paf" -> return INSTANT_CAMERA
+            "disp_classic", "disp_golf", "disp_flash", "disp_warm" -> return DISPOSABLE_FUNS
+            "analog_135ne", "135ne", "135 ne" -> return ONE_THREE_FIVE_NE
+            "analog_fisheye_f", "fisheye" -> return FISHEYE_CAMERA
+            "analog_soft_film", "ct2f" -> return SOFT_FILM
+            "analog_warm_film", "grd", "gr d" -> return WARM_FILM
+            "vsco_a6", "a6" -> return VSCO_A6
+            "vsco_c1", "c1" -> return VSCO_C1
+            "vsco_f2", "f2" -> return VSCO_F2
+            "vsco_g3", "g3" -> return VSCO_G3
+            "vsco_m5", "m5" -> return VSCO_M5
+            "vsco_hb1", "hb1" -> return VSCO_HB1
+            "vsco_b1", "b1" -> return VSCO_B1
+            "vsco_x1", "x1" -> return VSCO_X1
+            "vsco_handycam", "handycam", "handycam85" -> return VSCO_HANDYCAM
         }
 
         allProfiles.firstOrNull { it.presetId == preset.id }?.let { return it }

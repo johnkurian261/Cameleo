@@ -2,6 +2,7 @@ package com.craftcam.app.model
 
 enum class CameraCategory(val displayName: String, val description: String) {
     ANALOG_FILM("Analog Film", "Warm chemical emulsion, organic silver halide grain and natural highlight roll-off"),
+    VSCO_FILM("VSCO Film", "Authentic VSCO film stock emulation with calibrated 3D ColorCubes and organic grain"),
     CCD_DIGITAL("CCD Digital", "Crisp 2000s sensor aesthetic with punchy primary colors and digital clarity"),
     DISPOSABLE("Disposable", "High contrast, plastic lens aberrations and vintage party flash falloff"),
     INSTANT("Instant", "Soft pastel tones, lifted black point and iconic white paper borders"),

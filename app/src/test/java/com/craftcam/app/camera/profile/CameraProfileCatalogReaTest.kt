@@ -245,5 +245,29 @@ class CameraProfileCatalogReaTest {
         assertEquals(0.45f, optics.vignetteStrength, 0.001f)
         assertEquals(0.72f, optics.vignetteRadius, 0.001f)
     }
+
+    @Test
+    fun vscoProfiles_calibratedWithAuthenticFilmCharacteristics() {
+        val a6 = PresetCatalog.getPresetById("vsco_a6")
+        assertNotNull("Preset vsco_a6 must be present", a6)
+        val a6Profile = CameraProfileCatalog.getProfileForPreset(a6!!)
+        assertEquals("A6", a6Profile.name)
+        assertEquals("lut_vsco_a6.png", a6Profile.filmProfile.lutAssetPath)
+        assertEquals(0.038f, a6Profile.filmProfile.toeLift, 0.001f)
+
+        val c1 = PresetCatalog.getPresetById("vsco_c1")
+        assertNotNull("Preset vsco_c1 must be present", c1)
+        val c1Profile = CameraProfileCatalog.getProfileForPreset(c1!!)
+        assertEquals("C1", c1Profile.name)
+        assertEquals("lut_vsco_c1.png", c1Profile.filmProfile.lutAssetPath)
+
+        val handycam = PresetCatalog.getPresetById("vsco_handycam")
+        assertNotNull("Preset vsco_handycam must be present", handycam)
+        val handycamProfile = CameraProfileCatalog.getProfileForPreset(handycam!!)
+        assertEquals("Handycam 85", handycamProfile.name)
+        assertEquals("lut_vsco_handycam.png", handycamProfile.filmProfile.lutAssetPath)
+        assertEquals(GrainMode.SCANNED, handycamProfile.grainProfile.mode)
+        assertEquals("grains/grain8mm_01.jpg", handycamProfile.grainProfile.assetPath)
+    }
 }
 
