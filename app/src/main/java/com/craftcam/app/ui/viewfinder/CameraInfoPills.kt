@@ -1,5 +1,8 @@
 package com.craftcam.app.ui.viewfinder
 
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.graphics.ColorFilter
+import com.craftcam.app.R
 import android.view.HapticFeedbackConstants
 import androidx.camera.core.ImageCapture
 import androidx.compose.foundation.Image
@@ -89,19 +92,20 @@ fun CameraInfoPills(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 1. Flash Toggle Button (⚡)
-        QuickIconButton(
-            icon = flashIcon,
+        // 1. Flash Toggle Button (⚡) - Authentic Dazz icon
+        QuickDrawableButton(
+            iconRes = if (isFlashActive) R.drawable.ic_dazz_flash_on else R.drawable.ic_dazz_flash_off,
             contentDescription = "Flash",
             isActive = isFlashActive,
             onClick = onFlashCycle
         )
 
-        // 2. Brightness / Exposure Slider Button (☀️)
-        QuickIconButton(
-            icon = Icons.Default.WbSunny,
+        // 2. Brightness / Exposure Slider Button (☀️) - Authentic Dazz EV icon
+        QuickDrawableButton(
+            iconRes = R.drawable.ic_dazz_ev,
             contentDescription = "Brightness / Exposure",
             isActive = hasEvOffset || isExposureSliderOpen,
+            subscript = evBadgeText,
             onClick = onToggleExposure
         )
 
@@ -113,18 +117,18 @@ fun CameraInfoPills(
             onClick = onOpenTuning
         )
 
-        // 4. Timer Button (⏱️)
-        QuickIconButton(
-            icon = Icons.Default.Timer,
+        // 4. Timer Button (⏱️) - Authentic Dazz Timer icon
+        QuickDrawableButton(
+            iconRes = R.drawable.ic_dazz_timer,
             contentDescription = "Timer",
             isActive = timerSeconds > 0,
             subscript = if (timerSeconds > 0) "${timerSeconds}s" else null,
             onClick = onTimerCycle
         )
 
-        // 5. Grid Toggle Button (▦)
-        QuickIconButton(
-            icon = if (showGrid) Icons.Default.GridOn else Icons.Default.GridOff,
+        // 5. Grid Toggle Button (▦) - Authentic Dazz Grid icon
+        QuickDrawableButton(
+            iconRes = if (showGrid) R.drawable.ic_dazz_grid_on else R.drawable.ic_dazz_grid_off,
             contentDescription = "Grid",
             isActive = showGrid,
             onClick = onToggleGrid
@@ -185,6 +189,52 @@ private fun QuickIconButton(
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(24.dp)
+        )
+        if (subscript != null) {
+            Text(
+                text = subscript,
+                color = tint,
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickDrawableButton(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    isActive: Boolean = false,
+    subscript: String? = null,
+    onClick: () -> Unit
+) {
+    val view = LocalView.current
+    val activeRed = Color(0xFFFF3B30)
+    val tint = if (isActive) activeRed else Color.White
+
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(24.dp),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.tint(tint)
         )
         if (subscript != null) {
             Text(

@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
+import com.craftcam.app.R
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.lifecycle.Lifecycle
@@ -165,14 +166,14 @@ fun ViewfinderScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Top-left: Camera Switch Button (Rear / Front)
+                // Top-left: Camera Switch Button (Rear / Front) - Pure floating icon, no bubble
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xA614161C))
-                        .border(1.dp, Color(0x33FFFFFF), CircleShape)
-                        .clickable {
+                        .size(44.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
                             if (!uiState.isRecording) {
                                 switchRotation += 180f
                                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -181,34 +182,34 @@ fun ViewfinderScreen(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Cameraswitch,
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_dazz_switchcamera),
                         contentDescription = "Switch Camera",
-                        tint = Color.White,
                         modifier = Modifier
-                            .size(20.dp)
-                            .rotate(animatedRotation)
+                            .size(28.dp)
+                            .rotate(animatedRotation),
+                        contentScale = ContentScale.Fit
                     )
                 }
 
-                // Top-right: Subtle three-dot vertical menu button
+                // Top-right: Subtle settings/more menu button - Pure floating icon, no bubble
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xA614161C))
-                        .border(1.dp, Color(0x33FFFFFF), CircleShape)
-                        .clickable {
+                        .size(44.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             showControlMenu = !showControlMenu
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.MoreVert,
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_dazz_more),
                         contentDescription = "Menu",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(24.dp),
+                        contentScale = ContentScale.Fit
                     )
                 }
             }
