@@ -264,8 +264,16 @@ object ImageProcessor {
         }
 
         try {
-            // Apply vintage film grading to the photograph
-            workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive)
+            // Apply vintage film grading to the photograph WITHOUT baking in grain before 3D parallax warping
+            workingBitmap = applyPresetEffects(
+                context = context,
+                source = workingBitmap,
+                preset = preset,
+                tuning = tuning,
+                lensProfile = lensProfile,
+                isFlashActive = isFlashActive,
+                applyGrain = false
+            )
 
             // Feed to 3D Wigglegram pipeline
             val threeDProcessor = com.craftcam.app.threed.ThreeDPhotoProcessor()
@@ -448,7 +456,8 @@ object ImageProcessor {
         preset: CameraPreset,
         tuning: UserTuningConfig = UserTuningConfig(),
         lensProfile: LensProfile = LensProfile.NORMAL,
-        isFlashActive: Boolean = false
+        isFlashActive: Boolean = false,
+        applyGrain: Boolean = true
     ): Bitmap {
         val width = source.width
         val height = source.height
@@ -502,7 +511,7 @@ object ImageProcessor {
 
             val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
             val resolvedGrain = GrainStage.resolve(preset, unifiedProfile.grainProfile, tuning, intensity)
-            val grainData = if (resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
+            val grainData = if (applyGrain && resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
                 GrainStage.getOrLoadGrainPixels(context, resolvedGrain.assetPath)
             } else null
             val grainPixels: IntArray? = grainData?.first
@@ -565,7 +574,7 @@ object ImageProcessor {
             val stageLut = tuning.debugStageLut
             val stageToneCurve = tuning.debugStageToneCurve
             val stageVignette = tuning.debugStageVignette
-            val stageGrain = tuning.debugStageGrain
+            val stageGrain = tuning.debugStageGrain && applyGrain
             val toeLift = unifiedProfile.filmProfile.toeLift * intensity
             val shoulderClip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity
             val hasToeOrShoulder = toeLift > 0.001f || shoulderClip < 0.999f

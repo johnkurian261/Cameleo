@@ -38,7 +38,6 @@ class ThreeDPhotoProcessor(
 
     private val depthEngine = ThreeDDepthEngine()
     private val warpEngine = ParallaxWarpEngine(config)
-    private val retroRenderer = RetroFrameRenderer(config)
     private val videoEncoder = ThreeDVideoEncoder()
 
     suspend fun processAndSaveThreeDPhoto(
@@ -75,6 +74,7 @@ class ThreeDPhotoProcessor(
             val rawFrames = warpEngine.generateParallaxFrames(workingBitmap, disparityMap)
 
             onProgress?.invoke("Applying Vintage Emulsion...")
+            val retroRenderer = RetroFrameRenderer(context, config)
             val styledFrames = retroRenderer.processFrames(rawFrames)
 
             // Free unstyled raw frames

@@ -66,9 +66,9 @@ class ThreeDVideoEncoder {
         }
 
         val firstFrame = frames[0]
-        // Hardware encoders require even dimensions
-        val encWidth = (firstFrame.width / 2) * 2
-        val encHeight = (firstFrame.height / 2) * 2
+        // Hardware encoders require 16-pixel macroblock aligned dimensions to prevent green bars
+        val encWidth = (firstFrame.width / 16) * 16
+        val encHeight = (firstFrame.height / 16) * 16
 
         var mediaCodec: MediaCodec? = null
         var mediaMuxer: MediaMuxer? = null
@@ -79,7 +79,7 @@ class ThreeDVideoEncoder {
         try {
             val format = MediaFormat.createVideoFormat(MIME_TYPE, encWidth, encHeight).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, 8_000_000) // 8 Mbps high quality
+                setInteger(MediaFormat.KEY_BIT_RATE, 10_000_000) // 10 Mbps pristine stereoscopic quality
                 setInteger(MediaFormat.KEY_FRAME_RATE, fps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             }

@@ -7,40 +7,40 @@ package com.craftcam.app.threed
  * that captured simultaneous horizontal viewpoints on 35mm film negatives.
  */
 data class ThreeDConfig(
-    /** Number of distinct parallax viewpoints generated across the oscillation cycle. */
-    val frameCount: Int = 12,
+    /** Number of distinct physical lens viewpoints (4 for Nishika N8000 / Nimslo 3D quad-lens). */
+    val frameCount: Int = 4,
 
-    /** Maximum horizontal disparity displacement as a fraction of image width (e.g. 0.022 = 2.2%). */
-    val maxParallaxDisplacement: Float = 0.022f,
+    /** Maximum horizontal disparity displacement as a fraction of image width (0.018 = 1.8%). */
+    val maxParallaxDisplacement: Float = 0.018f,
 
-    /** Normalized disparity of the convergence / in-focus subject plane (0.0 far, 1.0 near). */
-    val pivotDisparity: Float = 0.40f,
+    /** Default fallback normalized disparity of the convergence / in-focus subject plane. */
+    val pivotDisparity: Float = 0.45f,
 
     /** Transverse chromatic / RGB channel misalignment in pixels (subtle optical aberration). */
-    val rgbSeparationPx: Float = 1.2f,
+    val rgbSeparationPx: Float = 0.8f,
 
     /** Mechanical frame registration jitter amplitude in pixels (film gate tolerance). */
-    val mechanicalJitterPx: Float = 0.4f,
+    val mechanicalJitterPx: Float = 0.35f,
 
-    /** Frame-to-frame leaf shutter exposure variation multiplier amplitude (±1.5%). */
-    val exposureVariance: Float = 0.015f,
+    /** Frame-to-frame leaf shutter exposure variation multiplier amplitude (±1.2%). */
+    val exposureVariance: Float = 0.012f,
 
     /** Authentic analog 35mm film grain blending intensity. */
-    val grainIntensity: Float = 0.16f,
+    val grainIntensity: Float = 0.22f,
 
-    /** Subtle optical lens softness diffusion radius. */
-    val softnessRadius: Float = 0.6f,
+    /** Subtle optical lens softness diffusion radius (0.0 = tack sharp). */
+    val softnessRadius: Float = 0.0f,
 
-    /** Frame rate of the output animation in FPS. */
-    val fps: Int = 15,
+    /** Frame rate of the output animation in FPS (10 fps gives snappy authentic 4-lens snap). */
+    val fps: Int = 10,
 
-    /** Number of complete sinusoidal oscillation loops in the exported MP4 video. */
-    val loopCount: Int = 3,
+    /** Number of complete bounce loops in the exported MP4 video. */
+    val loopCount: Int = 4,
 
     /** Whether to inject subtle vintage corner light leaks. */
-    val lightLeakEnabled: Boolean = true,
+    val lightLeakEnabled: Boolean = false,
 
     /** Light leak opacity / strength. */
-    val lightLeakIntensity: Float = 0.18f
+    val lightLeakIntensity: Float = 0.12f
 )
 

@@ -3,7 +3,6 @@ package com.craftcam.app.threed
 import com.craftcam.app.camera.CaptureMode
 import org.junit.Assert.*
 import org.junit.Test
-import kotlin.math.sin
 
 class ThreeDModeTest {
 
@@ -17,12 +16,12 @@ class ThreeDModeTest {
     @Test
     fun testThreeDConfigDefaults() {
         val config = ThreeDConfig()
-        assertEquals(12, config.frameCount)
-        assertEquals(15, config.fps)
-        assertEquals(3, config.loopCount)
-        assertEquals(0.022f, config.maxParallaxDisplacement, 0.001f)
-        assertEquals(0.40f, config.pivotDisparity, 0.001f)
-        assertTrue(config.lightLeakEnabled)
+        assertEquals(4, config.frameCount)
+        assertEquals(10, config.fps)
+        assertEquals(4, config.loopCount)
+        assertEquals(0.018f, config.maxParallaxDisplacement, 0.001f)
+        assertEquals(0.45f, config.pivotDisparity, 0.001f)
+        assertFalse(config.lightLeakEnabled)
         assertTrue(config.grainIntensity > 0f)
         assertTrue(config.rgbSeparationPx > 0f)
     }
@@ -33,65 +32,66 @@ class ThreeDModeTest {
         // [0.0, 1.0]
         // [0.0, 1.0]
         val values = floatArrayOf(0.0f, 1.0f, 0.0f, 1.0f)
-        val map = DisparityMap(width = 2, height = 2, values = values)
+        val map = DisparityMap(width = 2, height = 2, values = values, pivot = 0.45f)
 
         assertEquals(0.0f, map.sampleBilinear(0.0f, 0.0f), 0.001f)
         assertEquals(1.0f, map.sampleBilinear(1.0f, 0.0f), 0.001f)
         assertEquals(0.5f, map.sampleBilinear(0.5f, 0.5f), 0.001f)
+        assertEquals(0.45f, map.pivot, 0.001f)
     }
 
     @Test
-    fun testSinusoidalParallaxSymmetryAndSeamlessLooping() {
-        val frameCount = 12
-        val phases = (0 until frameCount).map { i ->
-            val t = (2.0 * Math.PI * i / frameCount).toFloat()
-            sin(t)
-        }
+    fun testQuadLensBounceCadenceAndOffsets() {
+        val lensOffsets = floatArrayOf(-1.0f, -0.333f, 0.333f, 1.0f)
+        val bounceSequence = intArrayOf(0, 1, 2, 3, 2, 1)
 
-        // Frame 0 should be at center (0.0)
-        assertEquals(0.0f, phases[0], 0.001f)
+        assertEquals(4, lensOffsets.size)
+        assertEquals(6, bounceSequence.size)
 
-        // Quarter cycle (frame 3) should be maximum positive displacement (+1.0)
-        assertEquals(1.0f, phases[3], 0.01f)
+        // Monotonic progression across lenses 1 -> 2 -> 3 -> 4
+        assertTrue(lensOffsets[0] < lensOffsets[1])
+        assertTrue(lensOffsets[1] < lensOffsets[2])
+        assertTrue(lensOffsets[2] < lensOffsets[3])
 
-        // Half cycle (frame 6) should be back to center (0.0)
-        assertEquals(0.0f, phases[6], 0.01f)
+        // Bounce sequence alternates forward then backward
+        assertEquals(0, bounceSequence[0]) // Lens 1
+        assertEquals(1, bounceSequence[1]) // Lens 2
+        assertEquals(2, bounceSequence[2]) // Lens 3
+        assertEquals(3, bounceSequence[3]) // Lens 4
+        assertEquals(2, bounceSequence[4]) // Lens 3
+        assertEquals(1, bounceSequence[5]) // Lens 2
 
-        // Three-quarter cycle (frame 9) should be maximum negative displacement (-1.0)
-        assertEquals(-1.0f, phases[9], 0.01f)
-
-        // Next frame after 11 wraps smoothly back to frame 0
-        val nextAfterLast = sin((2.0 * Math.PI * frameCount / frameCount).toFloat())
-        assertEquals(phases[0], nextAfterLast, 0.001f)
+        // Loop continuity: from last frame (Lens 2) to first frame (Lens 1) is a 1-lens step
+        val stepToLoop = bounceSequence[0] - bounceSequence[5]
+        assertEquals(-1, stepToLoop)
     }
 
     @Test
-    fun testDepthDisplacementMonotonicity() {
-        // Verify foreground movement > midground movement > background movement
-        val config = ThreeDConfig(pivotDisparity = 0.40f, maxParallaxDisplacement = 0.02f)
-        val maxPx = 1000f * config.maxParallaxDisplacement // 20px
-        val phase = 1.0f // at peak right oscillation
+    fun testDepthDisplacementMonotonicityAndPivotPinning() {
+        val config = ThreeDConfig(pivotDisparity = 0.45f, maxParallaxDisplacement = 0.018f)
+        val maxPx = 1000f * config.maxParallaxDisplacement // 18px
+        val lensOffset = 1.0f // Lens 4 (maximum rightward viewpoint)
 
         val dForeground = 1.0f
-        val dMidground = 0.60f
-        val dPivot = 0.40f
+        val dMidground = 0.70f
+        val dPivot = 0.45f
         val dBackground = 0.0f
 
-        val dispFg = (dForeground - config.pivotDisparity) * maxPx * phase
-        val dispMid = (dMidground - config.pivotDisparity) * maxPx * phase
-        val dispPivot = (dPivot - config.pivotDisparity) * maxPx * phase
-        val dispBg = (dBackground - config.pivotDisparity) * maxPx * phase
+        val dispFg = (dForeground - config.pivotDisparity) * maxPx * lensOffset
+        val dispMid = (dMidground - config.pivotDisparity) * maxPx * lensOffset
+        val dispPivot = (dPivot - config.pivotDisparity) * maxPx * lensOffset
+        val dispBg = (dBackground - config.pivotDisparity) * maxPx * lensOffset
 
-        assertEquals(12.0f, dispFg, 0.001f)
-        assertEquals(4.0f, dispMid, 0.001f)
+        assertEquals(9.9f, dispFg, 0.01f)
+        assertEquals(4.5f, dispMid, 0.01f)
+        // Subject at pivot convergence plane remains rock-solid stationary (zero drift)
         assertEquals(0.0f, dispPivot, 0.001f)
-        assertEquals(-8.0f, dispBg, 0.001f)
+        assertEquals(-8.1f, dispBg, 0.01f)
 
         // Foreground displacement > midground > pivot
         assertTrue(dispFg > dispMid)
         assertTrue(dispMid > dispPivot)
-        // Background moves subtly counter to foreground
+        // Background moves counter to foreground
         assertTrue(dispBg < 0f)
     }
 }
-
