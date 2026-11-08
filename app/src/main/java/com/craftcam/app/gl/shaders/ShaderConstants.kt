@@ -242,14 +242,14 @@ void main() {
     float rPhys = length(pPhys);
 
     vec2 p = pRaw;
-    float r2 = dot(p, p);
-    float r = sqrt(r2);
+    float r2 = rPhys * rPhys;
+    float r = rPhys;
 
     // 1. Lens Optical Distortion (Fisheye F / Fisheye W / Wide / Barrel)
     vec2 uv = vQuadCoord;
     float fisheyeMask = 1.0;
 
-    if (uDebugStageOptics) {
+    if (uDebugStageOptics && !uNaturalModeEnabled) {
         if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
             float rBubble = 0.465; // Radius of circular bubble (93% of frame width)
             if (rPhys > rBubble) {
@@ -276,21 +276,25 @@ void main() {
             vec2 pDistPhys = dir * rDistPhys;
             vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
             uv = 0.5 + pDist;
-        } else if (uLensType == 1) { // WIDE: Moderate barrel field expansion
-            uv = 0.5 + p * (1.0 + uLensDistortion * r2 * 0.45);
+        } else if (uLensType == 1) { // WIDE: Moderate barrel field expansion (isotropic)
+            vec2 pDistPhys = pPhys * (1.0 + uLensDistortion * (rPhys * rPhys) * 0.35);
+            vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+            uv = 0.5 + pDist;
         } else if (abs(uBarrelDistortion) > 0.001) {
-            uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
+            vec2 pDistPhys = pPhys * (1.0 + uBarrelDistortion * (rPhys * rPhys) * 0.35);
+            vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+            uv = 0.5 + pDist;
         }
     }
     uv = clamp(uv, vec2(0.001), vec2(0.999));
 
     // 2. Transverse Chromatic Aberration & Spectral Dispersion
     vec4 srcColor;
-    float effCA = uDebugStageOptics ? uChromaticAberration : 0.0;
-    if (uDebugStageOptics) {
-        if (uLensType == 2) effCA = max(effCA, 0.022);
-        else if (uLensType == 3) effCA = max(effCA, 0.012);
-        else if (uLensType == 4) effCA = max(effCA, 0.014);
+    float effCA = (uDebugStageOptics && !uNaturalModeEnabled) ? uChromaticAberration : 0.0;
+    if (uDebugStageOptics && !uNaturalModeEnabled) {
+        if (uLensType == 2) effCA = max(effCA, 0.016);
+        else if (uLensType == 3) effCA = max(effCA, 0.008);
+        else if (uLensType == 4) effCA = max(effCA, 0.010);
     }
 
     if (effCA > 0.0001 && fisheyeMask > 0.001) {
@@ -424,16 +428,25 @@ void main() {
 
     // 2e. CAMELEO Natural Mode Processing
     if (uNaturalModeEnabled) {
-        vec3 rMat = vec3(1.02, -0.01, -0.01);
-        vec3 gMat = vec3(-0.01, 1.01, 0.00);
-        vec3 bMat = vec3(-0.01, 0.02, 0.99);
+        vec3 rMat = vec3(1.024, -0.016, -0.008);
+        vec3 gMat = vec3(-0.012, 1.016, -0.004);
+        vec3 bMat = vec3(-0.006, 0.012, 0.994);
         color = vec3(dot(color, rMat), dot(color, gMat), dot(color, bMat));
 
-        float knee = 0.65;
-        if (color.r > knee) color.r = knee + (1.0 - knee) * ((color.r - knee) / (color.r - knee + 0.35));
-        if (color.g > knee) color.g = knee + (1.0 - knee) * ((color.g - knee) / (color.g - knee + 0.35));
-        if (color.b > knee) color.b = knee + (1.0 - knee) * ((color.b - knee) / (color.b - knee + 0.35));
+        // Continuous max-channel asymptotic highlight shoulder (preserves skin & cloud chromaticity ratios)
+        float knee = 0.68;
+        float maxCh = max(max(color.r, color.g), color.b);
+        if (maxCh > knee) {
+            float d = maxCh - knee;
+            float s = 1.0 - knee;
+            float rolledMax = knee + s * (d / (d + s * 0.75));
+            color = color * (rolledMax / maxCh);
+            float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float desat = clamp((coreLuma - knee) / (1.0 - knee), 0.0, 1.0);
+            color = mix(color, vec3(coreLuma), desat * 0.40);
+        }
 
+        // Adaptive rational shadow toe lift (true black preserved at Y=0)
         float yLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         float lift = uNaturalShadowLift * (1.0 - clamp(yLuma, 0.0, 1.0)) * (1.0 - clamp(yLuma, 0.0, 1.0)) * clamp(yLuma, 0.0, 1.0) * 1.6;
         color += vec3(lift);
@@ -474,7 +487,7 @@ void main() {
         color += uShadowTint * shadowWeight;
 
         // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
-        if (uHighlightRollOff < 0.99) {
+        if (uHighlightRollOff < 0.99 && !uNaturalModeEnabled) {
             float knee = uHighlightRollOff;
             float maxCh = max(max(color.r, color.g), color.b);
             if (maxCh > knee) {
@@ -881,14 +894,14 @@ void main() {
     float rPhys = length(pPhys);
 
     vec2 p = pRaw;
-    float r2 = dot(p, p);
-    float r = sqrt(r2);
+    float r2 = rPhys * rPhys;
+    float r = rPhys;
 
     // 1. Lens Optical Distortion (Fisheye F / Fisheye W / Wide / Barrel)
     vec2 uv = vTextureCoord;
     float fisheyeMask = 1.0;
 
-    if (uDebugStageOptics) {
+    if (uDebugStageOptics && !uNaturalModeEnabled) {
         if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
             float rBubble = 0.465; // Radius of circular bubble (93% of frame width)
             if (rPhys > rBubble) {
@@ -916,20 +929,24 @@ void main() {
             vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
             uv = 0.5 + pDist;
         } else if (uLensType == 1) { // WIDE
-            uv = 0.5 + p * (1.0 + uLensDistortion * r2 * 0.45);
+            vec2 pDistPhys = pPhys * (1.0 + uLensDistortion * (rPhys * rPhys) * 0.35);
+            vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+            uv = 0.5 + pDist;
         } else if (abs(uBarrelDistortion) > 0.001) {
-            uv = 0.5 + p * (1.0 + uBarrelDistortion * r2 * 0.4);
+            vec2 pDistPhys = pPhys * (1.0 + uBarrelDistortion * (rPhys * rPhys) * 0.35);
+            vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
+            uv = 0.5 + pDist;
         }
     }
     uv = clamp(uv, vec2(0.001), vec2(0.999));
 
     // 2. Transverse Chromatic Aberration & Spectral Dispersion
     vec4 srcColor;
-    float effCA = uDebugStageOptics ? uChromaticAberration : 0.0;
-    if (uDebugStageOptics) {
-        if (uLensType == 2) effCA = max(effCA, 0.022);
-        else if (uLensType == 3) effCA = max(effCA, 0.012);
-        else if (uLensType == 4) effCA = max(effCA, 0.014);
+    float effCA = (uDebugStageOptics && !uNaturalModeEnabled) ? uChromaticAberration : 0.0;
+    if (uDebugStageOptics && !uNaturalModeEnabled) {
+        if (uLensType == 2) effCA = max(effCA, 0.016);
+        else if (uLensType == 3) effCA = max(effCA, 0.008);
+        else if (uLensType == 4) effCA = max(effCA, 0.010);
     }
 
     if (effCA > 0.0001 && fisheyeMask > 0.001) {
@@ -1054,16 +1071,25 @@ void main() {
 
     // 2e. CAMELEO Natural Mode Processing
     if (uNaturalModeEnabled) {
-        vec3 rMat = vec3(1.02, -0.01, -0.01);
-        vec3 gMat = vec3(-0.01, 1.01, 0.00);
-        vec3 bMat = vec3(-0.01, 0.02, 0.99);
+        vec3 rMat = vec3(1.024, -0.016, -0.008);
+        vec3 gMat = vec3(-0.012, 1.016, -0.004);
+        vec3 bMat = vec3(-0.006, 0.012, 0.994);
         color = vec3(dot(color, rMat), dot(color, gMat), dot(color, bMat));
 
-        float knee = 0.65;
-        if (color.r > knee) color.r = knee + (1.0 - knee) * ((color.r - knee) / (color.r - knee + 0.35));
-        if (color.g > knee) color.g = knee + (1.0 - knee) * ((color.g - knee) / (color.g - knee + 0.35));
-        if (color.b > knee) color.b = knee + (1.0 - knee) * ((color.b - knee) / (color.b - knee + 0.35));
+        // Continuous max-channel asymptotic highlight shoulder (preserves skin & cloud chromaticity ratios)
+        float knee = 0.68;
+        float maxCh = max(max(color.r, color.g), color.b);
+        if (maxCh > knee) {
+            float d = maxCh - knee;
+            float s = 1.0 - knee;
+            float rolledMax = knee + s * (d / (d + s * 0.75));
+            color = color * (rolledMax / maxCh);
+            float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float desat = clamp((coreLuma - knee) / (1.0 - knee), 0.0, 1.0);
+            color = mix(color, vec3(coreLuma), desat * 0.40);
+        }
 
+        // Adaptive rational shadow toe lift (true black preserved at Y=0)
         float yLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         float lift = uNaturalShadowLift * (1.0 - clamp(yLuma, 0.0, 1.0)) * (1.0 - clamp(yLuma, 0.0, 1.0)) * clamp(yLuma, 0.0, 1.0) * 1.6;
         color += vec3(lift);
@@ -1100,7 +1126,7 @@ void main() {
         color += uShadowTint * shadowWeight;
 
         // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
-        if (uHighlightRollOff < 0.99) {
+        if (uHighlightRollOff < 0.99 && !uNaturalModeEnabled) {
             float knee = uHighlightRollOff;
             float maxCh = max(max(color.r, color.g), color.b);
             if (maxCh > knee) {
@@ -1289,16 +1315,16 @@ void main() {
     fun getLutAssetForPreset(presetId: String): String = when (presetId) {
         "zero"                 -> "lut_zero.png"
         "analog_fxn_r"         -> "lut_fxn_r.png"
-        "ccd_r"                -> "lut_ccd_r.png"
-        "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
+        "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "lut_ccd_r.png"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "lut_analog_35mm_classic.png"
         "analog_warm_film"     -> "lut_analog_warm_film.png"
         "analog_soft_film"     -> "lut_analog_soft_film.png"
         "analog_vintage_color" -> "lut_analog_vintage_color.png"
         "analog_cinema_film"   -> "lut_analog_cinema_film.png"
         "analog_135ne", "135ne"-> "lut_135ne.png"
-        "ccd_flash"            -> "lut_ccd_flash.png"
-        "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
-        "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_ccd_flash.png"
+        "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
+        "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
         "disp_classic"         -> "lut_disp_classic.png"
         "disp_flash"           -> "lut_disp_flash.png"
         "disp_warm"            -> "lut_disp_warm.png"
@@ -1314,16 +1340,16 @@ void main() {
         isCamcorder                            -> "grains/grain8mm_01.jpg"
         presetId == "zero"                     -> "grains/grain_dclassic.jpg"
         presetId == "analog_fxn_r"             -> "grains/grain_ou.jpg"
-        presetId == "ccd_r"                    -> "grains/grain_ccdr.jpg"
-        presetId == "analog_35mm_classic"      -> "grains/grain_dclassic.jpg"
+        presetId == "ccd_r" || presetId == "ccdr" || presetId == "ccd r" || presetId == "ccd-r" || presetId == "ccd_classic" -> "grains/grain_ccdr.jpg"
+        presetId == "analog_35mm_classic" || presetId == "d_classic" || presetId == "dclassic" || presetId == "d classic" || presetId == "classic_35mm" -> "grains/grain_dclassic.jpg"
         presetId == "analog_warm_film"         -> "grains/grain_ou.jpg"
         presetId == "analog_soft_film"         -> "grains/grain_s67.jpg"
         presetId == "analog_vintage_color"     -> "grains/grain_dexp.jpg"
         presetId == "analog_cinema_film"       -> "grains/grain_d3d1.jpg"
         presetId == "analog_135ne" || presetId == "135ne" -> "grains/grain_135sr.jpg"
-        presetId == "ccd_flash"                -> "grains/grain_dfuns.jpg"
-        presetId == "ccd_y2k_digital"          -> "grains/grain_classicu.jpg"
-        presetId == "ccd_retro_compact"        -> "grains/grain_ccdr.jpg"
+        presetId == "ccd_flash" || presetId == "ccd flash" || presetId == "d_funs" || presetId == "dfuns" -> "grains/grain_dfuns.jpg"
+        presetId == "ccd_y2k_digital" || presetId == "classic_u" || presetId == "classicu" -> "grains/grain_classicu.jpg"
+        presetId == "ccd_retro_compact" || presetId == "dqs" -> "grains/grain_dqs.jpg"
         presetId == "disp_classic"             -> "grains/grain_dexp2.jpg"
         presetId == "disp_flash"               -> "grains/grain_cpm35.jpg"
         presetId == "disp_warm"                -> "grains540_01.jpg"

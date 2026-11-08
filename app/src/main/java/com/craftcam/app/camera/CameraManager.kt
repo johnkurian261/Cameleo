@@ -84,6 +84,38 @@ class CameraManager(private val context: Context) {
     private var glSurfaceTexture: SurfaceTexture? = null
     private var previewSurface: Surface? = null
 
+    private val isCapturingInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var captureWatchdogJob: Job? = null
+    private var pendingRebindAfterCapture = false
+    private val naturalExposureController = com.craftcam.app.camera.exposure.NaturalExposureController()
+
+    private fun startCaptureWatchdog(timeoutMs: Long = 8000L) {
+        captureWatchdogJob?.cancel()
+        captureWatchdogJob = processingScope.launch {
+            delay(timeoutMs)
+            if (isCapturingInProgress.get() || _uiState.value.isCapturing || _uiState.value.isComputationalProcessing) {
+                Log.w(TAG, "Capture watchdog triggered: capture operation timed out after ${timeoutMs}ms, unlocking capture state")
+                isCapturingInProgress.set(false)
+                _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false) }
+                checkPendingRebind()
+            }
+        }
+    }
+
+    private fun cancelCaptureWatchdog() {
+        captureWatchdogJob?.cancel()
+        captureWatchdogJob = null
+    }
+
+    private fun checkPendingRebind() {
+        if (pendingRebindAfterCapture) {
+            pendingRebindAfterCapture = false
+            ContextCompat.getMainExecutor(context).execute {
+                bindCameraUseCases()
+            }
+        }
+    }
+
     var onCameraOrientationChanged: ((rotationDegrees: Int, isFront: Boolean, width: Int, height: Int) -> Unit)? = null
 
     private var lastSelectedRearLens: CameraLens? = null
@@ -428,6 +460,28 @@ class CameraManager(private val context: Context) {
             currentPreset = preset
             glRenderer?.updatePreset(preset)
 
+            val isZero = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
+            val newEngineMode = if (isZero) {
+                naturalExposureController.reset()
+                CameraEngineMode.NATURAL
+            } else if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
+                CameraEngineMode.FILM
+            } else {
+                _uiState.value.engineMode
+            }
+
+            val isThreeD = preset.id == "analog_cinema_film" || 
+                           preset.id == "d3d" || 
+                           preset.id == "d_3d" || 
+                           preset.name.contains("3D", ignoreCase = true)
+            val newCaptureMode = if (isThreeD) {
+                CaptureMode.MODE_3D
+            } else if (_uiState.value.captureMode == CaptureMode.MODE_3D) {
+                CaptureMode.PHOTO
+            } else {
+                _uiState.value.captureMode
+            }
+
             val profile = CameraProfileCatalog.getProfileForPreset(preset)
             val initialLens = LensProfile.forType(profile.defaultLens)
             val initialFocal = profile.getDefaultFocalOption()
@@ -436,6 +490,8 @@ class CameraManager(private val context: Context) {
 
             _uiState.update { state ->
                 state.copy(
+                    engineMode = newEngineMode,
+                    captureMode = newCaptureMode,
                     shootingState = state.shootingState.copy(
                         cameraProfile = profile,
                         selectedLens = initialLens,
@@ -450,6 +506,7 @@ class CameraManager(private val context: Context) {
                     )
                 )
             }
+            glRenderer?.setNaturalMode(newEngineMode == CameraEngineMode.NATURAL, _uiState.value.naturalProfile)
             glRenderer?.updateLensProfile(initialLens, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
 
             // If in video mode, re-bind overlay effect for the active preset's video recording profile
@@ -590,8 +647,9 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        if (_uiState.value.isCapturing) {
-            Log.d(TAG, "Hardware photo capture in progress, skipping use-case unbind")
+        if (_uiState.value.isCapturing || isCapturingInProgress.get()) {
+            Log.d(TAG, "Hardware photo capture in progress, queueing use-case rebind after capture")
+            pendingRebindAfterCapture = true
             return
         }
 
@@ -648,6 +706,24 @@ class CameraManager(private val context: Context) {
                     val shouldRunSceneAnalysis = (now - lastSceneAnalysisTime >= 200) && (_uiState.value.engineMode == CameraEngineMode.NATURAL)
                     val analysisResult = if (shouldRunSceneAnalysis) {
                         lastSceneAnalysisTime = now
+
+                        // Adaptive Natural Exposure Controller (scene-informed highlight/shadow preservation)
+                        val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
+                        val exposureDecision = naturalExposureController.evaluate(
+                            histogram = _uiState.value.histogramBins,
+                            sensorIso = iso ?: _uiState.value.liveIso,
+                            exposureTimeNs = expNs ?: _uiState.value.liveExposureNs,
+                            faces = liveFaces,
+                            step = step,
+                            minIndex = _uiState.value.minExposureIndex,
+                            maxIndex = _uiState.value.maxExposureIndex
+                        )
+                        if (exposureDecision.targetIndex != _uiState.value.exposureIndex) {
+                            ContextCompat.getMainExecutor(context).execute {
+                                camera?.cameraControl?.setExposureCompensationIndex(exposureDecision.targetIndex)
+                            }
+                        }
+
                         sceneAnalysisEngine.analyze(
                             downsampledPixels = IntArray(0),
                             downsampledLuminance = FloatArray(0),
@@ -686,9 +762,12 @@ class CameraManager(private val context: Context) {
                         prev.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { request ->
                             val res = request.resolution
                             surfaceTex.setDefaultBufferSize(res.width, res.height)
-                            previewSurface?.release()
-                            val currentSurface = Surface(surfaceTex)
-                            previewSurface = currentSurface
+                            val currentSurface = previewSurface?.takeIf { it.isValid } ?: run {
+                                previewSurface?.release()
+                                val surf = Surface(surfaceTex)
+                                previewSurface = surf
+                                surf
+                            }
                             request.provideSurface(currentSurface, ContextCompat.getMainExecutor(context)) { result ->
                                 Log.d(TAG, "CameraX SurfaceRequest result: ${result.resultCode}")
                                 if (result.resultCode != androidx.camera.core.SurfaceRequest.Result.RESULT_SURFACE_USED_SUCCESSFULLY) {
@@ -707,8 +786,8 @@ class CameraManager(private val context: Context) {
                     }
                 }
 
-            val effectiveMode = if (IS_VIDEO_FEATURE_PAUSED) CaptureMode.PHOTO else _uiState.value.captureMode
-            if (effectiveMode == CaptureMode.PHOTO) {
+            val effectiveMode = if (IS_VIDEO_FEATURE_PAUSED && _uiState.value.captureMode == CaptureMode.VIDEO) CaptureMode.PHOTO else _uiState.value.captureMode
+            if (effectiveMode == CaptureMode.PHOTO || effectiveMode == CaptureMode.MODE_3D) {
                 // 2A. Full native sensor resolution with hardware ISP multi-frame HDR & noise reduction
                 val photoResolutionSelector = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
@@ -1161,7 +1240,7 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        if (_uiState.value.isCapturing) {
+        if (!isCapturingInProgress.compareAndSet(false, true)) {
             Log.d(TAG, "Capture already in progress, ignoring duplicate tap")
             return
         }
@@ -1169,21 +1248,26 @@ class CameraManager(private val context: Context) {
         // Freeze immutable composition frame snapshot at shutter trigger instant
         val frameSnapshot = createCaptureFrameSnapshot(aspectRatio)
 
-        // Branch into multi-frame computational photography pipeline when in NATURAL mode
+        // Branch into multi-frame computational photography pipeline when in NATURAL mode and forceMultiFrameHdr is explicitly active
         if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
-            captureNaturalBurst(preset, aspectRatio, mirrorFrontCamera, frameSnapshot, onPhotoSaved, onError)
-            return
+            val compConfig = _uiState.value.computationalConfig
+            if (compConfig.burstFrameCount > 1 && compConfig.forceMultiFrameHdr) {
+                captureNaturalBurst(preset, aspectRatio, mirrorFrontCamera, frameSnapshot, onPhotoSaved, onError)
+                return
+            }
         }
 
-        // Keep isCapturing active across both hardware capture and background photo development
         _uiState.update { it.copy(isCapturing = true) }
+        startCaptureWatchdog()
 
         capture.takePicture(
             cameraExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
-                    // Instantly release the shutter button so the user can immediately take another photo
+                    cancelCaptureWatchdog()
+                    isCapturingInProgress.set(false)
                     _uiState.update { it.copy(isCapturing = false) }
+                    checkPendingRebind()
 
                     // Application-level coroutine scope: never aborted if user navigates to gallery
                     processingScope.launch {
@@ -1197,10 +1281,13 @@ class CameraManager(private val context: Context) {
                                 mirrorFrontCamera = mirrorFrontCamera,
                                 engineMode = _uiState.value.engineMode,
                                 naturalProfile = _uiState.value.naturalProfile,
+                                naturalColorProfile = _uiState.value.naturalColorProfile,
                                 compareWithOriginal = _uiState.value.debugCompareOriginal,
                                 captureFrameSnapshot = frameSnapshot,
                                 lensProfile = _uiState.value.shootingState.selectedLens,
-                                isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF
+                                isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                sensorIso = _uiState.value.liveIso,
+                                exposureTimeNs = _uiState.value.liveExposureNs
                             )
                             if (uri != null) {
                                 withContext(Dispatchers.Main) {
@@ -1221,8 +1308,95 @@ class CameraManager(private val context: Context) {
                 }
 
                 override fun onError(exception: ImageCaptureException) {
+                    cancelCaptureWatchdog()
+                    isCapturingInProgress.set(false)
                     _uiState.update { it.copy(isCapturing = false) }
+                    checkPendingRebind()
                     Log.e(TAG, "Hardware photo capture failed: ${exception.message}", exception)
+                    ContextCompat.getMainExecutor(context).execute {
+                        onError(exception.message ?: "Camera capture failed")
+                    }
+                }
+            }
+        )
+    }
+
+    fun captureAndProcessThreeDPhoto(
+        preset: CameraPreset,
+        aspectRatio: AspectRatioMode,
+        mirrorFrontCamera: Boolean,
+        onVideoSaved: (Uri) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val capture = imageCapture ?: run {
+            onError("Camera capture not ready")
+            return
+        }
+
+        if (!isCapturingInProgress.compareAndSet(false, true)) {
+            Log.d(TAG, "Capture already in progress, ignoring duplicate tap")
+            return
+        }
+
+        val frameSnapshot = createCaptureFrameSnapshot(aspectRatio)
+
+        _uiState.update { it.copy(isCapturing = true, threeDProgressMessage = "Capturing 3D...") }
+        startCaptureWatchdog(timeoutMs = 15000L)
+
+        capture.takePicture(
+            cameraExecutor,
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    cancelCaptureWatchdog()
+                    isCapturingInProgress.set(false)
+                    _uiState.update { it.copy(threeDProgressMessage = "Developing 3D Wigglegram...") }
+                    checkPendingRebind()
+
+                    processingScope.launch {
+                        try {
+                            val uri = ImageProcessor.processAndSaveThreeDImage(
+                                context = context,
+                                imageProxy = image,
+                                preset = preset,
+                                tuning = _uiState.value.tuning,
+                                aspectRatio = aspectRatio,
+                                mirrorFrontCamera = mirrorFrontCamera,
+                                captureFrameSnapshot = frameSnapshot,
+                                lensProfile = _uiState.value.shootingState.selectedLens,
+                                isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                faces = _uiState.value.detectedFaces,
+                                onProgress = { progressText ->
+                                    _uiState.update { it.copy(threeDProgressMessage = progressText) }
+                                }
+                            )
+
+                            _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
+
+                            if (uri != null) {
+                                withContext(Dispatchers.Main) {
+                                    onVideoSaved(uri)
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    onError("Failed to develop 3D photograph")
+                                }
+                            }
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "Error developing 3D photo", t)
+                            _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
+                            withContext(Dispatchers.Main) {
+                                onError(t.message ?: "3D image processing failed")
+                            }
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    cancelCaptureWatchdog()
+                    isCapturingInProgress.set(false)
+                    _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
+                    checkPendingRebind()
+                    Log.e(TAG, "Hardware photo capture failed for 3D: ${exception.message}", exception)
                     ContextCompat.getMainExecutor(context).execute {
                         onError(exception.message ?: "Camera capture failed")
                     }
@@ -1240,6 +1414,7 @@ class CameraManager(private val context: Context) {
         onError: (String) -> Unit = {}
     ) {
         val capture = imageCapture ?: run {
+            isCapturingInProgress.set(false)
             onError("Camera capture not ready")
             return
         }
@@ -1250,12 +1425,16 @@ class CameraManager(private val context: Context) {
         val tapTime = SystemClock.elapsedRealtime()
 
         _uiState.update { it.copy(isCapturing = true, isComputationalProcessing = true) }
+        startCaptureWatchdog(timeoutMs = 12000L)
 
         val capturedFrames = ArrayList<CapturedFrame>()
         val cam = camera
 
         fun processCapturedSequence() {
+            cancelCaptureWatchdog()
+            isCapturingInProgress.set(false)
             _uiState.update { it.copy(isCapturing = false) }
+            checkPendingRebind()
             val captureLatencyMs = SystemClock.elapsedRealtime() - tapTime
 
             if (capturedFrames.isEmpty()) {
@@ -1512,6 +1691,8 @@ class CameraManager(private val context: Context) {
     }
 
     fun shutdown() {
+        cancelCaptureWatchdog()
+        isCapturingInProgress.set(false)
         previewSurface?.release()
         previewSurface = null
         stopRecording()

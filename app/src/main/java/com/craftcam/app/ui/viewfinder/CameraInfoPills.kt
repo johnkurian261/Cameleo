@@ -2,10 +2,13 @@ package com.craftcam.app.ui.viewfinder
 
 import android.view.HapticFeedbackConstants
 import androidx.camera.core.ImageCapture
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeviceThermostat
@@ -25,7 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +44,7 @@ import java.util.Locale
 /**
  * Tactile quick-controls icon bar placed directly above the camera capture button.
  * Provides immediate single-tap access to Flash, Brightness (Exposure), Temperature (Tuning),
- * Timer, and Grid.
+ * Timer, Grid, and Optical Lens Accessory.
  */
 @Composable
 fun CameraInfoPills(
@@ -58,7 +63,8 @@ fun CameraInfoPills(
     onOpenTuning: () -> Unit = {},
     onTimerCycle: () -> Unit = {},
     onToggleGrid: () -> Unit = {},
-    onFocalLengthCycle: () -> Unit = {}
+    onFocalLengthCycle: () -> Unit = {},
+    onOpenLensSheet: () -> Unit = {}
 ) {
     val evValue = exposureIndex * exposureStep
     val hasEvOffset = exposureIndex != 0
@@ -74,10 +80,12 @@ fun CameraInfoPills(
     }
     val isFlashActive = flashMode != ImageCapture.FLASH_MODE_OFF
 
+    val view = LocalView.current
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp),
+            .padding(horizontal = 20.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -121,6 +129,30 @@ fun CameraInfoPills(
             isActive = showGrid,
             onClick = onToggleGrid
         )
+
+        // 6. Optical Lens Accessory Button (if camera supports multiple lenses)
+        if (shootingState.cameraProfile.supportedLenses.size > 1) {
+            val selectedLens = shootingState.selectedLens
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onOpenLensSheet()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = selectedLens.type.iconRes),
+                    contentDescription = selectedLens.name,
+                    modifier = Modifier.size(28.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
     }
 }
 

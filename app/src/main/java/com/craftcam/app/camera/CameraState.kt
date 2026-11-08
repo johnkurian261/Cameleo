@@ -15,6 +15,7 @@ enum class AspectRatioMode(val displayName: String, val ratio: Float) {
 
 enum class CaptureMode(val displayName: String) {
     PHOTO("PHOTO"),
+    MODE_3D("3D"),
     VIDEO("VIDEO")
 }
 
@@ -81,8 +82,9 @@ data class CameraUIState(
     val timerCountdown: Int? = null,
     val showGrid: Boolean = false,
     val showLevel: Boolean = false,
-    val engineMode: CameraEngineMode = CameraEngineMode.FILM,
+    val engineMode: CameraEngineMode = CameraEngineMode.NATURAL,
     val naturalProfile: NaturalCameraProfile = NaturalCameraProfile.S21_PROFILE,
+    val naturalColorProfile: com.craftcam.app.color.NaturalColorProfile = com.craftcam.app.color.NaturalColorProfile.S21_CALIBRATED,
     val showNaturalDebug: Boolean = false,
     val debugCompareOriginal: Boolean = false, // A/B Comparison: Original Camera Capture vs CAMELEO Natural
     val proConfig: com.craftcam.app.model.ProCameraConfig = com.craftcam.app.model.ProCameraConfig(),
@@ -95,6 +97,7 @@ data class CameraUIState(
     val computationalStats: com.craftcam.app.computational.ComputationalStats? = null,
     val showComputationalDebug: Boolean = false,
     val isComputationalProcessing: Boolean = false,
+    val threeDProgressMessage: String? = null,
     val sceneConfig: com.craftcam.app.config.SceneProcessingConfig = com.craftcam.app.config.SceneProcessingConfig(),
     val sceneAnalysis: com.craftcam.app.scene.SceneAnalysisResult? = null,
     val detectedFaces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),

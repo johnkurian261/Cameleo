@@ -48,10 +48,13 @@ object ImageProcessor {
         mirrorFrontCamera: Boolean,
         engineMode: com.craftcam.app.model.CameraEngineMode = com.craftcam.app.model.CameraEngineMode.FILM,
         naturalProfile: com.craftcam.app.model.NaturalCameraProfile = com.craftcam.app.model.NaturalCameraProfile.S21_PROFILE,
+        naturalColorProfile: com.craftcam.app.color.NaturalColorProfile = com.craftcam.app.color.NaturalColorProfile.S21_CALIBRATED,
         compareWithOriginal: Boolean = false,
         captureFrameSnapshot: CaptureFrameSnapshot? = null,
         lensProfile: LensProfile = LensProfile.NORMAL,
-        isFlashActive: Boolean = false
+        isFlashActive: Boolean = false,
+        sensorIso: Int = 100,
+        exposureTimeNs: Long = 10_000_000L
     ): Uri? = withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
@@ -136,7 +139,10 @@ object ImageProcessor {
                 workingBitmap = NaturalPhotoProcessor.process(
                     source = workingBitmap,
                     profile = naturalProfile,
-                    compareWithOriginal = compareWithOriginal
+                    colorProfile = naturalColorProfile,
+                    compareWithOriginal = compareWithOriginal,
+                    sensorIso = sensorIso,
+                    exposureTimeNs = exposureTimeNs
                 )
                 uri = saveToGallery(context, workingBitmap, "CAMELEO Natural")
             } else if (engineMode == com.craftcam.app.model.CameraEngineMode.PRO) {
@@ -177,6 +183,103 @@ object ImageProcessor {
             null
         } finally {
             // Release workingBitmap back into BitmapPool (or recycle if unpooled border bitmap)
+            BitmapPool.release(workingBitmap)
+        }
+    }
+
+    // ─── 3D Stereoscopic Wigglegram Pipeline ──────────────────────────────────
+    suspend fun processAndSaveThreeDImage(
+        context: Context,
+        imageProxy: ImageProxy,
+        preset: CameraPreset,
+        tuning: UserTuningConfig = UserTuningConfig(),
+        aspectRatio: AspectRatioMode,
+        mirrorFrontCamera: Boolean,
+        captureFrameSnapshot: CaptureFrameSnapshot? = null,
+        lensProfile: LensProfile = LensProfile.NORMAL,
+        isFlashActive: Boolean = false,
+        faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
+        onProgress: ((String) -> Unit)? = null
+    ): Uri? = withContext(Dispatchers.Default) {
+        val rawBitmap: Bitmap
+        val rotation: Int
+        try {
+            rotation = imageProxy.imageInfo.rotationDegrees
+            rawBitmap = imageProxyToBitmap(imageProxy)
+        } finally {
+            imageProxy.close()
+        }
+
+        val rawW = rawBitmap.width
+        val rawH = rawBitmap.height
+
+        val matrix = Matrix()
+        if (rawW > 4096 || rawH > 4096) {
+            val scale = 4096f / maxOf(rawW, rawH)
+            matrix.postScale(scale, scale)
+        }
+        if (rotation != 0) matrix.postRotate(rotation.toFloat())
+        if (mirrorFrontCamera) matrix.postScale(-1f, 1f)
+
+        val srcBounds = RectF(0f, 0f, rawW.toFloat(), rawH.toFloat())
+        val orientedBounds = RectF()
+        matrix.mapRect(orientedBounds, srcBounds)
+
+        val orientedW = orientedBounds.width().roundToInt()
+        val orientedH = orientedBounds.height().roundToInt()
+
+        val cropRect: Rect = if (captureFrameSnapshot != null && lensProfile.type != LensType.FISHEYE_F) {
+            CaptureFrameMapper.mapToImageCropRect(captureFrameSnapshot, orientedW, orientedH)
+        } else {
+            val srcRatio = orientedW.toFloat() / orientedH
+            val targetRatio = if (orientedW > orientedH) aspectRatio.ratio else (1.0f / aspectRatio.ratio)
+            val cW: Int
+            val cH: Int
+            if (srcRatio > targetRatio) {
+                cH = orientedH
+                cW = (orientedH * targetRatio).toInt().coerceIn(1, orientedW)
+            } else {
+                cW = orientedW
+                cH = (orientedW / targetRatio).toInt().coerceIn(1, orientedH)
+            }
+            val sX = (orientedW - cW) / 2
+            val sY = (orientedH - cH) / 2
+            Rect(sX, sY, sX + cW, sY + cH)
+        }
+
+        val cropW = cropRect.width()
+        val cropH = cropRect.height()
+        val startX = cropRect.left
+        val startY = cropRect.top
+
+        matrix.postTranslate(-orientedBounds.left - startX, -orientedBounds.top - startY)
+
+        var workingBitmap: Bitmap = BitmapPool.acquire(cropW, cropH)
+        try {
+            val canvas = Canvas(workingBitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            canvas.drawBitmap(rawBitmap, matrix, paint)
+        } finally {
+            rawBitmap.recycle()
+        }
+
+        try {
+            // Apply vintage film grading to the photograph
+            workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive)
+
+            // Feed to 3D Wigglegram pipeline
+            val threeDProcessor = com.craftcam.app.threed.ThreeDPhotoProcessor()
+            val uri = threeDProcessor.processAndSaveThreeDPhoto(
+                context = context,
+                sourceBitmap = workingBitmap,
+                faces = faces,
+                onProgress = onProgress
+            )
+            uri
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error in 3D wigglegram pipeline", t)
+            null
+        } finally {
             BitmapPool.release(workingBitmap)
         }
     }
@@ -908,9 +1011,10 @@ object ImageProcessor {
                 )
             }
 
-            // 4b. Real Scanned Dust & Scratches
+            // 4b. Real Scanned Dust & Scratches (bypassed for Fisheye)
+            val isFisheye = preset.id == "analog_fisheye_f" || lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W
             val dustConfig = preset.dust
-            val dustActive = tuning.dustEnabled && (dustConfig?.enabled ?: true)
+            val dustActive = !isFisheye && tuning.dustEnabled && (dustConfig?.enabled ?: true)
             if (dustActive) {
                 BorderRenderer.renderDustOnCanvas(
                     canvas = canvas,
@@ -1563,15 +1667,15 @@ object ImageProcessor {
     // ─── Preset to Asset Routing Tables ──────────────────────────────────────
     private fun selectLutForPreset(presetId: String): String = when (presetId) {
         "analog_fxn_r"         -> "lut_fxn_r.png"
-        "ccd_r"                -> "lut_ccd_r.png"
-        "analog_35mm_classic"  -> "lut_analog_35mm_classic.png"
+        "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "lut_ccd_r.png"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "lut_analog_35mm_classic.png"
         "analog_warm_film"     -> "lut_analog_warm_film.png"
         "analog_soft_film"     -> "lut_analog_soft_film.png"
         "analog_vintage_color" -> "lut_analog_vintage_color.png"
         "analog_cinema_film"   -> "lut_analog_cinema_film.png"
-        "ccd_flash"            -> "lut_ccd_flash.png"
-        "ccd_y2k_digital"      -> "lut_ccd_y2k_digital.png"
-        "ccd_retro_compact"    -> "lut_ccd_retro_compact.png"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_ccd_flash.png"
+        "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
+        "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
         "disp_classic"         -> "lut_disp_classic.png"
         "disp_flash"           -> "lut_disp_flash.png"
         "disp_warm"            -> "lut_disp_warm.png"
@@ -1586,15 +1690,15 @@ object ImageProcessor {
     private fun selectGrainForPreset(presetId: String, isCamcorder: Boolean): String = when {
         isCamcorder                            -> "grains/grain8mm_01.jpg"
         presetId == "analog_fxn_r"             -> "grains/grain_ou.jpg"
-        presetId == "ccd_r"                    -> "grains/grain_ccdr.jpg"
-        presetId == "analog_35mm_classic"      -> "grains/grain_dclassic.jpg"
+        presetId == "ccd_r" || presetId == "ccdr" || presetId == "ccd r" || presetId == "ccd-r" || presetId == "ccd_classic" -> "grains/grain_ccdr.jpg"
+        presetId == "analog_35mm_classic" || presetId == "d_classic" || presetId == "dclassic" || presetId == "d classic" || presetId == "classic_35mm" -> "grains/grain_dclassic.jpg"
         presetId == "analog_warm_film"         -> "grains/grain_ou.jpg"
         presetId == "analog_soft_film"         -> "grains/grain_s67.jpg"
         presetId == "analog_vintage_color"     -> "grains/grain_dexp.jpg"
         presetId == "analog_cinema_film"       -> "grains/grain_d3d1.jpg"
         presetId == "ccd_flash"                -> "grains/grain_dfuns.jpg"
-        presetId == "ccd_y2k_digital"          -> "grains/grain_classicu.jpg"
-        presetId == "ccd_retro_compact"        -> "grains/grain_ccdr.jpg"
+        presetId == "ccd_y2k_digital" || presetId == "classic_u" || presetId == "classicu" -> "grains/grain_classicu.jpg"
+        presetId == "ccd_retro_compact" || presetId == "dqs" -> "grains/grain_dqs.jpg"
         presetId == "disp_classic"             -> "grains/grain_dexp2.jpg"
         presetId == "disp_flash"               -> "grains/grain_cpm35.jpg"
         presetId == "disp_warm"                -> "grains/grain540_01.jpg"
@@ -1605,28 +1709,28 @@ object ImageProcessor {
 
     private fun selectVignetteForPreset(presetId: String): String? = when (presetId) {
         "analog_fxn_r"                            -> "vignette_nt16.jpg"
-        "analog_35mm_classic", "analog_warm_film" -> "vignette_dclassic.jpg"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm", "analog_warm_film" -> "vignette_dclassic.jpg"
         "analog_soft_film"                        -> "vignette_ct2f.jpg"
         "analog_vintage_color"                    -> "vignette_dexp.jpg"
         "analog_cinema_film"                      -> "vignette_dclassic.jpg"
         "disp_flash"                              -> "vignette_cpm35.jpg"
         "disp_warm"                               -> "135sr_vig.jpg"
         "inst_vintage"                            -> "135sr_vig.jpg"
-        "ccd_flash", "ccd_y2k_digital"            -> "sclassic_vintage.jpg"
+        "ccd_flash", "ccd_y2k_digital", "classic_u", "classicu", "ccd_r", "ccdr", "ccd r" -> "sclassic_vintage.jpg"
         else                                      -> null
     }
 
     private fun selectDustForPreset(presetId: String): String = when (presetId) {
         "analog_fxn_r"         -> "dust_135.png"
-        "ccd_r"                -> "dust_black.png"
-        "analog_35mm_classic"  -> "dust_135.png"
+        "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "dust_black.png"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "dust_135.png"
         "analog_warm_film"     -> "135_dust.png"
         "analog_soft_film"     -> "dust_black.png"
         "analog_vintage_color" -> "dust_135.png"
         "analog_cinema_film"   -> "dust_135.png"
         "ccd_flash"            -> "dust_black.png"
-        "ccd_y2k_digital"      -> "dust_black.png"
-        "ccd_retro_compact"    -> "dust_black.png"
+        "ccd_y2k_digital", "classic_u", "classicu" -> "dust_black.png"
+        "ccd_retro_compact", "dqs" -> "dust_black.png"
         "disp_classic"         -> "dust_135.png"
         "disp_flash"           -> "dust_135.png"
         "disp_warm"            -> "dust_135.png"
@@ -1639,8 +1743,8 @@ object ImageProcessor {
     }
 
     private fun selectFlashForPreset(presetId: String): String? = when (presetId) {
-        "disp_flash"              -> "flash_01.jpg"
-        "ccd_flash"               -> "flashc_01.jpg"
+        "disp_flash", "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "flash_01.jpg"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "overlay_flashc.jpg"
         else                      -> null
     }
 

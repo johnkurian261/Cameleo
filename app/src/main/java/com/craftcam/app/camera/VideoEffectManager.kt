@@ -85,7 +85,7 @@ object VideoEffectManager {
                 preset.id == "analog_soft_film"     -> Color.rgb(238, 252, 246) // Pastel Fuji mint-cyan
                 preset.id == "analog_cinema_film"   -> Color.rgb(222, 242, 252) // 35mm Hollywood cine
                 preset.id == "analog_vintage_color" -> Color.rgb(255, 232, 205) // 70s Kodachrome
-                preset.id == "ccd_y2k_digital"      -> Color.rgb(255, 225, 242) // Magenta-pink Y2K glamour
+                preset.id == "ccd_y2k_digital" || preset.id == "classic_u" || preset.id == "classicu" -> Color.rgb(255, 225, 242) // Magenta-pink Y2K glamour
                 else         -> Color.rgb(255, 242, 226) // Kodak Portra 35mm classic warm ivory
             }
         }

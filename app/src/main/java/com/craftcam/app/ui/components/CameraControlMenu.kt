@@ -4,11 +4,14 @@ import android.view.HapticFeedbackConstants
 import androidx.camera.core.ImageCapture
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,12 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.craftcam.app.camera.AspectRatioMode
+import com.craftcam.app.camera.profile.CameraShootingState
+import com.craftcam.app.camera.profile.LensType
 import com.craftcam.app.model.CameraEngineMode
 import com.craftcam.app.ui.theme.*
 
@@ -53,6 +60,8 @@ fun CameraControlMenu(
     onOpenTuning: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToCollection: () -> Unit = {},
+    shootingState: CameraShootingState? = null,
+    onSelectLens: ((LensType) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     if (!visible) return
@@ -224,6 +233,59 @@ fun CameraControlMenu(
                                         onAspectRatioSelect(mode)
                                     }
                                 )
+                            }
+                        }
+                    }
+
+                    // 4b. Optical Lens Accessories (if active camera profile supports multiple lenses)
+                    if (shootingState != null && shootingState.cameraProfile.supportedLenses.size > 1) {
+                        val supportedLenses = shootingState.cameraProfile.supportedLenses
+                        val selectedLens = shootingState.selectedLens
+                        ControlSection(label = "OPTICAL LENS") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                supportedLenses.forEach { lensType ->
+                                    val isSelected = selectedLens.type == lensType
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (isSelected) VintageAmber else Color(0x33FFFFFF))
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) VintageAmber else Color(0x22FFFFFF),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable {
+                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                                onSelectLens?.invoke(lensType)
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Image(
+                                                painter = painterResource(id = lensType.iconRes),
+                                                contentDescription = lensType.displayName,
+                                                modifier = Modifier.size(20.dp),
+                                                contentScale = ContentScale.Fit
+                                            )
+                                            Text(
+                                                text = lensType.displayName.uppercase(),
+                                                color = if (isSelected) CameraBlack else Color.White,
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

@@ -23,6 +23,7 @@ import com.craftcam.app.model.ProCameraConfig
 import com.craftcam.app.presets.PresetCatalog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -52,8 +53,8 @@ class GLViewfinderRenderer(
     private var updateSurface = false
 
     private var viewportWidth = 1080
-    private var viewportHeight = 1920
-    private var bufferWidth = 1920
+    private var viewportHeight = 1440
+    private var bufferWidth = 1440
     private var bufferHeight = 1080
     private var sensorRotation = 90
     private var isFront = false
@@ -633,11 +634,27 @@ class GLViewfinderRenderer(
             if (uFocusPeakingEnabledLoc != -1) GLES30.glUniform1i(uFocusPeakingEnabledLoc, 0)
             if (uZebraEnabledLoc != -1) GLES30.glUniform1i(uZebraEnabledLoc, 0)
 
-            // Natural Camera Mode: 100% clean, bypasses all film simulation
+            // Natural Camera Mode: 100% clean, calibrated sensor LUT, bypasses all film simulation
             GLES30.glUniform1i(uNaturalModeEnabledLoc, 1)
-            GLES30.glUniform1f(uNaturalShadowLiftLoc, activeColorProfile.toneCurve.shadowLift)
-            GLES30.glUniform1i(uLutEnabledLoc, 0)
-            if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, 0f)
+            GLES30.glUniform1f(uNaturalShadowLiftLoc, naturalProfile.shadowLift)
+            val cachedLut = LutTextureCache.getOrCreateLutTexture(context, "lut_zero.png", prefer3D = true)
+            if (cachedLut != null && uLutEnabledLoc != -1) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                if (cachedLut.target == GLES30.GL_TEXTURE_3D && sLut3DLoc != -1) {
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, cachedLut.textureId)
+                    GLES30.glUniform1i(sLut3DLoc, 1)
+                    if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 1)
+                } else if (uLutTextureLoc != -1) {
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, cachedLut.textureId)
+                    GLES30.glUniform1i(uLutTextureLoc, 1)
+                    if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
+                }
+                GLES30.glUniform1i(uLutEnabledLoc, 1)
+                if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, 1.0f)
+            } else if (uLutEnabledLoc != -1) {
+                GLES30.glUniform1i(uLutEnabledLoc, 0)
+                if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, 0f)
+            }
             GLES30.glUniform1i(uHasGrainTextureLoc, 0)
             GLES30.glUniform1f(uGrainIntensityLoc, 0f)
             GLES30.glUniform1i(uHalationEnabledLoc, 0)
@@ -650,7 +667,6 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uFadeLoc, 0f)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
-            if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
             if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, 0)
             GLES30.glUniform3f(uShadowTintLoc, 0f, 0f, 0f)
             GLES30.glUniform1f(uGammaLoc, 1.0f)
@@ -939,22 +955,27 @@ class GLViewfinderRenderer(
         }
     }
 
+    private val histogramScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val histogramPixelArray = ByteArray(64 * 48 * 4)
+
     private fun computeHistogramDownsampled(w: Int, h: Int) {
+        if (isComputingHistogram) return
         val startX = (w / 2 - 32).coerceAtLeast(0)
         val startY = (h / 2 - 24).coerceAtLeast(0)
         histogramPixelBuffer.rewind()
         GLES30.glReadPixels(startX, startY, 64, 48, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, histogramPixelBuffer)
         histogramPixelBuffer.rewind()
+        histogramPixelBuffer.get(histogramPixelArray)
         isComputingHistogram = true
-        CoroutineScope(Dispatchers.Default).launch {
+        histogramScope.launch {
             try {
                 java.util.Arrays.fill(histogramBins, 0)
                 val totalBytes = 64 * 48 * 4
                 var idx = 0
                 while (idx < totalBytes) {
-                    val r = histogramPixelBuffer.get(idx).toInt() and 0xFF
-                    val g = histogramPixelBuffer.get(idx + 1).toInt() and 0xFF
-                    val b = histogramPixelBuffer.get(idx + 2).toInt() and 0xFF
+                    val r = histogramPixelArray[idx].toInt() and 0xFF
+                    val g = histogramPixelArray[idx + 1].toInt() and 0xFF
+                    val b = histogramPixelArray[idx + 2].toInt() and 0xFF
                     val luma = (77 * r + 150 * g + 29 * b) shr 8
                     histogramBins[luma]++
                     idx += 4
@@ -966,6 +987,14 @@ class GLViewfinderRenderer(
                 isComputingHistogram = false
             }
         }
+    }
+
+    fun release() {
+        surfaceTexture?.setOnFrameAvailableListener(null)
+        surfaceTexture?.release()
+        surfaceTexture = null
+        lutTextureCache.clear()
+        grainTextureCache.clear()
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {

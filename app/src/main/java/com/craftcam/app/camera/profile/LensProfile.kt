@@ -1,19 +1,25 @@
 package com.craftcam.app.camera.profile
 
+import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
+import com.craftcam.app.R
 
 /**
  * Optical lens accessories and physical glass variations available for simulated CAMELEO cameras.
  */
-enum class LensType(val displayName: String, val iconDescription: String) {
-    NORMAL("Normal", "Standard optical prime glass"),
-    WIDE("Wide", "Wide-angle optical conversion element"),
-    FISHEYE_F("Fisheye F", "Full-frame aggressive curvilinear fisheye"),
-    FISHEYE_W("Fisheye W", "Moderate wide-angle curvilinear fisheye"),
-    PRISM("Prism", "Multi-faceted optical refraction and chromatic splitting"),
-    STARBURST("Star", "Diffraction star rays around specular highlights"),
-    ND("ND", "Neutral density light attenuation filter (-2 EV)"),
-    COLOR_FLASH("Color Flash", "Tinted xenon flash gelatin filter")
+enum class LensType(
+    val displayName: String,
+    val iconDescription: String,
+    @DrawableRes val iconRes: Int = R.drawable.ic_lens_normal
+) {
+    NORMAL("Normal", "Standard optical prime glass", R.drawable.ic_lens_normal),
+    WIDE("Wide", "Wide-angle optical conversion element", R.drawable.ic_lens_wide),
+    FISHEYE_F("Fisheye F", "Full-frame aggressive curvilinear fisheye", R.drawable.ic_lens_fisheye_f),
+    FISHEYE_W("Fisheye W", "Moderate wide-angle curvilinear fisheye", R.drawable.ic_lens_fisheye_w),
+    PRISM("Prism", "Multi-faceted optical refraction and chromatic splitting", R.drawable.ic_lens_prism),
+    STARBURST("Star", "Diffraction star rays around specular highlights", R.drawable.ic_lens_starburst),
+    ND("ND", "Neutral density light attenuation filter (-2 EV)", R.drawable.ic_lens_nd),
+    COLOR_FLASH("Color Flash", "Tinted xenon flash gelatin filter", R.drawable.ic_lens_color_flash)
 }
 
 enum class ColorFlashTint(val displayName: String, val rgb: Triple<Float, Float, Float>, val uiColor: Color) {

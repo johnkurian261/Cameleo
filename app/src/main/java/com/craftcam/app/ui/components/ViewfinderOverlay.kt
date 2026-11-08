@@ -197,13 +197,6 @@ fun ViewfinderOverlay(
                 drawLine(gridColor, Offset(left, row2), Offset(right, row2), strokeWidth)
             }
 
-            // 8. Draw Subtle Viewfinder Guide Frame
-            drawRect(
-                color = Color.White.copy(alpha = 0.15f),
-                topLeft = Offset(left, top),
-                size = Size(frameW, frameH),
-                style = Stroke(width = 1.dp.toPx())
-            )
 
             // 9. Draw Tap-to-Focus Reticle & Vertical Sun Brightness Slider (Dazz Cam Style)
             focusPoint?.let { pt ->

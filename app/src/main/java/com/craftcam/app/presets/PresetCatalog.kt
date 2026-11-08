@@ -5,7 +5,49 @@ import com.craftcam.app.model.*
 object PresetCatalog {
 
     val allPresets: List<CameraPreset> = listOf(
-        // ==================== A. ANALOG FILM CAMERAS ====================
+        // ==================== A. ZERO NATURAL CAMERA ====================
+        CameraPreset(
+            id = "zero",
+            iconResName = "cam_zero",
+            name = "Zero",
+            subtitle = "Natural Photographic Sensor",
+            category = CameraCategory.CCD_DIGITAL,
+            year = "2024",
+            description = "Flagship natural camera pipeline. Pristine color calibration, asymptotic highlight shoulder, adaptive shadow recovery, edge-aware noise reduction, restrained sharpening, and soft multi-complexion skin protection without film grain or vintage artifacts.",
+            colorGrading = ColorGradingConfig(
+                contrast = 1.02f,
+                saturation = 1.00f,
+                temperature = 0.0f,
+                tint = 0.0f,
+                gamma = 1.0f,
+                fade = 0.0f,
+                highlightRollOff = 0.92f,
+                shadowTintR = 0.0f,
+                shadowTintG = 0.0f,
+                shadowTintB = 0.0f
+            ),
+            grain = GrainConfig(
+                enabled = false,
+                intensity = 0.0f,
+                scale = 1.0f,
+                assetPath = null,
+                blendMode = GrainBlendMode.OVERLAY,
+                shadowStrength = 0.0f,
+                highlightStrength = 0.0f
+            ),
+            lens = LensConfig(
+                vignetteIntensity = 0.0f,
+                vignetteRadius = 1.0f,
+                chromaticAberration = 0.0f,
+                softness = 0.0f
+            ),
+            halation = HalationConfig(enabled = false, threshold = 1.0f, intensity = 0.0f, radius = 0f),
+            dust = DustConfig(enabled = false),
+            lightLeak = LightLeakConfig(enabled = false),
+            dateStamp = DateStampConfig(enabled = false),
+            border = BorderConfig(style = BorderStyle.NONE)
+        ),
+        // ==================== B. ANALOG FILM CAMERAS ====================
         CameraPreset(
             id = "analog_35mm_classic",
             iconResName = "cam_d_classic",
@@ -15,65 +57,25 @@ object PresetCatalog {
             year = "1984",
             description = "Natural skin tones, balanced contrast and fine silver halide grain. The iconic standard for everyday 35mm street photography.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
-                saturation = 1.04f,
-                temperature = 0.08f,
-                tint = -0.02f,
-                gamma = 1.0f,
-                fade = 0.03f,
-                highlightRollOff = 0.84f,
-                shadowTintR = 0.01f,
-                shadowTintG = 0.02f,
-                shadowTintB = 0.04f
-            ),
-            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.0f, assetPath = "grains/grain_dclassic.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.14f),
-            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.88f, chromaticAberration = 0.002f, softness = 0.08f),
-            halation = HalationConfig(enabled = true, threshold = 0.86f, intensity = 0.18f, radius = 12f),
-            dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.40f),
-            lightLeak = LightLeakConfig(enabled = true, intensity = 0.20f),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -28),
-            border = BorderConfig(style = BorderStyle.CLASSIC_35MM_RANGEFINDER, assetPath = "dbalck_frame_in.png")
-        ),
-        CameraPreset(
-            id = "zero",
-            iconResName = "cam_zero",
-            name = "Zero",
-            subtitle = "Natural Photographic Sensor",
-            category = CameraCategory.CCD_DIGITAL,
-            year = "2024",
-            description = "High-fidelity photographic camera profile designed to outperform stock smartphone processing. Eliminates artificial over-sharpening halos, recovers crushed shadows with a gentle lifted toe, rolls off specular highlights asymptotically, and restores natural peach skin tones and true cobalt skies.",
-            colorGrading = ColorGradingConfig(
-                contrast = 1.04f,
-                saturation = 1.02f,
-                temperature = 0.02f,
+                contrast = 1.14f,
+                saturation = 1.10f,
+                temperature = 0.12f,
                 tint = -0.01f,
                 gamma = 1.0f,
-                fade = 0.0f,
-                highlightRollOff = 0.94f,
-                shadowTintR = 0.0f,
-                shadowTintG = 0.0f,
-                shadowTintB = 0.0f
+                fade = 0.035f,
+                highlightRollOff = 0.80f,
+                shadowTintR = 0.012f,
+                shadowTintG = 0.018f,
+                shadowTintB = 0.032f
             ),
-            grain = GrainConfig(
-                enabled = true,
-                intensity = 0.06f,
-                scale = 0.75f,
-                assetPath = "grains/grain_dclassic.jpg",
-                blendMode = GrainBlendMode.OVERLAY,
-                shadowStrength = 0.18f,
-                highlightStrength = 0.08f
-            ),
-            lens = LensConfig(
-                vignetteIntensity = 0.14f,
-                vignetteRadius = 0.92f,
-                chromaticAberration = 0.0f,
-                softness = 0.02f
-            ),
-            halation = HalationConfig(enabled = false, threshold = 1.0f, intensity = 0.0f, radius = 0f),
-            dust = DustConfig(enabled = false),
-            lightLeak = LightLeakConfig(enabled = false),
-            dateStamp = DateStampConfig(enabled = false),
-            border = BorderConfig(style = BorderStyle.NONE)
+            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 0.95f, assetPath = "grains/grain_dclassic.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.12f),
+            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.0025f, softness = 0.08f),
+            halation = HalationConfig(enabled = true, threshold = 0.74f, intensity = 0.26f, radius = 14f),
+            dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.40f),
+            lightLeak = LightLeakConfig(enabled = true, intensity = 0.20f),
+            flashOverlay = FlashOverlayConfig(enabled = true, assetPath = "flash_01.jpg", opacity = 0.45f),
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -28),
+            border = BorderConfig(style = BorderStyle.CLASSIC_35MM_RANGEFINDER, assetPath = "dbalck_frame_in.png")
         ),
         CameraPreset(
             id = "analog_fxn_r",
@@ -178,7 +180,7 @@ object PresetCatalog {
             grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 1.0f, blendMode = GrainBlendMode.OVERLAY),
             lens = LensConfig(vignetteIntensity = 0.40f, vignetteRadius = 0.80f, chromaticAberration = 0.016f, softness = 0.10f),
             halation = HalationConfig(enabled = true, threshold = 0.85f, intensity = 0.20f, radius = 12f),
-            dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.35f),
+            dust = DustConfig(enabled = false, assetPath = "dust_135.png", opacity = 0.0f),
             lightLeak = LightLeakConfig(enabled = false),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -30),
             border = BorderConfig(style = BorderStyle.NONE)
@@ -237,11 +239,11 @@ object PresetCatalog {
         CameraPreset(
             id = "analog_cinema_film",
             iconResName = "cam_d3d",
-            name = "Cinema Film",
-            subtitle = "35mm Motion Picture Stock",
+            name = "D 3D",
+            subtitle = "Stereoscopic 3D Parallax",
             category = CameraCategory.ANALOG_FILM,
-            year = "1996",
-            description = "Legendary motion picture emulsion with rich teal shadows and luminous red halation bloom around specular highlights.",
+            year = "3D",
+            description = "Multi-lens stereoscopic film camera. Generates authentic analog 3D parallax wigglegram animation loops with horizontal depth movement.",
             colorGrading = ColorGradingConfig(
                 contrast = 1.14f,
                 saturation = 1.08f,
@@ -265,7 +267,7 @@ object PresetCatalog {
         // ==================== B. CCD DIGITAL CAMERAS ====================
         CameraPreset(
             id = "ccd_r",
-            iconResName = "cam_135ne",
+            iconResName = "cam_classic",
             name = "CCD R",
             subtitle = "2004 CCD Digital Zoom",
             category = CameraCategory.CCD_DIGITAL,
@@ -295,22 +297,23 @@ object PresetCatalog {
             year = "2005",
             description = "High micro-contrast with bright subject illumination and deep dramatic background falloff.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.22f,
-                saturation = 1.12f,
-                temperature = 0.04f,
-                gamma = 0.96f,
-                fade = 0.01f
+                contrast = 1.30f,
+                saturation = 1.18f,
+                temperature = 0.08f,
+                gamma = 0.94f,
+                fade = 0.01f,
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 0.90f, isColorNoise = false, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.15f),
-            lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.82f),
+            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.72f, chromaticAberration = 0.003f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
-            flashOverlay = FlashOverlayConfig(enabled = true, assetPath = "flashc_01.jpg", opacity = 0.45f),
+            flashOverlay = FlashOverlayConfig(enabled = true, assetPath = "overlay_flashc.jpg", opacity = 0.55f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -20)
         ),
         CameraPreset(
             id = "ccd_y2k_digital",
             iconResName = "cam_classic_u",
-            name = "Y2K Digital",
+            name = "Classic U",
             subtitle = "MySpace Era Digicam",
             category = CameraCategory.CCD_DIGITAL,
             year = "2004",
@@ -330,20 +333,20 @@ object PresetCatalog {
         CameraPreset(
             id = "ccd_retro_compact",
             iconResName = "cam_dqs",
-            name = "Retro Compact",
-            subtitle = "Tourist Pocket Camera",
+            name = "DQS",
+            subtitle = "CCD Digital Compact",
             category = CameraCategory.CCD_DIGITAL,
             year = "2006",
-            description = "Everyday point-and-shoot digital look with punchy dynamic range and crisp sharpness.",
+            description = "Everyday point-and-shoot digital look with punchy dynamic range, authentic CCD color science, and crisp sharpness.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.12f,
-                saturation = 1.10f,
+                contrast = 1.15f,
+                saturation = 1.12f,
                 temperature = 0.02f,
                 fade = 0.01f,
                 highlightRollOff = 0.88f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.85f, isColorNoise = false, assetPath = "grains/grain_ccdr.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.25f, highlightStrength = 0.14f),
-            lens = LensConfig(vignetteIntensity = 0.20f, vignetteRadius = 0.90f),
+            grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 0.85f, isColorNoise = false, assetPath = "grains/grain_dqs.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.25f, highlightStrength = 0.14f),
+            lens = LensConfig(vignetteIntensity = 0.20f, vignetteRadius = 0.90f, chromaticAberration = 0.002f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.30f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -20)
         ),
@@ -549,6 +552,21 @@ object PresetCatalog {
     )
 
     fun getPresetById(id: String): CameraPreset {
+        if (id == "analog_35mm_classic" || id == "d_classic" || id == "dclassic" || id == "d classic" || id == "classic_35mm") {
+            return allPresets.find { it.id == "analog_35mm_classic" } ?: allPresets.first()
+        }
+        if (id == "ccd_r" || id == "ccdr" || id == "ccd r" || id == "ccd-r" || id == "ccd_classic") {
+            return allPresets.find { it.id == "ccd_r" || it.id == "ccdr" } ?: allPresets.first()
+        }
+        if (id == "ccd_flash" || id == "ccd flash" || id == "d_funs" || id == "dfuns") {
+            return allPresets.find { it.id == "ccd_flash" } ?: allPresets.first()
+        }
+        if (id == "dqs") {
+            return allPresets.find { it.id == "ccd_retro_compact" || it.id == "dqs" } ?: allPresets.first()
+        }
+        if (id == "classic_u" || id == "classicu" || id == "classic u") {
+            return allPresets.find { it.id == "ccd_y2k_digital" || it.id == "classic_u" } ?: allPresets.first()
+        }
         return allPresets.find { it.id == id } ?: allPresets.first()
     }
 }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.craftcam.app.camera.profile.LensType
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -107,6 +109,7 @@ fun ViewfinderScreen(
     var showControlMenu by remember { mutableStateOf(false) }
     var showTuningSheet by remember { mutableStateOf(false) }
     var showNaturalTuningSheet by remember { mutableStateOf(false) }
+    var showLensSheet by remember { mutableStateOf(false) }
     var showExposureSlider by remember { mutableStateOf(false) }
     var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
@@ -122,6 +125,8 @@ fun ViewfinderScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            glSurfaceViewRef?.onPause()
+            glSurfaceViewRef = null
         }
     }
 
@@ -258,6 +263,12 @@ fun ViewfinderScreen(
                         },
                         update = { _ ->
                             cameraManager.setPreset(selectedPreset)
+                        },
+                        onRelease = { glSurfaceView ->
+                            glSurfaceView.onPause()
+                            if (glSurfaceViewRef == glSurfaceView) {
+                                glSurfaceViewRef = null
+                            }
                         }
                     )
 
@@ -293,6 +304,47 @@ fun ViewfinderScreen(
                                 cameraManager.resizeCaptureFrame(scale, previewAspect)
                             }
                         )
+                    }
+
+                    // Developing 3D Wigglegram Overlay
+                    if (uiState.threeDProgressMessage != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0x99000000)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xCC1A1C22))
+                                    .border(1.dp, Color(0x5500E5FF), RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 24.dp, vertical = 20.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(36.dp),
+                                    color = Color(0xFF00E5FF),
+                                    strokeWidth = 3.dp
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = uiState.threeDProgressMessage ?: "DEVELOPING 3D...",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 1.2.sp
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Multi-Lens Parallax Fusion",
+                                    color = Color(0xAAFFFFFF),
+                                    fontSize = 10.sp,
+                                    letterSpacing = 0.8.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -369,6 +421,9 @@ fun ViewfinderScreen(
                     },
                     onToggleExposure = {
                         showExposureSlider = !showExposureSlider
+                        if (showExposureSlider) {
+                            showLensSheet = false
+                        }
                     },
                     onOpenTuning = {
                         when (uiState.engineMode) {
@@ -387,6 +442,12 @@ fun ViewfinderScreen(
                     },
                     onToggleGrid = {
                         cameraManager.toggleGrid()
+                    },
+                    onOpenLensSheet = {
+                        showLensSheet = !showLensSheet
+                        if (showLensSheet) {
+                            showExposureSlider = false
+                        }
                     }
                 )
 
@@ -432,9 +493,15 @@ fun ViewfinderScreen(
                         }
                     }
 
-                    // 2. Large Dominant White Circular Shutter Button
+                    val isThreeD = selectedPreset.id == "analog_cinema_film" || 
+                                   selectedPreset.id == "d3d" || 
+                                   selectedPreset.id == "d_3d" || 
+                                   selectedPreset.name.contains("3D", ignoreCase = true) ||
+                                   uiState.captureMode == CaptureMode.MODE_3D
+
+                    // 2. Large Dominant Circular Shutter Button
                     TactileShutterButton(
-                        captureMode = CaptureMode.PHOTO,
+                        captureMode = if (isThreeD) CaptureMode.MODE_3D else CaptureMode.PHOTO,
                         isCapturing = uiState.isCapturing || countdown != null,
                         isRecording = false,
                         onClick = {
@@ -448,20 +515,37 @@ fun ViewfinderScreen(
                                     countdown = null
                                 }
 
-                                cameraManager.captureAndProcessPhoto(
-                                    preset = selectedPreset,
-                                    aspectRatio = uiState.aspectRatio,
-                                    mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
-                                    onPhotoSaved = { uri ->
-                                        Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
-                                        scope.launch {
-                                            latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                if (isThreeD) {
+                                    cameraManager.captureAndProcessThreeDPhoto(
+                                        preset = selectedPreset,
+                                        aspectRatio = uiState.aspectRatio,
+                                        mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
+                                        onVideoSaved = { uri ->
+                                            Toast.makeText(context, "3D Wigglegram saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            scope.launch {
+                                                latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                            }
+                                        },
+                                        onError = { exc ->
+                                            Toast.makeText(context, "3D capture failed: $exc", Toast.LENGTH_SHORT).show()
                                         }
-                                    },
-                                    onError = { exc ->
-                                        Toast.makeText(context, "Capture failed: $exc", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
+                                    )
+                                } else {
+                                    cameraManager.captureAndProcessPhoto(
+                                        preset = selectedPreset,
+                                        aspectRatio = uiState.aspectRatio,
+                                        mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
+                                        onPhotoSaved = { uri ->
+                                            Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            scope.launch {
+                                                latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                            }
+                                        },
+                                        onError = { exc ->
+                                            Toast.makeText(context, "Capture failed: $exc", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
                             }
                         }
                     )
@@ -477,11 +561,11 @@ fun ViewfinderScreen(
 
                     Box(
                         modifier = Modifier
-                            .size(54.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF181A20))
-                            .border(1.dp, Color(0x38FFFFFF), CircleShape)
-                            .clickable {
+                            .size(64.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
                                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 onNavigateToCollection()
                             },
@@ -492,15 +576,14 @@ fun ViewfinderScreen(
                                 painter = painterResource(id = iconResId),
                                 contentDescription = selectedPreset.name,
                                 contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .size(34.dp)
+                                modifier = Modifier.size(60.dp)
                             )
                         } else {
                             Icon(
                                 Icons.Default.PhotoCamera,
                                 contentDescription = selectedPreset.name,
                                 tint = Color.White,
-                                modifier = Modifier.size(26.dp)
+                                modifier = Modifier.size(30.dp)
                             )
                         }
                     }
@@ -548,6 +631,8 @@ fun ViewfinderScreen(
             },
             onNavigateToSettings = onNavigateToSettings,
             onNavigateToCollection = onNavigateToCollection,
+            shootingState = uiState.shootingState,
+            onSelectLens = { lensType -> cameraManager.selectLensAccessory(lensType) },
             onDismiss = { showControlMenu = false }
         )
 
@@ -582,6 +667,53 @@ fun ViewfinderScreen(
             onReset = { cameraManager.resetNaturalProfile() },
             onDismiss = { showNaturalTuningSheet = false }
         )
+
+        // ── 12. Floating Tactile Lens Rectangle Bubble Overlay ───────────────────
+        AnimatedVisibility(
+            visible = showLensSheet,
+            enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(150)) + scaleIn(initialScale = 0.90f, animationSpec = androidx.compose.animation.core.tween(150)),
+            exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)) + scaleOut(targetScale = 0.90f, animationSpec = androidx.compose.animation.core.tween(150)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showLensSheet = false
+                    },
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Box(
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(bottom = 150.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            // Consume taps so clicking inside the bubble doesn't dismiss
+                        }
+                ) {
+                    TactileLensBubble(
+                        shootingState = uiState.shootingState,
+                        onLensSelected = { lensType ->
+                            cameraManager.selectLensAccessory(lensType)
+                            if (lensType != LensType.COLOR_FLASH) {
+                                showLensSheet = false
+                            }
+                        },
+                        onColorFlashTintSelected = { tint ->
+                            cameraManager.selectColorFlashTint(tint)
+                            showLensSheet = false
+                        },
+                        onDismiss = { showLensSheet = false }
+                    )
+                }
+            }
+        }
     }
 }
 

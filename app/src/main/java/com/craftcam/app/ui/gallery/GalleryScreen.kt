@@ -249,6 +249,7 @@ private fun FullScreenViewer(
     onShare: (GalleryItem) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     val safeInitial = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
     val pagerState = rememberPagerState(
         initialPage = safeInitial,
@@ -368,7 +369,27 @@ private fun FullScreenViewer(
         }
 
         // Camera Info Badge
-        currentItem?.cameraModel?.let { model ->
+        var loadedModel by remember(currentItem?.uri) { mutableStateOf(currentItem?.cameraModel) }
+        LaunchedEffect(currentItem?.uri) {
+            if (loadedModel == null && currentItem != null && !currentItem.isVideo) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openFileDescriptor(currentItem.uri, "r")?.use { pfd ->
+                            val exif = androidx.exifinterface.media.ExifInterface(pfd.fileDescriptor)
+                            val model = exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_MODEL)
+                            if (model != null) {
+                                withContext(Dispatchers.Main) {
+                                    loadedModel = model
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
+        val displayModel = loadedModel ?: if (currentItem?.isVideo == true) "Analog Camcorder" else null
+        displayModel?.let { model ->
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -501,17 +522,7 @@ private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = wit
                 val date = cursor.getLong(dateCol)
                 val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
-                var model: String? = null
-                try {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                        val exif = ExifInterface(pfd.fileDescriptor)
-                        model = exif.getAttribute(ExifInterface.TAG_MODEL)
-                    }
-                } catch (e: Exception) {
-                    // ignore
-                }
-
-                items.add(GalleryItem(id, uri, name, date, model, isVideo = false))
+                items.add(GalleryItem(id, uri, name, date, null, isVideo = false))
             }
         }
     } catch (e: Exception) {

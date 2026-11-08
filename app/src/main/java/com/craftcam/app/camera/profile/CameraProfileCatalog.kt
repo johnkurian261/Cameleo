@@ -76,8 +76,40 @@ object CameraProfileCatalog {
         ),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_3_2,
-        filmProfile = FilmProfile.Classic35,
-        grainProfile = GrainProfile.Fine35mm
+        filmProfile = FilmProfile(
+            id = "film_35mm_classic",
+            name = "Classic 35mm Universal Negative",
+            lutAssetPath = "lut_analog_35mm_classic.png",
+            contrast = 1.14f,
+            saturation = 1.10f,
+            temperature = 0.12f,
+            tint = -0.01f,
+            toeLift = 0.035f,
+            shoulderClip = 0.965f,
+            highlightRollOff = 0.80f,
+            halationThreshold = 0.74f,
+            halationIntensity = 0.26f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.28f,
+            halationColorTintB = 0.06f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_35mm_fine",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dclassic.jpg",
+            intensity = 0.22f,
+            scale = 0.95f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 0.70f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_dclassic",
+            vignetteStrength = 0.35f,
+            vignetteRadius = 0.80f,
+            chromaticAberration = 0.0025f,
+            edgeSoftness = 0.08f,
+            distortionStrength = 0.0f
+        )
     )
 
     val D_EXP = CameleoCameraProfile(
@@ -162,12 +194,177 @@ object CameraProfileCatalog {
         ),
         grainProfile = GrainProfile(
             id = "grain_ccd_digital",
-            mode = GrainMode.PROCEDURAL,
-            intensity = 0.12f,
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_ccdr.jpg",
+            intensity = 0.24f,
+            scale = 0.90f,
+            isColorNoise = false,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 0.5f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_ccd_r",
+            vignetteStrength = 0.28f,
+            vignetteRadius = 0.88f,
+            chromaticAberration = 0.002f,
+            distortionStrength = 0.0f
+        )
+    )
+
+    val DQS_CAMERA = CameleoCameraProfile(
+        id = "ccd_dqs",
+        name = "DQS",
+        subtitle = "CCD Digital Compact",
+        presetId = "ccd_retro_compact",
+        focalLengths = listOf(
+            FocalLengthOption("35mm", 35f),
+            FocalLengthOption("50mm", 50f)
+        ),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.STARBURST,
+            LensType.ND
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_dqs",
+            name = "DQS Compact Sensor",
+            lutAssetPath = "lut_ccd_retro_compact.png",
+            contrast = 1.15f,
+            saturation = 1.12f,
+            toeLift = 0.015f,
+            shoulderClip = 0.990f,
+            highlightRollOff = 0.88f,
+            halationThreshold = 0.90f,
+            halationIntensity = 0.10f,
+            halationColorTintR = 0.85f,
+            halationColorTintG = 0.85f,
+            halationColorTintB = 1.0f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_dqs",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dqs.jpg",
+            intensity = 0.18f,
             scale = 0.85f,
             isColorNoise = false,
-            luminanceWeightingEnabled = false,
-            luminanceWeightingPower = 0.0f
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 0.5f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_dqs",
+            vignetteStrength = 0.20f,
+            vignetteRadius = 0.90f,
+            chromaticAberration = 0.002f,
+            distortionStrength = 0.0f
+        )
+    )
+
+    val CLASSIC_U = CameleoCameraProfile(
+        id = "ccd_classic_u",
+        name = "Classic U",
+        subtitle = "MySpace Era Digicam",
+        presetId = "ccd_y2k_digital",
+        focalLengths = listOf(
+            FocalLengthOption("35mm", 35f),
+            FocalLengthOption("50mm", 50f)
+        ),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.STARBURST,
+            LensType.ND
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_classic_u",
+            name = "Classic U CCD Sensor",
+            lutAssetPath = "lut_ccd_y2k_digital.png",
+            contrast = 1.18f,
+            saturation = 1.16f,
+            temperature = 0.06f,
+            tint = 0.10f,
+            toeLift = 0.020f,
+            shoulderClip = 0.990f,
+            highlightRollOff = 0.86f,
+            halationThreshold = 0.88f,
+            halationIntensity = 0.12f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.80f,
+            halationColorTintB = 0.90f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_classic_u",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_classicu.jpg",
+            intensity = 0.22f,
+            scale = 0.90f,
+            isColorNoise = false,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 0.5f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_classic_u",
+            vignetteStrength = 0.24f,
+            vignetteRadius = 0.88f,
+            chromaticAberration = 0.002f,
+            distortionStrength = 0.0f
+        )
+    )
+
+    val CCD_FLASH = CameleoCameraProfile(
+        id = "ccd_flash",
+        name = "CCD Flash",
+        subtitle = "Night Party Flash Look",
+        presetId = "ccd_flash",
+        focalLengths = listOf(
+            FocalLengthOption("32mm", 32f),
+            FocalLengthOption("50mm", 50f)
+        ),
+        defaultFocalLengthMm = 32f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.COLOR_FLASH,
+            LensType.STARBURST
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_ccd_flash",
+            name = "CCD Direct Flash Sensor",
+            lutAssetPath = "lut_ccd_flash.png",
+            contrast = 1.30f,
+            saturation = 1.18f,
+            temperature = 0.08f,
+            tint = 0.02f,
+            toeLift = 0.020f,
+            shoulderClip = 0.985f,
+            highlightRollOff = 0.88f,
+            halationThreshold = 0.84f,
+            halationIntensity = 0.22f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.88f,
+            halationColorTintB = 0.92f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_ccd_flash",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dfuns.jpg",
+            intensity = 0.22f,
+            scale = 0.90f,
+            isColorNoise = false,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 0.5f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_ccd_flash",
+            vignetteStrength = 0.45f,
+            vignetteRadius = 0.72f,
+            chromaticAberration = 0.003f,
+            distortionStrength = 0.0f
         )
     )
 
@@ -452,12 +649,12 @@ object CameraProfileCatalog {
         subtitle = "Natural Photographic Sensor",
         presetId = "zero",
         focalLengths = listOf(
-            FocalLengthOption("24mm", 24f),
+            FocalLengthOption("26mm", 26f, isPhysicalLens = true),
             FocalLengthOption("28mm", 28f),
             FocalLengthOption("35mm", 35f),
             FocalLengthOption("50mm", 50f)
         ),
-        defaultFocalLengthMm = 28f,
+        defaultFocalLengthMm = 26f,
         supportedLenses = listOf(
             LensType.NORMAL,
             LensType.WIDE,
@@ -469,37 +666,75 @@ object CameraProfileCatalog {
         ),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
+        // Zero Natural Camera Mode: 100% clean, bypasses all film simulation & LUT
         filmProfile = FilmProfile(
-            id = "sensor_zero",
-            name = "Zero Photographic Reference",
-            lutAssetPath = "lut_zero.png",
-            lutInputSpace = LutInputSpace.CUSTOM_PRETRANSFORM,
-            contrast = 1.04f,
-            saturation = 1.02f,
-            temperature = 0.02f,
-            tint = -0.01f,
-            toeLift = 0.028f,
-            shoulderClip = 0.965f,
-            highlightRollOff = 0.94f,
-            clarityStrength = -0.06f,
-            skinProtection = 0.88f,
+            id = "natural_zero",
+            name = "Zero Natural Sensor",
+            lutAssetPath = null,
+            lutStrength = 0.0f,
+            contrast = 1.0f,
+            saturation = 1.0f,
+            temperature = 0.0f,
+            tint = 0.0f,
+            toeLift = 0.0f,
+            shoulderClip = 1.0f,
+            highlightRollOff = 0.92f,
             shadowTintR = 0.0f,
             shadowTintG = 0.0f,
             shadowTintB = 0.0f,
             halationThreshold = 1.0f,
-            halationIntensity = 0.0f,
+            halationIntensity = 0.0f
+        ),
+        grainProfile = GrainProfile.None,
+        opticalProfile = OpticalProfile.Standard,
+        exposureProfile = ExposureProfile.Standard,
+        computationalProfile = ComputationalProfile.SingleShot
+    )
+
+    val D_3D = CameleoCameraProfile(
+        id = "d_3d",
+        name = "D 3D",
+        subtitle = "Stereoscopic 3D",
+        presetId = "analog_cinema_film",
+        focalLengths = listOf(
+            FocalLengthOption("30mm", 30f),
+            FocalLengthOption("35mm", 35f)
+        ),
+        defaultFocalLengthMm = 30f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
+            LensType.PRISM,
+            LensType.STARBURST
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_d3d",
+            name = "Stereoscopic Motion Picture",
+            lutAssetPath = "lut_analog_cinema_film.png",
+            contrast = 1.14f,
+            saturation = 1.08f,
+            temperature = -0.08f,
+            tint = 0.02f,
+            toeLift = 0.03f,
+            shoulderClip = 0.965f,
+            highlightRollOff = 0.78f,
+            halationThreshold = 0.80f,
+            halationIntensity = 0.42f,
             halationColorTintR = 1.0f,
-            halationColorTintG = 0.30f,
-            halationColorTintB = 0.10f
+            halationColorTintG = 0.25f,
+            halationColorTintB = 0.05f
         ),
         grainProfile = GrainProfile(
-            id = "grain_zero",
+            id = "grain_d3d",
             mode = GrainMode.SCANNED,
-            assetPath = "grains/grain_dclassic.jpg",
-            intensity = 0.06f,
-            scale = 0.75f,
+            assetPath = "grains/grain_d3d1.jpg",
+            intensity = 0.28f,
+            scale = 1.05f,
             luminanceWeightingEnabled = true,
-            luminanceWeightingPower = 1.2f
+            luminanceWeightingPower = 1.0f
         )
     )
 
@@ -507,7 +742,11 @@ object CameraProfileCatalog {
         FXN_R,
         D_CLASSIC,
         D_EXP,
+        D_3D,
         CCD_DIGITAL,
+        CCD_FLASH,
+        CLASSIC_U,
+        DQS_CAMERA,
         INSTANT_CAMERA,
         FISHEYE_CAMERA,
         SOFT_FILM,
@@ -525,11 +764,15 @@ object CameraProfileCatalog {
         when (preset.id) {
             "zero" -> return ZERO_CAMERA
             "analog_fxn_r" -> return FXN_R
-            "analog_35mm_classic" -> return D_CLASSIC
+            "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> return D_CLASSIC
+            "analog_cinema_film", "d3d", "d_3d", "d 3d" -> return D_3D
             "analog_vintage_color" -> return D_EXP
-            "ccd_r", "ccd_y2k_digital", "ccd_retro_compact" -> return CCD_DIGITAL
+            "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> return CCD_DIGITAL
+            "ccd_flash", "d_funs", "dfuns" -> return CCD_FLASH
+            "ccd_y2k_digital", "classic_u", "classicu" -> return CLASSIC_U
+            "dqs", "ccd_retro_compact" -> return DQS_CAMERA
             "inst_vintage" -> return INSTANT_CAMERA
-            "disp_classic", "disp_flash", "ccd_flash", "disp_warm", "disp_night" -> return DISPOSABLE_FUNS
+            "disp_classic", "disp_flash", "disp_warm", "disp_night" -> return DISPOSABLE_FUNS
             "analog_135ne", "135ne" -> return ONE_THREE_FIVE_NE
             "analog_fisheye_f" -> return FISHEYE_CAMERA
             "analog_soft_film" -> return SOFT_FILM

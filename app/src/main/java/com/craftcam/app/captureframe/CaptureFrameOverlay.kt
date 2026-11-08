@@ -156,20 +156,22 @@ fun CaptureFrameOverlay(
                     )
                 }
 
-                // Draw subtle outside dimming scrim (28% black)
-                drawPath(
-                    path = dimPath,
-                    color = Color.Black.copy(alpha = state.outsideDimAlpha)
-                )
+                // Draw subtle outside dimming scrim (28% black) only when framing within preview
+                if (state.sizeFraction < 0.99f) {
+                    drawPath(
+                        path = dimPath,
+                        color = Color.Black.copy(alpha = state.outsideDimAlpha)
+                    )
 
-                // 3. Thin White Rounded Rectangular Framing Stroke
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.85f),
-                    topLeft = Offset(windowLeftPx, windowTopPx),
-                    size = Size(windowWPx, windowHPx),
-                    cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx),
-                    style = Stroke(width = with(density) { 1.5.dp.toPx() })
-                )
+                    // 3. Thin White Rounded Rectangular Framing Stroke
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.85f),
+                        topLeft = Offset(windowLeftPx, windowTopPx),
+                        size = Size(windowWPx, windowHPx),
+                        cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx),
+                        style = Stroke(width = with(density) { 1.5.dp.toPx() })
+                    )
+                }
             }
 
             // 4. Debug Focal Length & Rect Readout (only when debug is explicitly enabled)

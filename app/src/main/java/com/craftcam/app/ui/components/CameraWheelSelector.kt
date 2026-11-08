@@ -204,8 +204,8 @@ fun CameraWheelSelector(
                         }
                         .scale(scale)
                         .alpha(alpha)
-                        .width(74.dp)
-                        .height(86.dp)
+                        .width(78.dp)
+                        .height(90.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
                             if (isCenter) SurfaceCard else SurfaceGraphite.copy(alpha = 0.65f)
@@ -244,7 +244,7 @@ fun CameraWheelSelector(
                                 painter = painterResource(id = iconResId),
                                 contentDescription = preset.name,
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(42.dp)
                                     .padding(bottom = 2.dp),
                                 contentScale = ContentScale.Fit
                             )

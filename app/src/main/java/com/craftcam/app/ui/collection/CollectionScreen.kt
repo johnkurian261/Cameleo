@@ -103,17 +103,17 @@ fun CollectionScreen(
         photoPresets.map { preset ->
             val shortLabel = when (preset.id) {
                 "zero"                 -> "Zero"
-                "analog_35mm_classic"  -> "D Classic"
+                "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "D Classic"
                 "analog_fxn_r"         -> "FXNR"
                 "analog_fisheye_f"     -> "Fisheye"
                 "analog_warm_film"     -> "Warm Film"
                 "analog_soft_film"     -> "CT2F"
                 "analog_vintage_color" -> "D Exp"
-                "analog_cinema_film"   -> "D3D"
-                "ccd_r"                -> "CCD R"
-                "ccd_flash"            -> "D FunS"
-                "ccd_y2k_digital"      -> "Classic U"
-                "ccd_retro_compact"    -> "DQS"
+                "analog_cinema_film", "d3d", "d_3d" -> "D 3D"
+                "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "CCD R"
+                "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "CCD Flash"
+                "ccd_y2k_digital", "classic_u", "classicu" -> "Classic U"
+                "ccd_retro_compact", "dqs" -> "DQS"
                 "disp_classic"         -> "Golf"
                 "disp_flash"           -> "CPM35"
                 "disp_warm"            -> "135SR"
@@ -162,8 +162,8 @@ fun CollectionScreen(
                         painter = painterResource(id = logoResId),
                         contentDescription = "Cameleo Logo",
                         modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                 }
@@ -374,7 +374,7 @@ private fun Camera3DModelTile(
                 contentDescription = item.label,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .size(width = 68.dp, height = 50.dp)
+                    .size(width = 82.dp, height = 58.dp)
                     .padding(bottom = 6.dp)
             )
         }
@@ -466,7 +466,7 @@ private fun CameraCard(
                             contentDescription = preset.name,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(52.dp)
                                 .padding(end = 10.dp)
                         )
                     }
@@ -572,39 +572,20 @@ private fun CameraCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(supportedLenses) { lensType ->
                         val isMounted = isSelected && selectedLens.type == lensType
-                        val icon = when (lensType) {
-                            LensType.NORMAL -> "⊙"
-                            LensType.WIDE -> "⊞"
-                            LensType.FISHEYE_F -> "◉"
-                            LensType.FISHEYE_W -> "⊚"
-                            LensType.PRISM -> "⟡"
-                            LensType.STARBURST -> "★"
-                            LensType.ND -> "◐"
-                            LensType.COLOR_FLASH -> "⚡"
-                        }
-                        val label = when (lensType) {
-                            LensType.NORMAL -> "Normal"
-                            LensType.WIDE -> "Wide"
-                            LensType.FISHEYE_F -> "Fisheye F"
-                            LensType.FISHEYE_W -> "Fisheye W"
-                            LensType.PRISM -> "Prism"
-                            LensType.STARBURST -> "Star"
-                            LensType.ND -> "ND"
-                            LensType.COLOR_FLASH -> "Color Flash"
-                        }
+                        val label = lensType.displayName
 
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(if (isMounted) VintageAmber else SurfaceElevated)
                                 .border(
                                     width = 1.dp,
                                     color = if (isMounted) VintageAmberGlow else DividerSubtle,
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = RoundedCornerShape(12.dp)
                                 )
                                 .clickable {
                                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -613,20 +594,21 @@ private fun CameraCard(
                                     }
                                     onSelectLens(lensType)
                                 }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(7.dp)
                             ) {
-                                Text(
-                                    text = icon,
-                                    fontSize = 11.sp,
-                                    color = if (isMounted) CameraBlack else VintageAmber
+                                Image(
+                                    painter = painterResource(id = lensType.iconRes),
+                                    contentDescription = label,
+                                    modifier = Modifier.size(24.dp),
+                                    contentScale = ContentScale.Fit
                                 )
                                 Text(
                                     text = label,
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isMounted) CameraBlack else TextPrimary
