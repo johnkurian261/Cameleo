@@ -148,6 +148,13 @@ class GLViewfinderRenderer(
     private var uLensColorFlashTintLoc = -1
     private var uLensIsFlashActiveLoc = -1
 
+    // D3D Single-Image 3D Photography Filter
+    private var uD3DEnabledLoc = -1
+    private var uD3DStrengthLoc = -1
+    private var uD3DParallaxLoc = -1
+    private var uD3DRgbSeparationLoc = -1
+    private var uD3DAnaglyphLoc = -1
+
     @Volatile
     private var currentLensProfile: LensProfile = LensProfile.NORMAL
 
@@ -540,6 +547,13 @@ class GLViewfinderRenderer(
         uLensColorFlashTintLoc = GLES30.glGetUniformLocation(programId, "uLensColorFlashTint")
         uLensIsFlashActiveLoc = GLES30.glGetUniformLocation(programId, "uLensIsFlashActive")
 
+        // D3D Filter Uniforms
+        uD3DEnabledLoc = GLES30.glGetUniformLocation(programId, "uD3DEnabled")
+        uD3DStrengthLoc = GLES30.glGetUniformLocation(programId, "uD3DStrength")
+        uD3DParallaxLoc = GLES30.glGetUniformLocation(programId, "uD3DParallax")
+        uD3DRgbSeparationLoc = GLES30.glGetUniformLocation(programId, "uD3DRgbSeparation")
+        uD3DAnaglyphLoc = GLES30.glGetUniformLocation(programId, "uD3DAnaglyph")
+
         initDummyTextures()
 
         // Assign dedicated, non-overlapping texture image units to every active sampler uniform (GLES 3.0 Section 3.8.12)
@@ -660,6 +674,7 @@ class GLViewfinderRenderer(
             if (uLensStarburstStrengthLoc != -1) GLES30.glUniform1f(uLensStarburstStrengthLoc, 0f)
             if (uLensNdFactorLoc != -1) GLES30.glUniform1f(uLensNdFactorLoc, 1.0f)
             if (uLensIsFlashActiveLoc != -1) GLES30.glUniform1i(uLensIsFlashActiveLoc, 0)
+            if (uD3DEnabledLoc != -1) GLES30.glUniform1i(uD3DEnabledLoc, 0)
 
             if (uPreLinearizationEnabledLoc != -1) GLES30.glUniform1i(uPreLinearizationEnabledLoc, 0)
             if (uPreLinearizationStrengthLoc != -1) GLES30.glUniform1f(uPreLinearizationStrengthLoc, 0f)
@@ -1060,6 +1075,21 @@ class GLViewfinderRenderer(
             }
             if (uLensIsFlashActiveLoc != -1) {
                 GLES30.glUniform1i(uLensIsFlashActiveLoc, if (isLensFlashActive) 1 else 0)
+            }
+
+            // D3D Single-Image 3D Photography Filter Uniforms
+            val isD3D = preset.id == "analog_cinema_film" || preset.id == "d3d" || preset.d3dProfile != null
+            val d3dProf = preset.d3dProfile ?: com.craftcam.app.camera.profile.D3DProfile.Default
+            if (uD3DEnabledLoc != -1) {
+                GLES30.glUniform1i(uD3DEnabledLoc, if (isD3D) 1 else 0)
+            }
+            if (isD3D) {
+                val d3dStrength = (d3dProf.depthStrength + tuning.d3dStrengthOffset).coerceIn(0.05f, 1.0f) * intensity
+                if (uD3DStrengthLoc != -1) GLES30.glUniform1f(uD3DStrengthLoc, d3dStrength)
+                if (uD3DParallaxLoc != -1) GLES30.glUniform1f(uD3DParallaxLoc, d3dProf.parallaxStrength)
+                if (uD3DRgbSeparationLoc != -1) GLES30.glUniform1f(uD3DRgbSeparationLoc, d3dProf.rgbSeparation)
+                val anaglyphVal = if (tuning.d3dAnaglyphMode || d3dProf.isAnaglyphMode) 1.0f else d3dProf.anaglyphStrength
+                if (uD3DAnaglyphLoc != -1) GLES30.glUniform1f(uD3DAnaglyphLoc, anaglyphVal)
             }
         }
 

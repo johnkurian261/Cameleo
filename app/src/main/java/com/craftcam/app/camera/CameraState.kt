@@ -44,6 +44,8 @@ data class UserTuningConfig(
     val customYear: String? = null,
     val preLinearizationEnabled: Boolean = true,
     val preLinearizationStrength: Float = 1.0f, // 0.0 = bypassed, 1.0 = full ISP contrast flattening
+    val d3dStrengthOffset: Float = 0.0f, // -0.4 to +0.6 offset for D3D depth intensity
+    val d3dAnaglyphMode: Boolean = false, // Toggle for red/cyan stereoscopic 3D output
     val debugGrainAsset: String? = null, // Developer debug grain asset override (debug mode only)
     val debugGrainBlendMode: GrainBlendMode? = null, // Developer debug blend mode override (debug mode only)
     val debugProceduralGrainBoost: Float = 0.0f, // 0.0 (OFF), 0.25, 0.50, 1.0 (subtle procedural overlay)

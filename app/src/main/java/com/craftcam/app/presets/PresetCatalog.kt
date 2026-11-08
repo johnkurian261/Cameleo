@@ -502,28 +502,29 @@ object PresetCatalog {
         CameraPreset(
             id = "analog_cinema_film",
             iconResName = "cam_d3d",
-            name = "D 3D",
-            subtitle = "Stereoscopic 3-Lens Film",
+            name = "D3D",
+            subtitle = "Single-Image 3D Photography",
             category = CameraCategory.ANALOG_FILM,
             year = "1989",
-            description = "Multiview stereoscopic camera taking simultaneous frames with subtle spatial parallax and horizontal chromatic offset.",
+            description = "Single-image 3D photography filter. Computational depth estimation, depth-dependent parallax, virtual stereo views, subtle chromatic separation, and dimensional relief from a single photo.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.14f,
-                saturation = 1.08f,
-                temperature = -0.08f,
-                tint = 0.02f,
-                fade = 0.03f,
-                highlightRollOff = 0.78f,
+                contrast = 1.10f,
+                saturation = 1.05f,
+                temperature = 0.00f,
+                tint = 0.00f,
+                fade = 0.02f,
+                highlightRollOff = 0.82f,
                 shadowTintR = 0.01f,
-                shadowTintG = 0.02f,
-                shadowTintB = 0.04f
+                shadowTintG = 0.01f,
+                shadowTintB = 0.02f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.05f, assetPath = "grains/grain_d3d1.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.38f, highlightStrength = 0.18f),
-            lens = LensConfig(vignetteIntensity = 0.38f, vignetteRadius = 0.80f, chromaticAberration = 0.008f, softness = 0.10f),
-            halation = HalationConfig(enabled = true, threshold = 0.80f, intensity = 0.42f, radius = 24f, haloRed = 1.0f, haloGreen = 0.25f, haloBlue = 0.05f),
-            dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.50f),
+            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.0f, assetPath = "grains/grain_d3d1.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.15f),
+            lens = LensConfig(vignetteIntensity = 0.25f, vignetteRadius = 0.85f, chromaticAberration = 0.004f, softness = 0.0f),
+            halation = HalationConfig(enabled = false, threshold = 0.82f, intensity = 0.25f, radius = 20f, haloRed = 1.0f, haloGreen = 0.25f, haloBlue = 0.05f),
+            dust = DustConfig(enabled = false),
             dateStamp = DateStampConfig(enabled = false),
-            border = BorderConfig(style = BorderStyle.NONE)
+            border = BorderConfig(style = BorderStyle.NONE),
+            d3dProfile = com.craftcam.app.camera.profile.D3DProfile.Default
         ),
 
         CameraPreset(

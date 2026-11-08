@@ -494,11 +494,7 @@ fun ViewfinderScreen(
                         }
                     }
 
-                    val isThreeD = selectedPreset.id == "analog_cinema_film" || 
-                                   selectedPreset.id == "d3d" || 
-                                   selectedPreset.id == "d_3d" || 
-                                   selectedPreset.name.contains("3D", ignoreCase = true) ||
-                                   uiState.captureMode == CaptureMode.MODE_3D
+                    val isThreeD = uiState.captureMode == CaptureMode.MODE_3D
 
                     // 2. Large Dominant Circular Shutter Button
                     TactileShutterButton(

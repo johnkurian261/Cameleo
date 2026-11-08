@@ -42,7 +42,8 @@ data class CameleoCameraProfile(
     val grainProfile: GrainProfile = GrainProfile.Fine35mm,
     val opticalProfile: OpticalProfile = OpticalProfile.Standard,
     val exposureProfile: ExposureProfile = ExposureProfile.Standard,
-    val computationalProfile: ComputationalProfile = ComputationalProfile.SingleShot
+    val computationalProfile: ComputationalProfile = ComputationalProfile.SingleShot,
+    val d3dProfile: D3DProfile? = null
 ) {
     fun getDefaultFocalOption(): FocalLengthOption =
         focalLengths.firstOrNull { it.focalLengthMm == defaultFocalLengthMm }
@@ -65,6 +66,7 @@ data class CameleoCameraProfile(
             opticalProfile = opticalProfile,
             exposureProfile = exposureProfile,
             computationalProfile = computationalProfile,
+            d3dProfile = d3dProfile,
             supportedRatios = supportedRatios,
             defaultRatio = defaultRatio,
             baseOpticalMm = baseOpticalMm

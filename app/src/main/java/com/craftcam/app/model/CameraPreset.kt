@@ -134,6 +134,7 @@ data class CameraPreset(
     val flashOverlay: FlashOverlayConfig? = null,
     val dateStamp: DateStampConfig? = DateStampConfig(),
     val border: BorderConfig? = BorderConfig(),
+    val d3dProfile: com.craftcam.app.camera.profile.D3DProfile? = null,
     val sampleResName: String = "sample_${id}",
     val iconResName: String = "cam_classic"
 )

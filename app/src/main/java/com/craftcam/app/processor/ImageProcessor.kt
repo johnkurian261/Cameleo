@@ -54,7 +54,8 @@ object ImageProcessor {
         lensProfile: LensProfile = LensProfile.NORMAL,
         isFlashActive: Boolean = false,
         sensorIso: Int = 100,
-        exposureTimeNs: Long = 10_000_000L
+        exposureTimeNs: Long = 10_000_000L,
+        faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList()
     ): Uri? = withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
@@ -151,6 +152,25 @@ object ImageProcessor {
                 // Film grain, halation, dust, light leaks, borders, date stamps are 100% disabled
                 uri = saveToGallery(context, workingBitmap, "CAMELEO Pro")
             } else {
+                // 1.5 D3D Single-Image 3D Photography Filter
+                val d3dProf = preset.d3dProfile ?: if (preset.id == "analog_cinema_film" || preset.id == "d3d") {
+                    com.craftcam.app.camera.profile.D3DProfile.Default
+                } else null
+
+                if (d3dProf != null) {
+                    val strength = (d3dProf.depthStrength + tuning.d3dStrengthOffset).coerceIn(0.05f, 1.0f)
+                    val isAnaglyph = tuning.d3dAnaglyphMode || d3dProf.isAnaglyphMode
+                    val d3dBitmap = com.craftcam.app.threed.D3DPhotoFilter.apply(
+                        sourceBitmap = workingBitmap,
+                        profile = d3dProf,
+                        faces = faces,
+                        strength = strength,
+                        isAnaglyphOverride = isAnaglyph
+                    )
+                    BitmapPool.release(workingBitmap)
+                    workingBitmap = d3dBitmap
+                }
+
                 // 2. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
                 // Executed in-place on workingBitmap using pooled IntArrays (zero new Bitmap allocations)
                 workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive)

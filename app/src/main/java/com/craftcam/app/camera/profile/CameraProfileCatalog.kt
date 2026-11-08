@@ -693,8 +693,8 @@ object CameraProfileCatalog {
 
     val D_3D = CameleoCameraProfile(
         id = "d_3d",
-        name = "D 3D",
-        subtitle = "Stereoscopic 3D",
+        name = "D3D",
+        subtitle = "Single-Image 3D Photography",
         presetId = "analog_cinema_film",
         focalLengths = listOf(
             FocalLengthOption("30mm", 30f),
@@ -710,6 +710,7 @@ object CameraProfileCatalog {
         ),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
+        d3dProfile = D3DProfile.Default,
         filmProfile = FilmProfile(
             id = "film_d3d",
             name = "Stereoscopic Motion Picture",

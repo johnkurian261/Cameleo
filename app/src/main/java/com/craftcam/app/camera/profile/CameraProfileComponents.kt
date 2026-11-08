@@ -238,6 +238,7 @@ data class CameraProfile(
     val grainProfile: GrainProfile = GrainProfile.Fine35mm,
     val exposureProfile: ExposureProfile = ExposureProfile.Standard,
     val computationalProfile: ComputationalProfile = ComputationalProfile.SingleShot,
+    val d3dProfile: D3DProfile? = null,
     val supportedRatios: List<AspectRatioMode> = listOf(
         AspectRatioMode.RATIO_4_3,
         AspectRatioMode.RATIO_3_2,

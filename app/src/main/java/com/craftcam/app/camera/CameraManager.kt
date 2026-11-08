@@ -470,13 +470,7 @@ class CameraManager(private val context: Context) {
                 _uiState.value.engineMode
             }
 
-            val isThreeD = preset.id == "analog_cinema_film" || 
-                           preset.id == "d3d" || 
-                           preset.id == "d_3d" || 
-                           preset.name.contains("3D", ignoreCase = true)
-            val newCaptureMode = if (isThreeD) {
-                CaptureMode.MODE_3D
-            } else if (_uiState.value.captureMode == CaptureMode.MODE_3D) {
+            val newCaptureMode = if (_uiState.value.captureMode == CaptureMode.MODE_3D) {
                 CaptureMode.PHOTO
             } else {
                 _uiState.value.captureMode
@@ -1287,7 +1281,8 @@ class CameraManager(private val context: Context) {
                                 lensProfile = _uiState.value.shootingState.selectedLens,
                                 isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF,
                                 sensorIso = _uiState.value.liveIso,
-                                exposureTimeNs = _uiState.value.liveExposureNs
+                                exposureTimeNs = _uiState.value.liveExposureNs,
+                                faces = _uiState.value.detectedFaces
                             )
                             if (uri != null) {
                                 withContext(Dispatchers.Main) {
