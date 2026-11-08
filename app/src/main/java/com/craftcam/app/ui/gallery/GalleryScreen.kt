@@ -142,14 +142,14 @@ fun GalleryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 if (!isSelectionMode) {
-                    // Left: Return to camera button (simple icon, NO bubble background/border)
+                    // Left: Return to camera button (clean back arrow, NO bubble)
                     IconButton(
                         onClick = onNavigateBack,
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_camera_back),
-                            contentDescription = "Camera",
+                            painter = painterResource(id = R.drawable.ic_dazz_back),
+                            contentDescription = "Back",
                             tint = TextPrimary,
                             modifier = Modifier.size(24.dp)
                         )
@@ -590,14 +590,8 @@ private fun DazzGalleryThumbnail(
             }
         } else {
             // Film emulsion badge in bottom-left
-            val filmTag = remember(item.name) {
-                when {
-                    item.name.contains("FXNR", ignoreCase = true) -> "FXNR"
-                    item.name.contains("CLASSIC", ignoreCase = true) -> "D CLASSIC"
-                    item.name.contains("GR", ignoreCase = true) -> "GR DIGITAL"
-                    item.name.contains("S67", ignoreCase = true) -> "S CLASSIC"
-                    else -> "FILM"
-                }
+            val filmTag = remember(item.name, item.cameraModel) {
+                resolveFilterName(item.name, item.cameraModel)
             }
             Box(
                 modifier = Modifier
@@ -608,7 +602,7 @@ private fun DazzGalleryThumbnail(
                     .padding(horizontal = 4.dp, vertical = 1.dp)
             ) {
                 Text(
-                    text = filmTag,
+                    text = filmTag.uppercase(),
                     color = Color(0xFFE2E4EA),
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,
@@ -641,13 +635,7 @@ private fun DazzFullScreenViewer(
     val currentItem = photos.getOrNull(currentPage)
 
     val filmTag = remember(currentItem?.name, currentItem?.cameraModel) {
-        currentItem?.cameraModel ?: when {
-            currentItem?.name?.contains("FXNR", ignoreCase = true) == true -> "FXNR"
-            currentItem?.name?.contains("CLASSIC", ignoreCase = true) == true -> "D CLASSIC"
-            currentItem?.name?.contains("GR", ignoreCase = true) == true -> "GR DIGITAL"
-            currentItem?.name?.contains("S67", ignoreCase = true) == true -> "S CLASSIC"
-            else -> "CAMELEO"
-        }
+        resolveFilterName(currentItem?.name, currentItem?.cameraModel)
     }
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -704,24 +692,17 @@ private fun DazzFullScreenViewer(
                 )
             }
 
-            // Film / Camera Profile Badge
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = Color.Black.copy(alpha = 0.55f),
-                border = BorderStroke(1.dp, Color(0x33FFFFFF))
-            ) {
-                Text(
-                    text = filmTag,
-                    color = TextPrimary,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-            }
+            // Film / Camera Profile Tag (clean text, no bubble)
+            Text(
+                text = filmTag,
+                color = TextSecondary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold
+            )
         }
 
-        // ─── BOTTOM FLOATING ACTION DOCK (Share, Redevelop, Delete) ───
+        // ─── BOTTOM ACTIONS (Share, Redevelop, Delete - Clean, No Bubbles) ───
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -729,67 +710,63 @@ private fun DazzFullScreenViewer(
                 .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Film Caption
+            // Filter Name Only (No 'Shot on Cameleo', clean typography)
             Text(
-                text = "SHOT WITH CAMELEO • ${filmTag.uppercase()}",
+                text = filmTag.uppercase(),
                 color = VintageAmber.copy(alpha = 0.9f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+                letterSpacing = 1.5.sp
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Surface(
-                shape = RoundedCornerShape(32.dp),
-                color = Color(0xEE161822),
-                border = BorderStroke(1.dp, Color(0x33FFFFFF)),
-                shadowElevation = 14.dp
+            // Action Buttons: Flat and clean, NO bubble/capsule border around Delete or other icons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(32.dp)
+                // 1. Share
+                IconButton(
+                    onClick = { currentItem?.let { onShare(it) } },
+                    modifier = Modifier.size(48.dp)
                 ) {
-                    // 1. Share
-                    IconButton(
-                        onClick = { currentItem?.let { onShare(it) } },
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_share),
-                            contentDescription = "Share",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_dazz_share),
+                        contentDescription = "Share",
+                        tint = TextPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
 
-                    // 2. Redevelop / Edit (Dazz Cam signature)
-                    IconButton(
-                        onClick = { currentItem?.let { onRedevelop(it) } },
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_redevelop),
-                            contentDescription = "Redevelop Film",
-                            tint = VintageAmber,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                // 2. Redevelop / Edit (Dazz Cam signature)
+                IconButton(
+                    onClick = { currentItem?.let { onRedevelop(it) } },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_dazz_redevelop),
+                        contentDescription = "Redevelop Film",
+                        tint = VintageAmber,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
 
-                    // 3. Delete
-                    IconButton(
-                        onClick = { showDeleteConfirm = true },
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_delete),
-                            contentDescription = "Delete",
-                            tint = VintageRed,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                // 3. Delete (Clean icon, NO bubble around it)
+                IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_dazz_delete),
+                        contentDescription = "Delete",
+                        tint = VintageRed,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
         }
@@ -1075,6 +1052,29 @@ private fun RedevelopFilmSheet(
 }
 
 // ─── PHOTO LOADING, PERSISTENCE & SYSTEM ACTIONS ────────────────────────────
+private fun resolveFilterName(name: String?, cameraModel: String?): String {
+    val cleanModel = cameraModel?.replace("CAMELEO", "", ignoreCase = true)?.trim()
+    if (!cleanModel.isNullOrEmpty()) {
+        if (cleanModel.equals("Natural", ignoreCase = true)) return "Zero"
+        return cleanModel
+    }
+    val fileName = name ?: ""
+    val matched = PresetCatalog.allPresets.firstOrNull { preset ->
+        fileName.contains(preset.name.replace(" ", "_"), ignoreCase = true) ||
+        fileName.contains(preset.name.replace(" ", ""), ignoreCase = true) ||
+        fileName.contains(preset.id, ignoreCase = true)
+    }
+    return matched?.name ?: when {
+        fileName.contains("FXNR", ignoreCase = true) -> "FXNR"
+        fileName.contains("CLASSIC", ignoreCase = true) -> "D Classic"
+        fileName.contains("GR", ignoreCase = true) -> "GR Digital"
+        fileName.contains("S67", ignoreCase = true) -> "S Classic"
+        fileName.contains("ZERO", ignoreCase = true) -> "Zero"
+        fileName.contains("D3D", ignoreCase = true) -> "D3D"
+        else -> "Zero"
+    }
+}
+
 private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = withContext(Dispatchers.IO) {
     val items = mutableListOf<GalleryItem>()
     val imgProjection = arrayOf(
@@ -1105,7 +1105,17 @@ private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = wit
                 val date = cursor.getLong(dateCol)
                 val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
-                items.add(GalleryItem(id, uri, name, date, null, isVideo = false))
+                val cameraModel = try {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                        val exif = ExifInterface(pfd.fileDescriptor)
+                        exif.getAttribute(ExifInterface.TAG_MODEL)
+                            ?.replace("CAMELEO", "", ignoreCase = true)
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                    }
+                } catch (_: Exception) { null }
+
+                items.add(GalleryItem(id, uri, name, date, cameraModel, isVideo = false))
             }
         }
     } catch (_: Exception) {}

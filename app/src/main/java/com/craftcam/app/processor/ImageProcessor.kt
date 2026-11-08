@@ -145,12 +145,12 @@ object ImageProcessor {
                     sensorIso = sensorIso,
                     exposureTimeNs = exposureTimeNs
                 )
-                uri = saveToGallery(context, workingBitmap, "CAMELEO Natural")
+                uri = saveToGallery(context, workingBitmap, preset.name)
             } else if (engineMode == com.craftcam.app.model.CameraEngineMode.PRO) {
                 // Pro Camera Manual Capture:
                 // Pure full-resolution capture with manual ISO/Shutter/WB/Focus
                 // Film grain, halation, dust, light leaks, borders, date stamps are 100% disabled
-                uri = saveToGallery(context, workingBitmap, "CAMELEO Pro")
+                uri = saveToGallery(context, workingBitmap, if (preset.id == "zero") "Pro" else preset.name)
             } else {
                 // 1.5 D3D Single-Image 3D Photography Filter
                 val d3dProf = preset.d3dProfile ?: if (preset.id == "analog_cinema_film" || preset.id == "d3d") {
@@ -387,7 +387,7 @@ object ImageProcessor {
             )
 
             // Save developed photo to gallery (DCIM/Cameleo)
-            val uri = saveToGallery(context, developedBitmap, "CAMELEO Natural")
+            val uri = saveToGallery(context, developedBitmap, "Zero")
             uri
         } catch (t: Throwable) {
             Log.e(TAG, "Failed in processComputationalPhoto", t)
@@ -1839,7 +1839,11 @@ object ImageProcessor {
 
     internal fun saveToGallery(context: Context, bitmap: Bitmap, cameraName: String): Uri? {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val fileName = "CAMELEO_${timeStamp}.jpg"
+        val cleanTag = cameraName.replace("CAMELEO", "", ignoreCase = true).trim()
+            .replace(" ", "_")
+            .replace("[^a-zA-Z0-9_]".toRegex(), "")
+        val tagPrefix = if (cleanTag.isNotEmpty()) "${cleanTag}_" else ""
+        val fileName = "CAMELEO_${tagPrefix}${timeStamp}.jpg"
 
         val contentValues = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
@@ -1865,7 +1869,8 @@ object ImageProcessor {
                     context.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
                         val exif = ExifInterface(pfd.fileDescriptor)
                         exif.setAttribute(ExifInterface.TAG_MAKE, "Cameleo")
-                        exif.setAttribute(ExifInterface.TAG_MODEL, cameraName)
+                        val cleanModel = cameraName.replace("CAMELEO", "", ignoreCase = true).trim().ifEmpty { cameraName }
+                        exif.setAttribute(ExifInterface.TAG_MODEL, cleanModel)
                         exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Cameleo Vintage Camera 1.0")
                         exif.saveAttributes()
                     }
