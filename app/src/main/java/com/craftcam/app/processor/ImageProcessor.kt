@@ -156,7 +156,7 @@ object ImageProcessor {
                 workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive)
 
                 // 3. Apply Retro Date Stamp (draws in-place onto mutable workingBitmap)
-                if (tuning.dateStampEnabled && preset.dateStamp != null) {
+                if (tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
                     val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear, context)
                     if (stamped != workingBitmap) {
                         BitmapPool.release(workingBitmap)
@@ -442,7 +442,7 @@ object ImageProcessor {
     }
 
     // ─── True Film Emulsion & Dazz Cam Processing Engine ─────────────────────
-    private suspend fun applyPresetEffects(
+    internal suspend fun applyPresetEffects(
         context: Context,
         source: Bitmap,
         preset: CameraPreset,
@@ -734,17 +734,6 @@ object ImageProcessor {
                         }
 
                         if (stageToneCurve) {
-                            // A. Preset & User Temperature / Tint (Warm/Cool Shift)
-                            if (abs(effectiveTemp) > 0.001f) {
-                                r += 0.10f * effectiveTemp
-                                b -= 0.10f * effectiveTemp
-                            }
-                            if (abs(effectiveTint) > 0.001f) {
-                                g += 0.06f * effectiveTint
-                                r -= 0.03f * effectiveTint
-                                b -= 0.03f * effectiveTint
-                            }
-
                             // B. Preset & User Contrast
                             if (abs(effectiveContrast - 1.0f) > 0.01f) {
                                 r = (r - 0.5f) * effectiveContrast + 0.5f
@@ -1669,18 +1658,38 @@ object ImageProcessor {
         "analog_fxn_r"         -> "lut_fxn_r.png"
         "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "lut_ccd_r.png"
         "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "lut_analog_35mm_classic.png"
-        "analog_warm_film"     -> "lut_analog_warm_film.png"
-        "analog_soft_film"     -> "lut_analog_soft_film.png"
-        "analog_vintage_color" -> "lut_analog_vintage_color.png"
-        "analog_cinema_film"   -> "lut_analog_cinema_film.png"
-        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_ccd_flash.png"
+        "analog_135ne"         -> "lut_135ne.png"
+        "analog_warm_film", "ccd_grd" -> "lut_analog_warm_film.png"
+        "analog_soft_film", "analog_ct2f" -> "lut_ct2f.png"
+        "analog_vintage_color", "analog_dexp" -> "lut_dexp.png"
+        "analog_cinema_film", "analog_d3d" -> "lut_d3d.png"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_dfuns.png"
         "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
         "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
-        "disp_classic"         -> "lut_disp_classic.png"
-        "disp_flash"           -> "lut_disp_flash.png"
-        "disp_warm"            -> "lut_disp_warm.png"
-        "disp_night"           -> "lut_disp_night.png"
-        "inst_vintage"         -> "lut_inst_vintage.png"
+        "disp_classic", "disp_golf" -> "lut_disp_classic.png"
+        "disp_flash", "disp_cpm35" -> "lut_disp_flash.png"
+        "disp_warm", "analog_135sr" -> "lut_disp_warm.png"
+        "disp_night", "analog_dhalf" -> "lut_disp_night.png"
+        "inst_vintage", "inst_c"   -> "lut_inst_vintage.png"
+        "analog_nt16"          -> "lut_nt16.png"
+        "analog_dblack"        -> "lut_bw.png"
+        "analog_ir"            -> "lut_ir.png"
+        "analog_s67"           -> "lut_analog_35mm_classic.png"
+        "analog_sclassic"      -> "lut_analog_warm_film.png"
+        "analog_ofm"           -> "lut_analog_35mm_classic.png"
+        "analog_srx"           -> "lut_disp_warm.png"
+        "analog_dslide"        -> "lut_analog_vintage_color.png"
+        "analog_slidep"        -> "lut_analog_vintage_color.png"
+        "analog_kv88", "analog_kv80" -> "lut_analog_35mm_classic.png"
+        "analog_hoga"          -> "lut_analog_warm_film.png"
+        "analog_original"      -> "lut_analog_35mm_classic.png"
+        "analog_collage"       -> "lut_analog_35mm_classic.png"
+        "analog_kino"          -> "lut_analog_cinema_film.png"
+        "analog_glow"          -> "lut_analog_soft_film.png"
+        "ccd_dam"              -> "lut_ccd_r.png"
+        "disp_fqs"             -> "lut_disp_classic.png"
+        "disp_puli"            -> "lut_disp_flash.png"
+        "inst_sq", "inst_sqc", "inst_ss", "inst_paf" -> "lut_inst_vintage.png"
         "cam_retro_vhs"        -> "lut_cam_retro_vhs.png"
         "cam_analog_video"     -> "lut_cam_analog_video.png"
         "cam_90s_camcorder"    -> "lut_cam_90s_camcorder.png"
@@ -1690,34 +1699,40 @@ object ImageProcessor {
     private fun selectGrainForPreset(presetId: String, isCamcorder: Boolean): String = when {
         isCamcorder                            -> "grains/grain8mm_01.jpg"
         presetId == "analog_fxn_r"             -> "grains/grain_ou.jpg"
-        presetId == "ccd_r" || presetId == "ccdr" || presetId == "ccd r" || presetId == "ccd-r" || presetId == "ccd_classic" -> "grains/grain_ccdr.jpg"
-        presetId == "analog_35mm_classic" || presetId == "d_classic" || presetId == "dclassic" || presetId == "d classic" || presetId == "classic_35mm" -> "grains/grain_dclassic.jpg"
-        presetId == "analog_warm_film"         -> "grains/grain_ou.jpg"
-        presetId == "analog_soft_film"         -> "grains/grain_s67.jpg"
-        presetId == "analog_vintage_color"     -> "grains/grain_dexp.jpg"
-        presetId == "analog_cinema_film"       -> "grains/grain_d3d1.jpg"
-        presetId == "ccd_flash"                -> "grains/grain_dfuns.jpg"
-        presetId == "ccd_y2k_digital" || presetId == "classic_u" || presetId == "classicu" -> "grains/grain_classicu.jpg"
-        presetId == "ccd_retro_compact" || presetId == "dqs" -> "grains/grain_dqs.jpg"
-        presetId == "disp_classic"             -> "grains/grain_dexp2.jpg"
-        presetId == "disp_flash"               -> "grains/grain_cpm35.jpg"
-        presetId == "disp_warm"                -> "grains/grain540_01.jpg"
-        presetId == "disp_night"               -> "grains/grain_ou_lowlight.jpg"
-        presetId == "inst_vintage"             -> "grains/grain_instc.jpg"
+        presetId in listOf("ccd_r", "ccdr", "ccd_dam") -> "grains/grain_ccdr.jpg"
+        presetId in listOf("analog_35mm_classic", "d_classic", "dclassic", "analog_ofm", "analog_original") -> "grains/grain_dclassic.jpg"
+        presetId in listOf("analog_soft_film", "analog_s67", "analog_sclassic") -> "grains/grain_s67.jpg"
+        presetId in listOf("analog_vintage_color", "analog_dexp", "analog_dslide", "analog_slidep") -> "grains/grain_dexp.jpg"
+        presetId in listOf("analog_cinema_film", "analog_d3d", "analog_kino") -> "grains/grain_d3d1.jpg"
+        presetId in listOf("ccd_flash", "dfuns", "disp_puli") -> "grains/grain_dfuns.jpg"
+        presetId in listOf("ccd_y2k_digital", "classicu") -> "grains/grain_classicu.jpg"
+        presetId in listOf("ccd_retro_compact", "dqs", "disp_fqs") -> "grains/grain_dqs.jpg"
+        presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
+        presetId in listOf("disp_flash", "disp_cpm35") -> "grains/grain_cpm35.jpg"
+        presetId in listOf("disp_warm", "analog_135sr", "analog_srx") -> "grains/grain540_01.jpg"
+        presetId in listOf("disp_night", "analog_dhalf", "analog_nt16") -> "grains/grain_ou_lowlight.jpg"
+        presetId in listOf("inst_vintage", "inst_c", "inst_sq", "inst_sqc", "inst_ss", "inst_paf") -> "grains/grain_instc.jpg"
+        presetId in listOf("analog_135ne", "135ne") -> "grains/grain_135sr.jpg"
+        presetId == "analog_dblack"            -> "grains/grain_dexp.jpg"
+        presetId == "analog_hoga"              -> "grains/grain_hoga.jpg"
+        presetId in listOf("analog_kv88", "analog_kv80") -> "grains/grain_kv88.jpg"
+        presetId == "analog_glow"              -> "grains/grain_classicu.jpg"
+        presetId == "analog_ir"                -> "grains/grain_IR.jpg"
         else                                   -> "grains/grain_dclassic.jpg"
     }
 
     private fun selectVignetteForPreset(presetId: String): String? = when (presetId) {
-        "analog_fxn_r"                            -> "vignette_nt16.jpg"
-        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm", "analog_warm_film" -> "vignette_dclassic.jpg"
-        "analog_soft_film"                        -> "vignette_ct2f.jpg"
-        "analog_vintage_color"                    -> "vignette_dexp.jpg"
-        "analog_cinema_film"                      -> "vignette_dclassic.jpg"
-        "disp_flash"                              -> "vignette_cpm35.jpg"
-        "disp_warm"                               -> "135sr_vig.jpg"
-        "inst_vintage"                            -> "135sr_vig.jpg"
-        "ccd_flash", "ccd_y2k_digital", "classic_u", "classicu", "ccd_r", "ccdr", "ccd r" -> "sclassic_vintage.jpg"
-        else                                      -> null
+        "analog_fxn_r", "analog_nt16"          -> "vignette_nt16.jpg"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm", "analog_warm_film", "ccd_grd" -> "vignette_dclassic.jpg"
+        "analog_soft_film", "analog_ct2f"      -> "vignette_ct2f.jpg"
+        "analog_vintage_color", "analog_dexp"  -> "vignette_dexp.jpg"
+        "analog_cinema_film", "analog_d3d"     -> "vignette_dclassic.jpg"
+        "disp_flash", "disp_cpm35"             -> "vignette_cpm35.jpg"
+        "disp_warm", "analog_135sr", "analog_srx" -> "135sr_vig.jpg"
+        "inst_vintage", "inst_c", "inst_sq", "inst_sqc", "inst_ss", "inst_paf" -> "135sr_vig.jpg"
+        "analog_hoga"                          -> "mask_lens_paf.jpg"
+        "ccd_flash", "ccd_y2k_digital", "classicu", "ccd_r", "ccdr", "ccd_dam" -> "sclassic_vintage.jpg"
+        else                                   -> null
     }
 
     private fun selectDustForPreset(presetId: String): String = when (presetId) {
@@ -1801,7 +1816,7 @@ object ImageProcessor {
         return Bitmap.createBitmap(bitmap, startX, startY, cropW, cropH)
     }
 
-    private fun saveToGallery(context: Context, bitmap: Bitmap, cameraName: String): Uri? {
+    internal fun saveToGallery(context: Context, bitmap: Bitmap, cameraName: String): Uri? {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val fileName = "CAMELEO_${timeStamp}.jpg"
 

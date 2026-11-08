@@ -163,6 +163,41 @@ class GLViewfinderRenderer(
     private val lutTextureCache = HashMap<String, Int>()
     private val grainTextureCache = HashMap<String, Int>()
 
+    private var dummy2DTextureId = 0
+    private var dummy3DTextureId = 0
+
+    private fun initDummyTextures() {
+        if (dummy2DTextureId == 0) {
+            val tex = IntArray(1)
+            GLES30.glGenTextures(1, tex, 0)
+            dummy2DTextureId = tex[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            val buf = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+            buf.put(byteArrayOf(0, 0, 0, 0))
+            buf.position(0)
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, 1, 1, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        }
+        if (dummy3DTextureId == 0) {
+            val tex = IntArray(1)
+            GLES30.glGenTextures(1, tex, 0)
+            dummy3DTextureId = tex[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            val buf = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+            buf.put(byteArrayOf(0, 0, 0, 0))
+            buf.position(0)
+            GLES30.glTexImage3D(GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGBA, 1, 1, 1, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
+        }
+    }
+
     @Volatile
     private var isNaturalMode: Boolean = false
 
@@ -504,6 +539,30 @@ class GLViewfinderRenderer(
         uLensNdFactorLoc = GLES30.glGetUniformLocation(programId, "uLensNdFactor")
         uLensColorFlashTintLoc = GLES30.glGetUniformLocation(programId, "uLensColorFlashTint")
         uLensIsFlashActiveLoc = GLES30.glGetUniformLocation(programId, "uLensIsFlashActive")
+
+        initDummyTextures()
+
+        // Assign dedicated, non-overlapping texture image units to every active sampler uniform (GLES 3.0 Section 3.8.12)
+        GLES30.glUseProgram(programId)
+        if (sTextureLoc != -1) GLES30.glUniform1i(sTextureLoc, 0)
+        if (sLut3DLoc != -1) GLES30.glUniform1i(sLut3DLoc, 1)
+        if (uLutTextureLoc != -1) GLES30.glUniform1i(uLutTextureLoc, 2)
+        if (uGrainTextureLoc != -1) GLES30.glUniform1i(uGrainTextureLoc, 3)
+        if (sLut3D_BLoc != -1) GLES30.glUniform1i(sLut3D_BLoc, 4)
+        if (uLutTextureBLoc != -1) GLES30.glUniform1i(uLutTextureBLoc, 5)
+
+        // Pre-bind dummy textures to units 1..5 to prevent uninitialized texture sampler faults
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -547,6 +606,13 @@ class GLViewfinderRenderer(
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
         GLES30.glUniform1i(sTextureLoc, 0)
+
+        // Ensure fixed sampler-to-unit bindings across all frames
+        if (sLut3DLoc != -1) GLES30.glUniform1i(sLut3DLoc, 1)
+        if (uLutTextureLoc != -1) GLES30.glUniform1i(uLutTextureLoc, 2)
+        if (uGrainTextureLoc != -1) GLES30.glUniform1i(uGrainTextureLoc, 3)
+        if (sLut3D_BLoc != -1) GLES30.glUniform1i(sLut3D_BLoc, 4)
+        if (uLutTextureBLoc != -1) GLES30.glUniform1i(uLutTextureBLoc, 5)
 
         // Upload hardware texture transform matrix and viewport dimensions
         if (uTexMatrixLoc != -1) {
@@ -611,6 +677,18 @@ class GLViewfinderRenderer(
             if (uDebugStageOpticsLoc != -1) GLES30.glUniform1i(uDebugStageOpticsLoc, 1)
             if (uDebugStageVignetteLoc != -1) GLES30.glUniform1i(uDebugStageVignetteLoc, 1)
 
+            // Bind dummy textures to units 1..5 in Pro Mode to ensure valid textures of matching target
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+
             // Focus Peaking
             if (proConfig.focusPeakingEnabled && uFocusPeakingEnabledLoc != -1) {
                 GLES30.glUniform1i(uFocusPeakingEnabledLoc, 1)
@@ -639,24 +717,42 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uNaturalShadowLiftLoc, naturalProfile.shadowLift)
             val cachedLut = LutTextureCache.getOrCreateLutTexture(context, "lut_zero.png", prefer3D = true)
             if (cachedLut != null && uLutEnabledLoc != -1) {
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
                 if (cachedLut.target == GLES30.GL_TEXTURE_3D && sLut3DLoc != -1) {
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
                     GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, cachedLut.textureId)
-                    GLES30.glUniform1i(sLut3DLoc, 1)
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                     if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 1)
                 } else if (uLutTextureLoc != -1) {
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
                     GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, cachedLut.textureId)
-                    GLES30.glUniform1i(uLutTextureLoc, 1)
                     if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
                 }
                 GLES30.glUniform1i(uLutEnabledLoc, 1)
                 if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, 1.0f)
             } else if (uLutEnabledLoc != -1) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                 GLES30.glUniform1i(uLutEnabledLoc, 0)
                 if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, 0f)
             }
+
+            // Bind dummy textures for Grain (unit 3) and Secondary LUT (units 4 & 5)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
             GLES30.glUniform1i(uHasGrainTextureLoc, 0)
             GLES30.glUniform1f(uGrainIntensityLoc, 0f)
+
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            if (uHasSecondaryLutLoc != -1) GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
+
             GLES30.glUniform1i(uHalationEnabledLoc, 0)
             GLES30.glUniform1i(uLightLeakEnabledLoc, 0)
             GLES30.glUniform1f(uScanlineIntensityLoc, 0f)
@@ -677,18 +773,36 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uTintLoc, naturalProfile.tint)
             GLES30.glUniform1f(uHighlightRollOffLoc, naturalProfile.highlightRollOff)
 
-            if (uLensTypeLoc != -1) GLES30.glUniform1i(uLensTypeLoc, 0)
-            if (uLensDistortionLoc != -1) GLES30.glUniform1f(uLensDistortionLoc, 0f)
-            if (uLensEdgeCurvatureLoc != -1) GLES30.glUniform1f(uLensEdgeCurvatureLoc, 0f)
-            if (uLensVignetteLoc != -1) GLES30.glUniform1f(uLensVignetteLoc, 0f)
-            if (uLensPrismDispersionLoc != -1) GLES30.glUniform1f(uLensPrismDispersionLoc, 0f)
-            if (uLensStarburstStrengthLoc != -1) GLES30.glUniform1f(uLensStarburstStrengthLoc, 0f)
-            if (uLensNdFactorLoc != -1) GLES30.glUniform1f(uLensNdFactorLoc, 1.0f)
-            if (uLensIsFlashActiveLoc != -1) GLES30.glUniform1i(uLensIsFlashActiveLoc, 0)
+            // Pass active lens profile properties so mounted accessories work in Natural mode
+            val lensProf = currentLensProfile
+            val lensTypeInt = when (lensProf.type) {
+                LensType.NORMAL -> 0
+                LensType.WIDE -> 1
+                LensType.FISHEYE_F -> 2
+                LensType.FISHEYE_W -> 3
+                LensType.PRISM -> 4
+                LensType.STARBURST -> 5
+                LensType.ND -> 6
+                LensType.COLOR_FLASH -> 7
+            }
+            if (uLensTypeLoc != -1) GLES30.glUniform1i(uLensTypeLoc, lensTypeInt)
+            if (uLensDistortionLoc != -1) GLES30.glUniform1f(uLensDistortionLoc, lensProf.distortionStrength)
+            if (uLensEdgeCurvatureLoc != -1) GLES30.glUniform1f(uLensEdgeCurvatureLoc, lensProf.edgeCurvature)
+            if (uLensVignetteLoc != -1) GLES30.glUniform1f(uLensVignetteLoc, lensProf.vignetteStrength)
+            if (uLensPrismDispersionLoc != -1) GLES30.glUniform1f(uLensPrismDispersionLoc, lensProf.prismDispersion)
+            if (uLensStarburstStrengthLoc != -1) GLES30.glUniform1f(uLensStarburstStrengthLoc, lensProf.starburstStrength)
+            if (uLensStarburstThresholdLoc != -1) GLES30.glUniform1f(uLensStarburstThresholdLoc, lensProf.starburstThreshold)
+            if (uLensNdFactorLoc != -1) GLES30.glUniform1f(uLensNdFactorLoc, lensProf.ndTransmissionFactor)
+            if (uLensColorFlashTintLoc != -1) {
+                val (tr, tg, tb) = lensProf.colorFlashTint.rgb
+                GLES30.glUniform3f(uLensColorFlashTintLoc, tr, tg, tb)
+            }
+            if (uLensIsFlashActiveLoc != -1) {
+                GLES30.glUniform1i(uLensIsFlashActiveLoc, if (isLensFlashActive) 1 else 0)
+            }
 
             if (uPreLinearizationEnabledLoc != -1) GLES30.glUniform1i(uPreLinearizationEnabledLoc, 0)
             if (uPreLinearizationStrengthLoc != -1) GLES30.glUniform1f(uPreLinearizationStrengthLoc, 0f)
-            if (uHasSecondaryLutLoc != -1) GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
             if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, 0f)
             if (uShoulderClipLoc != -1) GLES30.glUniform1f(uShoulderClipLoc, 1f)
             if (uHalationColorTintLoc != -1) GLES30.glUniform3f(uHalationColorTintLoc, 1.0f, 0.32f, 0.10f)
@@ -708,7 +822,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform1i(uNaturalModeEnabledLoc, 0)
             GLES30.glUniform1f(uNaturalShadowLiftLoc, 0f)
 
-            // Bind 3D Hald CLUT Film Emulsion Texture (unit 1)
+            // Bind 3D/2D Hald CLUT Film Emulsion Texture (unit 1 for 3D, unit 2 for 2D)
             val preset = activePreset
             val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
             val canonicalLut = getLutAssetForPreset(preset.id)
@@ -719,14 +833,17 @@ class GLViewfinderRenderer(
                 cachedLut = LutTextureCache.getOrCreateLutTexture(context, canonicalLut, prefer3D = true)
             }
             if (cachedLut != null && uLutEnabledLoc != -1) {
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
                 if (cachedLut.target == GLES30.GL_TEXTURE_3D && sLut3DLoc != -1) {
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
                     GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, cachedLut.textureId)
-                    GLES30.glUniform1i(sLut3DLoc, 1)
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                     if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 1)
                 } else if (uLutTextureLoc != -1) {
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
                     GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, cachedLut.textureId)
-                    GLES30.glUniform1i(uLutTextureLoc, 1)
                     if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
                 }
                 GLES30.glUniform1i(uLutEnabledLoc, 1)
@@ -737,6 +854,10 @@ class GLViewfinderRenderer(
                 }
                 if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, spaceInt)
             } else if (uLutEnabledLoc != -1) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                 GLES30.glUniform1i(uLutEnabledLoc, 0)
                 if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
             }
@@ -752,27 +873,38 @@ class GLViewfinderRenderer(
                 GLES30.glUniform1f(uPreLinearizationStrengthLoc, tuning.preLinearizationStrength)
             }
 
-            // Dual-LUT support (Section 7)
+            // Dual-LUT support (unit 4 for 3D, unit 5 for 2D)
             val secLutAsset = unifiedProfile.filmProfile.secondaryLutAssetPath
             if (!secLutAsset.isNullOrEmpty() && uHasSecondaryLutLoc != -1) {
                 val cachedSecLut = LutTextureCache.getOrCreateLutTexture(context, secLutAsset, prefer3D = true)
                 if (cachedSecLut != null) {
-                    GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
                     if (cachedSecLut.target == GLES30.GL_TEXTURE_3D && sLut3D_BLoc != -1) {
+                        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
                         GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, cachedSecLut.textureId)
-                        GLES30.glUniform1i(sLut3D_BLoc, 3)
+                        GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+                        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                     } else if (uLutTextureBLoc != -1) {
+                        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+                        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                        GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
                         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, cachedSecLut.textureId)
-                        GLES30.glUniform1i(uLutTextureBLoc, 3)
                     }
                     GLES30.glUniform1i(uHasSecondaryLutLoc, 1)
                     if (uDualLutMixLoc != -1) {
                         GLES30.glUniform1f(uDualLutMixLoc, unifiedProfile.filmProfile.dualLutBlendFactor)
                     }
                 } else {
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                    GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                     GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
                 }
             } else if (uHasSecondaryLutLoc != -1) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                 GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
             }
 
@@ -782,18 +914,19 @@ class GLViewfinderRenderer(
                 GLES30.glUniform1f(uFilterIntensityLoc, intensity)
             }
 
-            // Resolve single authoritative GrainStage (prevents double grain stacking)
+            // Resolve single authoritative GrainStage (prevents double grain stacking) (unit 3)
             val resolvedGrain = com.craftcam.app.processor.GrainStage.resolve(preset, unifiedProfile.grainProfile, tuning, intensity)
             val grainTexId = if (resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
                 getOrLoadGrainTexture(resolvedGrain.assetPath)
             } else 0
             if (grainTexId != 0 && uGrainTextureLoc != -1) {
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
                 GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, grainTexId)
-                GLES30.glUniform1i(uGrainTextureLoc, 2)
                 GLES30.glUniform1i(uHasGrainTextureLoc, 1)
-            } else if (uHasGrainTextureLoc != -1) {
-                GLES30.glUniform1i(uHasGrainTextureLoc, 0)
+            } else {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+                if (uHasGrainTextureLoc != -1) GLES30.glUniform1i(uHasGrainTextureLoc, 0)
             }
 
             val color = preset.colorGrading
@@ -932,6 +1065,7 @@ class GLViewfinderRenderer(
 
         // Draw quad
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+        GLShaderHelper.checkGLError("glDrawArrays")
 
         GLES30.glDisableVertexAttribArray(0)
         GLES30.glDisableVertexAttribArray(1)
@@ -995,6 +1129,14 @@ class GLViewfinderRenderer(
         surfaceTexture = null
         lutTextureCache.clear()
         grainTextureCache.clear()
+        if (dummy2DTextureId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(dummy2DTextureId), 0)
+            dummy2DTextureId = 0
+        }
+        if (dummy3DTextureId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(dummy3DTextureId), 0)
+            dummy3DTextureId = 0
+        }
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {

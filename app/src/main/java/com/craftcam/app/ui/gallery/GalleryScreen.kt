@@ -3,32 +3,29 @@ package com.craftcam.app.ui.gallery
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,11 +35,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.exifinterface.media.ExifInterface
+import com.craftcam.app.R
+import com.craftcam.app.model.CameraCategory
+import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.presets.PresetCatalog
+import com.craftcam.app.processor.ImageProcessor
 import com.craftcam.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,18 +62,68 @@ data class GalleryItem(
     val isVideo: Boolean = false
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    var photos by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
+    val coroutineScope = rememberCoroutineScope()
+
+    var allPhotos by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
+    // Multi-select state
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    // Redevelop state
+    var redevelopingItem by remember { mutableStateOf<GalleryItem?>(null) }
+    var isRedeveloping by remember { mutableStateOf(false) }
+
+    // Import Photo state
+    var isImporting by remember { mutableStateOf(false) }
+
+    // Load initial photos
     LaunchedEffect(Unit) {
-        photos = loadCameleoPhotos(context)
+        allPhotos = loadCameleoPhotos(context)
         isLoading = false
+    }
+
+    // Photo picker launcher for importing photos
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                isImporting = true
+                try {
+                    val defaultPreset = PresetCatalog.allPresets.find { it.id == "analog_fxn_r" }
+                        ?: PresetCatalog.allPresets.first()
+                    val newUri = importAndDevelopPhoto(context, uri, defaultPreset)
+                    if (newUri != null) {
+                        allPhotos = loadCameleoPhotos(context)
+                        Toast.makeText(context, "Developed with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to import photo", Toast.LENGTH_SHORT).show()
+                } finally {
+                    isImporting = false
+                }
+            }
+        }
+    }
+
+    // Delete single photo
+    val onDeletePhoto: (GalleryItem) -> Unit = { item ->
+        deletePhoto(context, item.uri)
+        val updated = allPhotos.filter { it.id != item.id }
+        allPhotos = updated
+        if (selectedIndex != null && updated.isEmpty()) {
+            selectedIndex = null
+        }
     }
 
     Box(
@@ -77,92 +132,362 @@ fun GalleryScreen(
             .background(CameraBlack)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header
+            // ─── TOP NAVIGATION BAR (Simple, No Bubbles) ──────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
+                if (!isSelectionMode) {
+                    // Left: Return to camera button (simple icon, NO bubble background/border)
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_camera_back),
+                            contentDescription = "Camera",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // Center: Clean Darkroom title
                     Text(
-                        text = "DARKROOM GALLERY",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontSize = 18.sp,
+                        text = "DARKROOM",
+                        color = TextPrimary,
+                        fontSize = 15.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        letterSpacing = 2.sp
                     )
+
+                    // Right: Import & Select Buttons (simple icons, NO bubble background/border)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_dazz_importphoto),
+                                contentDescription = "Import Photo",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { isSelectionMode = true },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_dazz_select),
+                                contentDescription = "Select Mode",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                } else {
+                    // Selection Mode Header
+                    TextButton(
+                        onClick = {
+                            isSelectionMode = false
+                            selectedIds = emptySet()
+                        }
+                    ) {
+                        Text(
+                            text = "CANCEL",
+                            color = VintageAmber,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     Text(
-                        text = "${photos.size} Photos Developed",
-                        fontSize = 12.sp,
-                        color = TextSecondary
+                        text = "${selectedIds.size} SELECTED",
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
                     )
+
+                    TextButton(
+                        onClick = {
+                            selectedIds = if (selectedIds.size == allPhotos.size) {
+                                emptySet()
+                            } else {
+                                allPhotos.map { it.id }.toSet()
+                            }
+                        }
+                    ) {
+                        Text(
+                            text = if (selectedIds.size == allPhotos.size) "NONE" else "ALL",
+                            color = VintageAmber,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
-            if (isLoading) {
+            // ─── PHOTO GRID / EMPTY STATE ─────────────────────────────────────────────
+            if (isLoading || isImporting) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = VintageAmber)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = VintageAmber, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (isImporting) "DEVELOPING FILM FRAME..." else "LOADING DARKROOM...",
+                            color = VintageAmber,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
-            } else if (photos.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No photographs developed yet.\nTake your first shot with Cameleo!",
-                        color = TextMuted,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+            } else if (allPhotos.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_darkroom_camera),
+                            contentDescription = null,
+                            tint = TextMuted.copy(alpha = 0.4f),
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "NO PHOTOGRAPHS YET",
+                            color = TextSecondary,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Shoot frames with Cameleo or tap the import button to develop your photos.",
+                            color = TextMuted,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    contentPadding = PaddingValues(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    itemsIndexed(photos, key = { _, item -> item.id }) { index, item ->
-                        GalleryThumbnail(
+                    itemsIndexed(allPhotos, key = { _, item -> item.id }) { index, item ->
+                        val isSelected = selectedIds.contains(item.id)
+                        DazzGalleryThumbnail(
                             item = item,
-                            onClick = { selectedIndex = index }
+                            isSelectionMode = isSelectionMode,
+                            isSelected = isSelected,
+                            onClick = {
+                                if (isSelectionMode) {
+                                    selectedIds = if (isSelected) {
+                                        selectedIds - item.id
+                                    } else {
+                                        selectedIds + item.id
+                                    }
+                                } else {
+                                    selectedIndex = index
+                                }
+                            },
+                            onLongClick = {
+                                if (!isSelectionMode) {
+                                    isSelectionMode = true
+                                    selectedIds = setOf(item.id)
+                                }
+                            }
                         )
                     }
                 }
             }
         }
 
-        // Full Screen Viewer Overlay with Swipe Navigation
+        // ─── MULTI-SELECT BOTTOM DOCK (Simple, No Like) ──────────────────────────────
+        AnimatedVisibility(
+            visible = isSelectionMode && selectedIds.isNotEmpty(),
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(30.dp),
+                color = Color(0xEE161822),
+                border = BorderStroke(1.dp, Color(0x44FFFFFF)),
+                shadowElevation = 10.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    Text(
+                        text = "${selectedIds.size} Selected",
+                        color = VintageAmber,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(20.dp)
+                            .background(Color(0x33FFFFFF))
+                    )
+                    // Share
+                    IconButton(
+                        onClick = {
+                            val selectedItems = allPhotos.filter { selectedIds.contains(it.id) }
+                            sharePhotos(context, selectedItems)
+                        },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_share),
+                            contentDescription = "Share Selected",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    // Delete
+                    IconButton(
+                        onClick = { showBatchDeleteConfirm = true },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_delete),
+                            contentDescription = "Delete Selected",
+                            tint = VintageRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Batch delete confirmation
+        if (showBatchDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showBatchDeleteConfirm = false },
+                containerColor = Color(0xFF1B1D25),
+                title = {
+                    Text(
+                        text = "DELETE ${selectedIds.size} PHOTOGRAPHS?",
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "These photographs will be permanently deleted from your darkroom.",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showBatchDeleteConfirm = false
+                            val toDelete = allPhotos.filter { selectedIds.contains(it.id) }
+                            deletePhotos(context, toDelete.map { it.uri })
+                            allPhotos = allPhotos.filter { !selectedIds.contains(it.id) }
+                            selectedIds = emptySet()
+                            isSelectionMode = false
+                        }
+                    ) {
+                        Text("DELETE", color = VintageRed, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                        Text("CANCEL", color = TextSecondary, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            )
+        }
+
+        // ─── FULL SCREEN PHOTO VIEWER OVERLAY ─────────────────────────────────────
         selectedIndex?.let { initialIndex ->
-            FullScreenViewer(
-                photos = photos,
+            DazzFullScreenViewer(
+                photos = allPhotos,
                 initialIndex = initialIndex,
                 onDismiss = { selectedIndex = null },
                 onDelete = { photoToDelete ->
-                    deletePhoto(context, photoToDelete.uri)
-                    val newPhotos = photos.filter { it.id != photoToDelete.id }
-                    photos = newPhotos
-                    if (newPhotos.isEmpty()) {
-                        selectedIndex = null
-                    }
+                    onDeletePhoto(photoToDelete)
                 },
                 onShare = { photoToShare ->
                     sharePhoto(context, photoToShare)
+                },
+                onRedevelop = { photoToRedevelop ->
+                    redevelopingItem = photoToRedevelop
+                }
+            )
+        }
+
+        // ─── REDEVELOP FILM SHEET ─────────────────────────────────────────────────
+        redevelopingItem?.let { item ->
+            RedevelopFilmSheet(
+                item = item,
+                isRedeveloping = isRedeveloping,
+                onDismiss = { redevelopingItem = null },
+                onConfirmRedevelop = { preset ->
+                    coroutineScope.launch {
+                        isRedeveloping = true
+                        val newUri = redevelopPhoto(context, item, preset)
+                        isRedeveloping = false
+                        redevelopingItem = null
+                        if (newUri != null) {
+                            allPhotos = loadCameleoPhotos(context)
+                            Toast.makeText(context, "Frame redeveloped with ${preset.name}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Failed to redevelop photo", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             )
         }
     }
 }
 
+// ─── DAZZ CAM THUMBNAIL COMPONENT ───────────────────────────────────────────
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GalleryThumbnail(
+private fun DazzGalleryThumbnail(
     item: GalleryItem,
-    onClick: () -> Unit
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
     var bitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
@@ -176,24 +501,28 @@ private fun GalleryThumbnail(
                 } else {
                     context.contentResolver.openInputStream(item.uri)?.use { stream ->
                         val options = BitmapFactory.Options().apply {
-                            inSampleSize = 4 // Load thumbnail downscaled for smooth grid scroll
+                            inSampleSize = 4 // downscaled thumbnail for silky smooth scroll
                         }
                         val bmp = BitmapFactory.decodeStream(stream, null, options)
                         bmp?.let { bitmap = it.asImageBitmap() }
                     }
                 }
-            } catch (e: Exception) {
-                // thumbnail load error fallback
-            }
+            } catch (_: Exception) {}
         }
     }
 
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(SurfaceElevated)
-            .clickable(onClick = onClick)
+            .then(
+                if (isSelected) Modifier.border(2.dp, VintageAmber, RoundedCornerShape(2.dp)) else Modifier
+            )
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         bitmap?.let {
             Image(
@@ -206,49 +535,101 @@ private fun GalleryThumbnail(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = TextMuted)
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = TextMuted)
         }
 
+        // Selection Checkmark Overlay
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+            ) {
+                if (isSelected) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_dazz_check_selected),
+                        contentDescription = "Selected",
+                        modifier = Modifier.size(22.dp)
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_dazz_check_unselected),
+                        contentDescription = "Unselected",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // Video REC indicator
         if (item.isVideo) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .padding(4.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.Black.copy(alpha = 0.70f))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Video",
                         tint = VintageAmber,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = "REC",
                         color = Color.White,
-                        fontSize = 9.sp,
+                        fontSize = 8.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+        } else {
+            // Film emulsion badge in bottom-left
+            val filmTag = remember(item.name) {
+                when {
+                    item.name.contains("FXNR", ignoreCase = true) -> "FXNR"
+                    item.name.contains("CLASSIC", ignoreCase = true) -> "D CLASSIC"
+                    item.name.contains("GR", ignoreCase = true) -> "GR DIGITAL"
+                    item.name.contains("S67", ignoreCase = true) -> "S CLASSIC"
+                    else -> "FILM"
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = filmTag,
+                    color = Color(0xFFE2E4EA),
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
 
+// ─── DAZZ FULL SCREEN VIEWER WITH AUTHENTIC ACTION DOCK ─────────────────────
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FullScreenViewer(
+private fun DazzFullScreenViewer(
     photos: List<GalleryItem>,
     initialIndex: Int,
     onDismiss: () -> Unit,
     onDelete: (GalleryItem) -> Unit,
-    onShare: (GalleryItem) -> Unit
+    onShare: (GalleryItem) -> Unit,
+    onRedevelop: (GalleryItem) -> Unit
 ) {
-    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val safeInitial = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
     val pagerState = rememberPagerState(
@@ -259,10 +640,22 @@ private fun FullScreenViewer(
     val currentPage = pagerState.currentPage.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
     val currentItem = photos.getOrNull(currentPage)
 
+    val filmTag = remember(currentItem?.name, currentItem?.cameraModel) {
+        currentItem?.cameraModel ?: when {
+            currentItem?.name?.contains("FXNR", ignoreCase = true) == true -> "FXNR"
+            currentItem?.name?.contains("CLASSIC", ignoreCase = true) == true -> "D CLASSIC"
+            currentItem?.name?.contains("GR", ignoreCase = true) == true -> "GR DIGITAL"
+            currentItem?.name?.contains("S67", ignoreCase = true) == true -> "S CLASSIC"
+            else -> "CAMELEO"
+        }
+    }
+
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(CameraBlack.copy(alpha = 0.98f))
+            .background(Color.Black)
     ) {
         // Horizontal Pager for swiping between photos
         HorizontalPager(
@@ -272,146 +665,179 @@ private fun FullScreenViewer(
         ) { page ->
             val item = photos.getOrNull(page)
             if (item != null) {
-                FullScreenPhotoPage(item = item)
+                DazzFullScreenPhotoPage(item = item)
             }
         }
 
-        // Top Toolbar
+        // ─── TOP TOOLBAR (Close, Counter, Film Tag) ──────────────────────────
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = TextPrimary)
+            // Close / Back button (simple icon, NO bubble background)
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_dazz_back),
+                    contentDescription = "Back",
+                    tint = TextPrimary,
+                    modifier = Modifier.size(22.dp)
+                )
             }
 
-            // Photo counter badge e.g. "3 / 12"
+            // Dazz Cam DarkroomNumberLabel counter e.g. "3 / 12"
             if (photos.isNotEmpty()) {
                 Text(
                     text = "${currentPage + 1} / ${photos.size}",
                     color = VintageAmber,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
                 )
             }
 
-            Row {
-                IconButton(
-                    onClick = {
-                        currentItem?.let { onShare(it) }
-                    }
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = TextPrimary)
-                }
-                IconButton(
-                    onClick = {
-                        currentItem?.let { onDelete(it) }
-                    }
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = VintageRed)
-                }
-            }
-        }
-
-        // Left Navigation Arrow (when not on first item)
-        if (currentPage > 0) {
-            IconButton(
-                onClick = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(currentPage - 1)
-                    }
-                },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 12.dp)
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .border(1.dp, TextMuted.copy(alpha = 0.35f), CircleShape)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Previous Photo",
-                    tint = TextPrimary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
-
-        // Right Navigation Arrow (when not on last item)
-        if (currentPage < photos.size - 1) {
-            IconButton(
-                onClick = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(currentPage + 1)
-                    }
-                },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp)
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .border(1.dp, TextMuted.copy(alpha = 0.35f), CircleShape)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = "Next Photo",
-                    tint = TextPrimary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
-
-        // Camera Info Badge
-        var loadedModel by remember(currentItem?.uri) { mutableStateOf(currentItem?.cameraModel) }
-        LaunchedEffect(currentItem?.uri) {
-            if (loadedModel == null && currentItem != null && !currentItem.isVideo) {
-                withContext(Dispatchers.IO) {
-                    try {
-                        context.contentResolver.openFileDescriptor(currentItem.uri, "r")?.use { pfd ->
-                            val exif = androidx.exifinterface.media.ExifInterface(pfd.fileDescriptor)
-                            val model = exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_MODEL)
-                            if (model != null) {
-                                withContext(Dispatchers.Main) {
-                                    loadedModel = model
-                                }
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-        }
-
-        val displayModel = loadedModel ?: if (currentItem?.isVideo == true) "Analog Camcorder" else null
-        displayModel?.let { model ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 32.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(SurfaceElevated.copy(alpha = 0.90f))
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            // Film / Camera Profile Badge
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color.Black.copy(alpha = 0.55f),
+                border = BorderStroke(1.dp, Color(0x33FFFFFF))
             ) {
                 Text(
-                    text = "SHOT WITH CAMELEO • $model",
-                    color = VintageAmber,
+                    text = filmTag,
+                    color = TextPrimary,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                 )
             }
+        }
+
+        // ─── BOTTOM FLOATING ACTION DOCK (Share, Redevelop, Delete) ───
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Film Caption
+            Text(
+                text = "SHOT WITH CAMELEO • ${filmTag.uppercase()}",
+                color = VintageAmber.copy(alpha = 0.9f),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Surface(
+                shape = RoundedCornerShape(32.dp),
+                color = Color(0xEE161822),
+                border = BorderStroke(1.dp, Color(0x33FFFFFF)),
+                shadowElevation = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(32.dp)
+                ) {
+                    // 1. Share
+                    IconButton(
+                        onClick = { currentItem?.let { onShare(it) } },
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_share),
+                            contentDescription = "Share",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // 2. Redevelop / Edit (Dazz Cam signature)
+                    IconButton(
+                        onClick = { currentItem?.let { onRedevelop(it) } },
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_redevelop),
+                            contentDescription = "Redevelop Film",
+                            tint = VintageAmber,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // 3. Delete
+                    IconButton(
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_delete),
+                            contentDescription = "Delete",
+                            tint = VintageRed,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Single delete confirmation dialog
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                containerColor = Color(0xFF1B1D25),
+                title = {
+                    Text(
+                        text = "DELETE PHOTOGRAPH?",
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This photograph will be permanently removed from your darkroom album.",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirm = false
+                            currentItem?.let { onDelete(it) }
+                        }
+                    ) {
+                        Text("DELETE", color = VintageRed, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) {
+                        Text("CANCEL", color = TextSecondary, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            )
         }
     }
 }
 
+// ─── FULL SCREEN PHOTO PAGE ─────────────────────────────────────────────────
 @Composable
-private fun FullScreenPhotoPage(item: GalleryItem) {
+private fun DazzFullScreenPhotoPage(item: GalleryItem) {
     val context = LocalContext.current
     var fullBitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var isImageLoading by remember(item.uri) { mutableStateOf(true) }
@@ -423,7 +849,6 @@ private fun FullScreenPhotoPage(item: GalleryItem) {
                     val bmp = context.contentResolver.loadThumbnail(item.uri, android.util.Size(1080, 1080), null)
                     fullBitmap = bmp.asImageBitmap()
                 } else {
-                    // Optimized downscaled decode to fit viewport and prevent OOM
                     context.contentResolver.openInputStream(item.uri)?.use { boundsStream ->
                         val boundsOptions = BitmapFactory.Options().apply {
                             inJustDecodeBounds = true
@@ -445,8 +870,7 @@ private fun FullScreenPhotoPage(item: GalleryItem) {
                         }
                     }
                 }
-            } catch (e: Exception) {
-                // error loading image
+            } catch (_: Exception) {
             } finally {
                 isImageLoading = false
             }
@@ -467,9 +891,9 @@ private fun FullScreenPhotoPage(item: GalleryItem) {
                 modifier = Modifier.fillMaxSize()
             )
         } ?: if (isImageLoading) {
-            CircularProgressIndicator(color = VintageAmber)
+            CircularProgressIndicator(color = VintageAmber, strokeWidth = 2.dp)
         } else {
-            Text("Failed to load photo", color = TextMuted, fontSize = 12.sp)
+            Text("Failed to load photograph", color = TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         }
 
         if (item.isVideo) {
@@ -492,6 +916,165 @@ private fun FullScreenPhotoPage(item: GalleryItem) {
     }
 }
 
+// ─── REDEVELOP FILM MODAL SHEET ──────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RedevelopFilmSheet(
+    item: GalleryItem,
+    isRedeveloping: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmRedevelop: (CameraPreset) -> Unit
+) {
+    val presets = remember {
+        PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
+    }
+    var selectedPreset by remember { mutableStateOf(presets.first()) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF14161E),
+        dragHandle = {
+            Surface(
+                modifier = Modifier
+                    .padding(vertical = 12.dp)
+                    .width(36.dp)
+                    .height(4.dp),
+                shape = RoundedCornerShape(2.dp),
+                color = Color(0x44FFFFFF)
+            ) {}
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "REDEVELOP FILM NEGATIVE",
+                        color = VintageAmber,
+                        fontSize = 16.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Select an analog camera emulsion to re-render this frame",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_dazz_close),
+                        contentDescription = "Close",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Presets Horizontal Row
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(presets) { preset ->
+                    val isChosen = selectedPreset.id == preset.id
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isChosen) Color(0xFF2A2D39) else Color(0xFF1B1D25),
+                        border = BorderStroke(
+                            if (isChosen) 1.5.dp else 1.dp,
+                            if (isChosen) VintageAmber else Color(0x22FFFFFF)
+                        ),
+                        modifier = Modifier
+                            .width(130.dp)
+                            .clickable { selectedPreset = preset }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Text(
+                                text = preset.name,
+                                color = if (isChosen) VintageAmber else TextPrimary,
+                                fontSize = 13.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = preset.subtitle,
+                                color = TextSecondary,
+                                fontSize = 10.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                lineHeight = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Confirm Redevelop Button
+            Button(
+                onClick = { onConfirmRedevelop(selectedPreset) },
+                enabled = !isRedeveloping,
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = VintageAmber,
+                    contentColor = Color.Black
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                if (isRedeveloping) {
+                    CircularProgressIndicator(
+                        color = Color.Black,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "DEVELOPING NEGATIVE...",
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_dazz_redevelop),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "DEVELOP WITH ${selectedPreset.name.uppercase()}",
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─── PHOTO LOADING, PERSISTENCE & SYSTEM ACTIONS ────────────────────────────
 private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = withContext(Dispatchers.IO) {
     val items = mutableListOf<GalleryItem>()
     val imgProjection = arrayOf(
@@ -525,9 +1108,7 @@ private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = wit
                 items.add(GalleryItem(id, uri, name, date, null, isVideo = false))
             }
         }
-    } catch (e: Exception) {
-        // ignore
-    }
+    } catch (_: Exception) {}
 
     // 2. Query Videos
     try {
@@ -556,9 +1137,7 @@ private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = wit
                 items.add(GalleryItem(id, uri, name, date, "Analog Camcorder", isVideo = true))
             }
         }
-    } catch (e: Exception) {
-        // ignore
-    }
+    } catch (_: Exception) {}
 
     items.sortedByDescending { it.dateAdded }
 }
@@ -566,8 +1145,14 @@ private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = wit
 private fun deletePhoto(context: Context, uri: Uri) {
     try {
         context.contentResolver.delete(uri, null, null)
-    } catch (e: Exception) {
-        // deletion error
+    } catch (_: Exception) {}
+}
+
+private fun deletePhotos(context: Context, uris: List<Uri>) {
+    for (uri in uris) {
+        try {
+            context.contentResolver.delete(uri, null, null)
+        } catch (_: Exception) {}
     }
 }
 
@@ -580,6 +1165,21 @@ private fun sharePhoto(context: Context, item: GalleryItem) {
     context.startActivity(Intent.createChooser(shareIntent, if (item.isVideo) "Share Analog Video" else "Share Vintage Photograph"))
 }
 
+private fun sharePhotos(context: Context, items: List<GalleryItem>) {
+    if (items.isEmpty()) return
+    if (items.size == 1) {
+        sharePhoto(context, items.first())
+        return
+    }
+    val uris = ArrayList(items.map { it.uri })
+    val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+        type = "image/*"
+        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(shareIntent, "Share ${items.size} Photographs"))
+}
+
 private fun playVideo(context: Context, uri: Uri) {
     try {
         val playIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -587,7 +1187,47 @@ private fun playVideo(context: Context, uri: Uri) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(playIntent)
+    } catch (_: Exception) {}
+}
+
+private suspend fun redevelopPhoto(
+    context: Context,
+    item: GalleryItem,
+    preset: CameraPreset
+): Uri? = withContext(Dispatchers.IO) {
+    try {
+        val bitmap = context.contentResolver.openInputStream(item.uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream)
+        } ?: return@withContext null
+
+        val redeveloped = ImageProcessor.applyPresetEffects(
+            context = context,
+            source = bitmap,
+            preset = preset
+        )
+        ImageProcessor.saveToGallery(context, redeveloped, preset.name)
     } catch (e: Exception) {
-        // fallback
+        null
+    }
+}
+
+private suspend fun importAndDevelopPhoto(
+    context: Context,
+    uri: Uri,
+    preset: CameraPreset
+): Uri? = withContext(Dispatchers.IO) {
+    try {
+        val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream)
+        } ?: return@withContext null
+
+        val developed = ImageProcessor.applyPresetEffects(
+            context = context,
+            source = bitmap,
+            preset = preset
+        )
+        ImageProcessor.saveToGallery(context, developed, preset.name)
+    } catch (e: Exception) {
+        null
     }
 }

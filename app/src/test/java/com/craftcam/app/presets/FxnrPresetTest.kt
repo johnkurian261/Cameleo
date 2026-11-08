@@ -15,9 +15,11 @@ class FxnrPresetTest {
         requireNotNull(preset)
 
         assertEquals("FXNR", preset.name)
-        assertEquals("Warm Negative", preset.subtitle)
-        assertEquals("1998", preset.year)
-        assertTrue(preset.description.contains("Warm color negative"))
+        assertEquals("Classic Negative", preset.subtitle)
+        assertEquals("2000", preset.year)
+        assertTrue(preset.description.contains("warm amber") || preset.description.contains("Fujicolor Natura"))
+        assertEquals(false, preset.dateStamp?.enabled)
+        assertEquals(com.craftcam.app.model.BorderStyle.NONE, preset.border?.style)
     }
 
     @Test
@@ -25,19 +27,17 @@ class FxnrPresetTest {
         val preset = PresetCatalog.allPresets.first { it.id == "analog_fxn_r" }
         val color = preset.colorGrading
 
-        // Warm amber / golden color bias
+        // Authenticated warm amber/cream color balance
         assertEquals(0.18f, color.temperature, 0.001f)
-        assertEquals(0.03f, color.tint, 0.001f)
+        assertEquals(0.02f, color.tint, 0.001f)
 
-        // Gentle highlight roll-off (creamy whites, no harsh digital clipping)
+        // Smooth highlight roll-off
         assertEquals(0.78f, color.highlightRollOff, 0.001f)
 
-        // Lifted warm brown shadows (faded black levels)
-        assertEquals(0.048f, color.fade, 0.001f)
-        assertTrue("Shadow red bias must exceed green", color.shadowTintR > color.shadowTintG)
-        assertTrue("Shadow green bias must exceed blue", color.shadowTintG > color.shadowTintB)
-        assertEquals(0.054f, color.shadowTintR, 0.001f)
-        assertEquals(0.024f, color.shadowTintG, 0.001f)
+        // Open lifted shadows with warm amber/brown density
+        assertEquals(0.032f, color.fade, 0.001f)
+        assertEquals(0.048f, color.shadowTintR, 0.001f)
+        assertEquals(0.022f, color.shadowTintG, 0.001f)
         assertEquals(0.008f, color.shadowTintB, 0.001f)
     }
 
@@ -49,18 +49,21 @@ class FxnrPresetTest {
         assertNotNull(preset.halation)
         val halation = preset.halation!!
         assertTrue(halation.enabled)
-        assertEquals(0.82f, halation.threshold, 0.001f)
-        assertEquals(0.28f, halation.intensity, 0.001f)
-        assertEquals(16f, halation.radius, 0.001f)
+        assertEquals(0.78f, halation.threshold, 0.001f)
+        assertEquals(0.26f, halation.intensity, 0.001f)
+        assertEquals(12f, halation.radius, 0.001f)
+        assertEquals(1.0f, halation.haloRed, 0.001f)
+        assertEquals(0.35f, halation.haloGreen, 0.001f)
+        assertEquals(0.08f, halation.haloBlue, 0.001f)
 
-        // Authentic silver halide grain
+        // Fine 35mm silver halide grain
         assertTrue(preset.grain.enabled)
-        assertEquals(0.22f, preset.grain.intensity, 0.001f)
+        assertEquals(0.20f, preset.grain.intensity, 0.001f)
         assertEquals("grains/grain_ou.jpg", preset.grain.assetPath)
 
-        // Optical softness (organic high-frequency detail roll-off)
-        assertEquals(0.14f, preset.lens.softness, 0.001f)
-        assertEquals(0.24f, preset.lens.vignetteIntensity, 0.001f)
+        // Subtle optical vignette and softness
+        assertEquals(0.08f, preset.lens.softness, 0.001f)
+        assertEquals(0.16f, preset.lens.vignetteIntensity, 0.001f)
     }
 
     @Test
@@ -101,7 +104,7 @@ class FxnrPresetTest {
         // At 70% default intensity, smooth proportional interpolation
         val intensityDefault = 0.70f
         val tempAtDefault = color.temperature * intensityDefault
-        assertEquals(0.18f * 0.70f, tempAtDefault, 0.001f)
+        assertEquals(color.temperature * 0.70f, tempAtDefault, 0.001f)
     }
 }
 

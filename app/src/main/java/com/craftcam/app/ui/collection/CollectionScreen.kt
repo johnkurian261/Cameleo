@@ -97,32 +97,12 @@ fun CollectionScreen(
             }
     }
 
-    // Complete Photo Camera models shelf — includes EVERY photo camera in CAMELEO (16 cameras)
+    // Complete Photo Camera models shelf — includes EVERY photo camera from Dazz Cam
     val photoModels = remember {
         val photoPresets = PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
         photoPresets.map { preset ->
-            val shortLabel = when (preset.id) {
-                "zero"                 -> "Zero"
-                "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "D Classic"
-                "analog_fxn_r"         -> "FXNR"
-                "analog_fisheye_f"     -> "Fisheye"
-                "analog_warm_film"     -> "Warm Film"
-                "analog_soft_film"     -> "CT2F"
-                "analog_vintage_color" -> "D Exp"
-                "analog_cinema_film", "d3d", "d_3d" -> "D 3D"
-                "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "CCD R"
-                "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "CCD Flash"
-                "ccd_y2k_digital", "classic_u", "classicu" -> "Classic U"
-                "ccd_retro_compact", "dqs" -> "DQS"
-                "disp_classic"         -> "Golf"
-                "disp_flash"           -> "CPM35"
-                "disp_warm"            -> "135SR"
-                "disp_night"           -> "D Half"
-                "inst_vintage"         -> "Polaroid"
-                else                   -> preset.name
-            }
             ModelShelfItem(
-                label = shortLabel,
+                label = preset.name,
                 iconResName = preset.iconResName,
                 presetId = preset.id
             )
@@ -524,21 +504,48 @@ private fun CameraCard(
                 color = TextSecondary
             )
 
-            // Sample photograph preview demonstrating the filter look
-            val sampleResId = remember(preset.sampleResName) {
-                context.resources.getIdentifier(preset.sampleResName, "drawable", context.packageName)
+            // Sample photograph preview demonstrating the filter look (supports multiple authentic reference works)
+            val sampleResIds = remember(preset.sampleResName) {
+                val list = mutableListOf<Int>()
+                val mainId = context.resources.getIdentifier(preset.sampleResName, "drawable", context.packageName)
+                if (mainId != 0) list.add(mainId)
+                for (idx in 2..4) {
+                    val extraId = context.resources.getIdentifier("${preset.sampleResName}_$idx", "drawable", context.packageName)
+                    if (extraId != 0) list.add(extraId)
+                }
+                list
             }
-            if (sampleResId != 0) {
+
+            if (sampleResIds.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Image(
-                    painter = painterResource(id = sampleResId),
-                    contentDescription = preset.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                )
+                if (sampleResIds.size == 1) {
+                    Image(
+                        painter = painterResource(id = sampleResIds.first()),
+                        contentDescription = preset.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                } else {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(sampleResIds) { resId ->
+                            Image(
+                                painter = painterResource(id = resId),
+                                contentDescription = preset.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(200.dp)
+                                    .height(150.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        }
+                    }
+                }
             }
 
             // ── Optical Lens Accessory System ───────────────────────────────────

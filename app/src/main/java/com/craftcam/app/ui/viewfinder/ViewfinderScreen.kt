@@ -169,7 +169,7 @@ fun ViewfinderScreen(
                 // Top-left: Camera Switch Button (Rear / Front) - Pure floating icon, no bubble
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(48.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -186,7 +186,7 @@ fun ViewfinderScreen(
                         painter = painterResource(id = R.drawable.ic_dazz_switchcamera),
                         contentDescription = "Switch Camera",
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(32.dp)
                             .rotate(animatedRotation),
                         contentScale = ContentScale.Fit
                     )
@@ -195,7 +195,7 @@ fun ViewfinderScreen(
                 // Top-right: Subtle settings/more menu button - Pure floating icon, no bubble
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(48.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -208,7 +208,7 @@ fun ViewfinderScreen(
                     Image(
                         painter = painterResource(id = R.drawable.ic_dazz_more),
                         contentDescription = "Menu",
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(28.dp),
                         contentScale = ContentScale.Fit
                     )
                 }

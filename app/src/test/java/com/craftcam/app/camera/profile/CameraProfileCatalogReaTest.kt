@@ -22,14 +22,15 @@ class CameraProfileCatalogReaTest {
         assertEquals(0.040f, film.toeLift, 0.001f)
         assertEquals(0.965f, film.shoulderClip, 0.001f)
         assertEquals(0.78f, film.highlightRollOff, 0.001f)
-        assertEquals(0.75f, film.halationThreshold, 0.001f)
-        assertEquals(0.28f, film.halationIntensity, 0.001f)
+        assertEquals(0.78f, film.halationThreshold, 0.001f)
+        assertEquals(0.26f, film.halationIntensity, 0.001f)
         assertEquals(1.0f, film.halationColorTintR, 0.001f)
         assertEquals(0.35f, film.halationColorTintG, 0.001f)
         assertEquals(0.08f, film.halationColorTintB, 0.001f)
 
         val grain = profile.grainProfile
         assertEquals(GrainMode.SCANNED, grain.mode)
+        assertEquals(0.20f, grain.intensity, 0.001f)
         assertTrue(grain.luminanceWeightingEnabled)
         assertEquals(1.0f, grain.luminanceWeightingPower, 0.001f)
     }
@@ -188,7 +189,7 @@ class CameraProfileCatalogReaTest {
         assertEquals("FXNR", unified.name)
         assertEquals(0.040f, unified.filmProfile.toeLift, 0.001f)
         assertEquals(0.965f, unified.filmProfile.shoulderClip, 0.001f)
-        assertEquals(0.28f, unified.filmProfile.halationIntensity, 0.001f)
+        assertEquals(0.26f, unified.filmProfile.halationIntensity, 0.001f)
         assertEquals(GrainMode.SCANNED, unified.grainProfile.mode)
     }
 

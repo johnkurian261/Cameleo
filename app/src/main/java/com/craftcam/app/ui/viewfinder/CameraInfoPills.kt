@@ -88,7 +88,7 @@ fun CameraInfoPills(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -139,7 +139,7 @@ fun CameraInfoPills(
             val selectedLens = shootingState.selectedLens
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(48.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
@@ -152,7 +152,7 @@ fun CameraInfoPills(
                 Image(
                     painter = painterResource(id = selectedLens.type.iconRes),
                     contentDescription = selectedLens.name,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(34.dp),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -174,7 +174,7 @@ private fun QuickIconButton(
 
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -188,18 +188,18 @@ private fun QuickIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(30.dp)
         )
         if (subscript != null) {
             Text(
                 text = subscript,
                 color = tint,
-                fontSize = 8.sp,
+                fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
+                    .offset(x = 3.dp, y = 3.dp)
             )
         }
     }
@@ -219,7 +219,7 @@ private fun QuickDrawableButton(
 
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -232,7 +232,7 @@ private fun QuickDrawableButton(
         Image(
             painter = painterResource(id = iconRes),
             contentDescription = contentDescription,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(30.dp),
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.tint(tint)
         )
@@ -240,12 +240,12 @@ private fun QuickDrawableButton(
             Text(
                 text = subscript,
                 color = tint,
-                fontSize = 8.sp,
+                fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
+                    .offset(x = 3.dp, y = 3.dp)
             )
         }
     }
