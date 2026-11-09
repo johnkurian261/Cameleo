@@ -402,42 +402,6 @@ fun CollectionScreen(
             }
         }
 
-        // Bottom Left Active Camera Pill
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 20.dp, bottom = 30.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF161719).copy(alpha = 0.90f))
-                .border(0.8.dp, Color(0xFF2A2B30), RoundedCornerShape(16.dp))
-                .clickable {
-                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                    onNavigateBack()
-                }
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(VintageAmber)
-                )
-                val currentLensProfile = remember(activeLensType) { LensProfile.forType(activeLensType) }
-                Text(
-                    text = "${selectedPresetState.name.uppercase()} • ${currentLensProfile.name.uppercase()}",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp
-                )
-            }
-        }
-
         // ==================== 5. FULL-SCREEN SAMPLE PHOTOS VIEWER ====================
         if (showSampleViewer) {
             SamplePhotosViewer(
