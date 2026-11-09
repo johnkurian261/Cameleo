@@ -292,22 +292,16 @@ fun ViewfinderScreen(
                         }
                     )
 
-                    // Centered, Resizable Camera Framing Composition Window (bypassed for circular Fisheye)
-                    val isFisheyeActive = uiState.shootingState.selectedLens.type == com.craftcam.app.camera.profile.LensType.FISHEYE_F ||
-                            uiState.shootingState.selectedLens.type == com.craftcam.app.camera.profile.LensType.FISHEYE_W ||
-                            selectedPreset.id == "analog_fisheye_f" ||
-                            selectedPreset.name.contains("Fisheye", ignoreCase = true)
-                    if (!isFisheyeActive) {
-                        CaptureFrameOverlay(
-                            modifier = Modifier.fillMaxSize(),
-                            state = uiState.captureFrameState,
-                            aspectRatio = uiState.aspectRatio,
-                            onResize = { scale ->
-                                val previewAspect = 1f / uiState.aspectRatio.ratio
-                                cameraManager.resizeCaptureFrame(scale, previewAspect)
-                            }
-                        )
-                    }
+                    // Centered, Resizable Camera Framing Composition Window (displayed for all filters)
+                    CaptureFrameOverlay(
+                        modifier = Modifier.fillMaxSize(),
+                        state = uiState.captureFrameState,
+                        aspectRatio = uiState.aspectRatio,
+                        onResize = { scale ->
+                            val previewAspect = 1f / uiState.aspectRatio.ratio
+                            cameraManager.resizeCaptureFrame(scale, previewAspect)
+                        }
+                    )
 
                     // Developing 3D Wigglegram Overlay
                     if (uiState.threeDProgressMessage != null) {

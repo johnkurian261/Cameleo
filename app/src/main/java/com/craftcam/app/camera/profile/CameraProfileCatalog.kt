@@ -421,10 +421,10 @@ object CameraProfileCatalog {
         subtitle = "Curvilinear Ultra-Wide",
         presetId = "analog_fisheye_f",
         focalLengths = listOf(
-            FocalLengthOption("13mm", 13f, isPhysicalLens = true),
+            FocalLengthOption("13mm", 28f, isPhysicalLens = true),
             FocalLengthOption("26mm", 26f, isPhysicalLens = true)
         ),
-        defaultFocalLengthMm = 13f,
+        defaultFocalLengthMm = 28f,
         supportedLenses = listOf(
             LensType.FISHEYE_F,
             LensType.FISHEYE_W
@@ -1020,8 +1020,8 @@ object CameraProfileCatalog {
         name = "Handycam 85",
         subtitle = "1985 Video8 Camcorder",
         presetId = "vsco_handycam",
-        focalLengths = listOf(FocalLengthOption("8.5mm", 8.5f)),
-        defaultFocalLengthMm = 8.5f,
+        focalLengths = listOf(FocalLengthOption("38mm", 38f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 38f,
         supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W, LensType.WIDE, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,

@@ -529,7 +529,12 @@ class CameraManager(private val context: Context) {
             val initialLens = LensProfile.forType(profile.defaultLens)
             val initialFocal = profile.getDefaultFocalOption()
             val initialRatio = profile.defaultRatio
-            val defaultFraction = (26.0f / profile.defaultFocalLengthMm).coerceIn(0.25f, 1.0f)
+            val targetFocal = if (profile.defaultFocalLengthMm > 0f) profile.defaultFocalLengthMm else 35f
+            val defaultFraction = if (targetFocal <= 26f) {
+                0.88f
+            } else {
+                (26.0f / targetFocal).coerceIn(0.25f, 0.92f)
+            }
 
             _uiState.update { state ->
                 state.copy(
@@ -602,7 +607,7 @@ class CameraManager(private val context: Context) {
     }
 
     fun selectFocalLength(focalOption: FocalLengthOption) {
-        val targetFraction = (26.0f / focalOption.focalLengthMm).coerceIn(0.25f, 1.0f)
+        val targetFraction = if (focalOption.focalLengthMm <= 26f) 0.88f else (26.0f / focalOption.focalLengthMm).coerceIn(0.25f, 0.92f)
         _uiState.update { state ->
             state.copy(
                 shootingState = state.shootingState.copy(
@@ -1205,7 +1210,8 @@ class CameraManager(private val context: Context) {
     }
 
     fun resetCaptureFrame() {
-        val targetFraction = (26.0f / _uiState.value.shootingState.selectedFocalLength.focalLengthMm).coerceIn(0.25f, 1.0f)
+        val focalMm = _uiState.value.shootingState.selectedFocalLength.focalLengthMm
+        val targetFraction = if (focalMm <= 26f) 0.88f else (26.0f / focalMm).coerceIn(0.25f, 0.92f)
         _uiState.update { state ->
             state.copy(
                 captureFrameState = state.captureFrameState.copy(
