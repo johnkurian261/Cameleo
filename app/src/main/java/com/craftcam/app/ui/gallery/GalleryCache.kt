@@ -2,13 +2,16 @@ package com.craftcam.app.ui.gallery
 
 import android.content.ContentUris
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.collection.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /**
  * High-performance in-memory cache for CAMELEO Gallery / Darkroom.
@@ -40,6 +43,32 @@ object GalleryCache {
 
     fun getThumbnail(id: Long): ImageBitmap? {
         return thumbnailCache[id]
+    }
+
+    /**
+     * Instantly prepends a freshly developed photograph or video to the gallery cache.
+     * Guarantees 0ms lag when opening the gallery immediately after shutter capture.
+     */
+    fun addNewItem(item: GalleryItem) {
+        val current = cachedItems?.toMutableList() ?: mutableListOf()
+        if (current.none { it.id == item.id }) {
+            current.add(0, item)
+            cachedItems = current
+        }
+    }
+
+    /**
+     * Generates a high-performance gallery thumbnail (~256px) directly from an in-memory Bitmap.
+     * Eliminates disk roundtrips and full JPEG decoding when previewing newly taken shots.
+     */
+    fun createThumbnail(bitmap: Bitmap, targetSize: Int = 256): ImageBitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        val scale = targetSize.toFloat() / maxOf(w, h)
+        val tw = (w * scale).roundToInt().coerceAtLeast(1)
+        val th = (h * scale).roundToInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bitmap, tw, th, true)
+        return scaled.asImageBitmap()
     }
 
     /**
@@ -139,8 +168,15 @@ object GalleryCache {
         } catch (_: Exception) {}
 
         val sorted = items.sortedByDescending { it.dateAdded }
-        cachedItems = sorted
-        return sorted
+        // Preserve any freshly shot items already in cachedItems that MediaStore indexing hasn't picked up yet
+        val nowSec = System.currentTimeMillis() / 1000
+        val unindexedRecent = cachedItems?.filter { cached ->
+            sorted.none { it.id == cached.id } && (nowSec - cached.dateAdded < 120)
+        } ?: emptyList()
+
+        val merged = (unindexedRecent + sorted).sortedByDescending { it.dateAdded }
+        cachedItems = merged
+        return merged
     }
 }
 

@@ -517,10 +517,14 @@ fun ViewfinderScreen(
                                         mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
                                         onVideoSaved = { uri ->
                                             Toast.makeText(context, "3D Wigglegram saved to Cameleo album", Toast.LENGTH_SHORT).show()
-                                            scope.launch {
-                                                latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
-                                                GalleryCache.invalidate()
-                                                GalleryCache.prewarm(context)
+                                            val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+                                            val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
+                                            if (prewarmed != null) {
+                                                latestThumbnail = prewarmed
+                                            } else {
+                                                scope.launch {
+                                                    latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                }
                                             }
                                         },
                                         onError = { exc ->
@@ -534,10 +538,14 @@ fun ViewfinderScreen(
                                         mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
                                         onPhotoSaved = { uri ->
                                             Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
-                                            scope.launch {
-                                                latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
-                                                GalleryCache.invalidate()
-                                                GalleryCache.prewarm(context)
+                                            val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+                                            val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
+                                            if (prewarmed != null) {
+                                                latestThumbnail = prewarmed
+                                            } else {
+                                                scope.launch {
+                                                    latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                }
                                             }
                                         },
                                         onError = { exc ->

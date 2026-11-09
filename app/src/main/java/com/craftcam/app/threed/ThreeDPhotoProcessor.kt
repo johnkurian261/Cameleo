@@ -92,6 +92,12 @@ class ThreeDPhotoProcessor(
                 loopCount = config.loopCount
             )
 
+            // Cache 0ms instant thumbnail before recycling styled frames
+            val firstFrame = styledFrames.firstOrNull()
+            val thumbImageBitmap = if (firstFrame != null && !firstFrame.isRecycled) {
+                com.craftcam.app.ui.gallery.GalleryCache.createThumbnail(firstFrame, 256)
+            } else null
+
             // Free styled frames
             for (f in styledFrames) {
                 if (!f.isRecycled) {
@@ -106,6 +112,12 @@ class ThreeDPhotoProcessor(
 
             onProgress?.invoke("Saving to Cameleo Album...")
             val savedUri = saveVideoToGallery(context, tempVideoFile)
+            if (savedUri != null && thumbImageBitmap != null) {
+                val id = try { android.content.ContentUris.parseId(savedUri) } catch (_: Exception) { 0L }
+                if (id > 0L) {
+                    com.craftcam.app.ui.gallery.GalleryCache.putThumbnail(id, thumbImageBitmap)
+                }
+            }
             Log.i(TAG, "3D Wigglegram video successfully saved: $savedUri (${tempVideoFile.length()} bytes)")
             savedUri
         } catch (t: Throwable) {
@@ -148,6 +160,20 @@ class ThreeDPhotoProcessor(
                 contentValues.clear()
                 contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
                 context.contentResolver.update(uri, contentValues, null, null)
+            }
+
+            val id = try { android.content.ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+            if (id > 0L) {
+                com.craftcam.app.ui.gallery.GalleryCache.addNewItem(
+                    com.craftcam.app.ui.gallery.GalleryItem(
+                        id = id,
+                        uri = uri,
+                        name = fileName,
+                        dateAdded = System.currentTimeMillis() / 1000,
+                        cameraModel = "D3D",
+                        isVideo = true
+                    )
+                )
             }
             return uri
         } catch (e: Exception) {
