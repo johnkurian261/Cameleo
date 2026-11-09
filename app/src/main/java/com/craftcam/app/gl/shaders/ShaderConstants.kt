@@ -1439,6 +1439,7 @@ void main() {
         presetId in listOf("inst_vintage", "inst_c", "inst_paf", "paf") -> "grains/grain_instc.jpg"
         presetId in listOf("analog_dblack", "dblack") -> "grains/grain_dexp.jpg"
         presetId in listOf("analog_nt16", "nt16") -> "grains/grain_ou_lowlight.jpg"
+        presetId in listOf("cam_retro_vhs", "retro_vhs", "vhs") -> "grains/vhs_grain01.jpg"
         presetId in listOf("vsco_handycam", "handycam", "handycam85") -> "grains/grain8mm_01.jpg"
         else                                   -> "grains/grain_dclassic.jpg"
     }

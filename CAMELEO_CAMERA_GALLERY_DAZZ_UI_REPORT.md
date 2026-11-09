@@ -120,3 +120,4 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 1. **Zero Unnecessary Recompositions**: All resource identifiers and sample list lookups are wrapped in `remember(preset.id)` to prevent redundant allocation during scrolling.
 2. **Bounded Memory Footprint**: Camera icons and sample photos are decoded via standard Android drawable resources and recycled cleanly by Compose `LazyRow` and `LazyColumn`.
 3. **Smooth 60 FPS Scrolling**: Decoupled horizontal category shelves eliminate vertical layout re-measurements, maintaining fluid frame pacing on the Samsung Galaxy S21 5G.
+

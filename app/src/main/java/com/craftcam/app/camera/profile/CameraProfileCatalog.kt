@@ -3,6 +3,7 @@ package com.craftcam.app.camera.profile
 import com.craftcam.app.camera.AspectRatioMode
 import com.craftcam.app.gl.shaders.ShaderConstants
 import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.model.GrainBlendMode
 
 object CameraProfileCatalog {
 
@@ -1053,6 +1054,277 @@ object CameraProfileCatalog {
         )
     )
 
+    val S_67 = CameleoCameraProfile(
+        id = "s_67",
+        name = "S67",
+        subtitle = "6x7 Medium Format Roll Film",
+        presetId = "analog_s67",
+        focalLengths = listOf(FocalLengthOption("90mm", 90f), FocalLengthOption("105mm", 105f)),
+        defaultFocalLengthMm = 90f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM, LensType.STARBURST),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_s67",
+            name = "6x7 Medium Format Emulsion",
+            lutAssetPath = "lut_analog_35mm_classic.png",
+            contrast = 1.08f,
+            saturation = 1.10f,
+            temperature = 0.06f,
+            tint = 0.01f,
+            fade = 0.035f,
+            toeLift = 0.035f,
+            shoulderClip = 0.965f,
+            highlightRollOff = 0.88f,
+            halationThreshold = 0.78f,
+            halationIntensity = 0.24f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.30f,
+            halationColorTintB = 0.08f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_s67",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_s67.jpg",
+            intensity = 0.16f,
+            scale = 0.85f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_s67",
+            vignetteStrength = 0.24f,
+            vignetteRadius = 0.84f,
+            chromaticAberration = 0.002f
+        )
+    )
+
+    val D_BLACK = CameleoCameraProfile(
+        id = "d_black",
+        name = "D Black",
+        subtitle = "Monochrome Rangefinder",
+        presetId = "analog_dblack",
+        focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_dblack",
+            name = "Tri-X 400 Monochrome",
+            lutAssetPath = "lut_bw.png",
+            contrast = 1.18f,
+            saturation = 0.0f,
+            temperature = 0.0f,
+            tint = 0.0f,
+            fade = 0.02f,
+            toeLift = 0.025f,
+            shoulderClip = 0.970f,
+            highlightRollOff = 0.88f,
+            halationThreshold = 0.82f,
+            halationIntensity = 0.18f,
+            halationColorTintR = 0.90f,
+            halationColorTintG = 0.90f,
+            halationColorTintB = 0.90f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_dblack",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dexp.jpg",
+            intensity = 0.32f,
+            scale = 1.25f,
+            shadowStrength = 0.45f,
+            highlightStrength = 0.20f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_dblack",
+            vignetteStrength = 0.26f,
+            vignetteRadius = 0.82f,
+            chromaticAberration = 0.0f
+        )
+    )
+
+    val NT_16 = CameleoCameraProfile(
+        id = "nt_16",
+        name = "NT16",
+        subtitle = "Natura 1600 Street Night",
+        presetId = "analog_nt16",
+        focalLengths = listOf(FocalLengthOption("28mm", 28f), FocalLengthOption("35mm", 35f)),
+        defaultFocalLengthMm = 28f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM, LensType.STARBURST),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_nt16",
+            name = "Natura 1600 High-Speed Negative",
+            lutAssetPath = "lut_nt16.png",
+            contrast = 1.10f,
+            saturation = 1.08f,
+            temperature = -0.08f,
+            tint = 0.03f,
+            fade = 0.03f,
+            toeLift = 0.035f,
+            shoulderClip = 0.960f,
+            highlightRollOff = 0.88f,
+            shadowTintR = 0.0f,
+            shadowTintG = 0.03f,
+            shadowTintB = 0.05f,
+            halationThreshold = 0.74f,
+            halationIntensity = 0.32f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.28f,
+            halationColorTintB = 0.06f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_nt16",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_ou_lowlight.jpg",
+            intensity = 0.28f,
+            scale = 1.15f,
+            shadowStrength = 0.40f,
+            highlightStrength = 0.16f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_nt16",
+            vignetteStrength = 0.24f,
+            vignetteRadius = 0.84f,
+            chromaticAberration = 0.004f
+        )
+    )
+
+    val RETRO_VHS = CameleoCameraProfile(
+        id = "cam_retro_vhs",
+        name = "Retro VHS",
+        subtitle = "Tape Distortion & OSD",
+        presetId = "cam_retro_vhs",
+        focalLengths = listOf(FocalLengthOption("12mm", 12f), FocalLengthOption("24mm", 24f)),
+        defaultFocalLengthMm = 12f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W, LensType.PRISM),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_retro_vhs",
+            name = "1988 VHS Magnetic Tape",
+            lutAssetPath = "lut_cam_retro_vhs.png",
+            contrast = 1.08f,
+            saturation = 0.95f,
+            temperature = 0.04f,
+            tint = 0.08f,
+            fade = 0.08f,
+            toeLift = 0.05f,
+            shoulderClip = 0.950f,
+            highlightRollOff = 0.88f,
+            shadowTintR = 0.04f,
+            shadowTintG = 0.01f,
+            shadowTintB = 0.05f,
+            halationThreshold = 0.82f,
+            halationIntensity = 0.20f,
+            halationColorTintR = 0.85f,
+            halationColorTintG = 0.85f,
+            halationColorTintB = 1.0f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_retro_vhs",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/vhs_grain01.jpg",
+            intensity = 0.32f,
+            scale = 1.40f,
+            isColorNoise = true,
+            blendMode = GrainBlendMode.SCREEN,
+            shadowStrength = 0.40f,
+            highlightStrength = 0.20f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_retro_vhs",
+            vignetteStrength = 0.25f,
+            vignetteRadius = 0.84f,
+            chromaticAberration = 0.012f,
+            edgeSoftness = 0.25f
+        )
+    )
+
+    val ANALOG_VIDEO = CameleoCameraProfile(
+        id = "cam_analog_video",
+        name = "Analog Video",
+        subtitle = "8mm Home Video Tape",
+        presetId = "cam_analog_video",
+        focalLengths = listOf(FocalLengthOption("10mm", 10f), FocalLengthOption("20mm", 20f)),
+        defaultFocalLengthMm = 10f,
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_analog_video",
+            name = "8mm Home Video",
+            lutAssetPath = "lut_cam_analog_video.png",
+            contrast = 1.08f,
+            saturation = 1.02f,
+            temperature = 0.14f,
+            tint = 0.02f,
+            fade = 0.05f,
+            toeLift = 0.04f,
+            shoulderClip = 0.960f,
+            highlightRollOff = 0.88f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_analog_video",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_16mm.jpg",
+            intensity = 0.24f,
+            scale = 1.30f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_analog_video",
+            vignetteStrength = 0.26f,
+            vignetteRadius = 0.85f,
+            chromaticAberration = 0.004f,
+            edgeSoftness = 0.15f
+        )
+    )
+
+    val NINETIES_CAMCORDER = CameleoCameraProfile(
+        id = "cam_90s_camcorder",
+        name = "90s Camcorder",
+        subtitle = "Handheld CCD Video",
+        presetId = "cam_90s_camcorder",
+        focalLengths = listOf(FocalLengthOption("8mm", 8f), FocalLengthOption("16mm", 16f)),
+        defaultFocalLengthMm = 8f,
+        supportedLenses = listOf(LensType.NORMAL),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "film_90s_camcorder",
+            name = "1997 MiniDV Handheld",
+            lutAssetPath = "lut_cam_90s_camcorder.png",
+            contrast = 1.15f,
+            saturation = 1.08f,
+            temperature = -0.06f,
+            tint = 0.04f,
+            fade = 0.03f,
+            toeLift = 0.02f,
+            shoulderClip = 0.980f,
+            highlightRollOff = 0.90f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_90s_camcorder",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dcr_01.jpg",
+            intensity = 0.22f,
+            scale = 1.20f,
+            isColorNoise = true
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_90s_camcorder",
+            vignetteStrength = 0.24f,
+            vignetteRadius = 0.88f,
+            chromaticAberration = 0.003f
+        )
+    )
+
     val allProfiles = listOf(
         FXN_R,
         D_CLASSIC,
@@ -1069,6 +1341,12 @@ object CameraProfileCatalog {
         DISPOSABLE_FUNS,
         ONE_THREE_FIVE_NE,
         ZERO_CAMERA,
+        S_67,
+        D_BLACK,
+        NT_16,
+        RETRO_VHS,
+        ANALOG_VIDEO,
+        NINETIES_CAMCORDER,
         VSCO_A6,
         VSCO_C1,
         VSCO_F2,
@@ -1101,6 +1379,12 @@ object CameraProfileCatalog {
             "analog_fisheye_f", "fisheye" -> return FISHEYE_CAMERA
             "analog_soft_film", "ct2f" -> return SOFT_FILM
             "analog_warm_film", "grd", "gr d" -> return WARM_FILM
+            "analog_s67", "s67", "s_67" -> return S_67
+            "analog_dblack", "dblack", "d_black" -> return D_BLACK
+            "analog_nt16", "nt16", "nt_16" -> return NT_16
+            "cam_retro_vhs", "retro_vhs", "vhs" -> return RETRO_VHS
+            "cam_analog_video", "analog_video" -> return ANALOG_VIDEO
+            "cam_90s_camcorder", "90s_camcorder" -> return NINETIES_CAMCORDER
             "vsco_a6", "a6" -> return VSCO_A6
             "vsco_c1", "c1" -> return VSCO_C1
             "vsco_f2", "f2" -> return VSCO_F2

@@ -598,12 +598,19 @@ object ImageProcessor {
                 applyOpticalSoftness(pixels, width, height, effSoftness)
             }
 
-            // ── Step 1c: Camera Lens Optical Transformations (Fisheye F/W, Prism) ────
+            // ── Step 1c: Camera Lens Optical Transformations (Fisheye F/W, Prism, Starburst, Barrel) ────
             if (tuning.debugStageOptics) {
                 if (lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W) {
                     applyFisheyeCurvilinear(pixels, width, height, lensProfile)
                 } else if (lensProfile.type == LensType.PRISM && lensProfile.prismDispersion > 0.01f) {
                     applyPrismRefraction(pixels, width, height, lensProfile)
+                } else if (lensProfile.type == LensType.STARBURST && lensProfile.starburstStrength > 0.01f) {
+                    applyStarburstDiffraction(pixels, width, height, lensProfile)
+                } else {
+                    val barrelDist = preset.lens.barrelDistortion * intensity
+                    if (kotlin.math.abs(barrelDist) > 0.001f) {
+                        applyBarrelDistortion(pixels, width, height, barrelDist)
+                    }
                 }
 
                 // ── Step 1d: Transverse Chromatic Aberration Parity ────
@@ -1579,6 +1586,57 @@ object ImageProcessor {
         }
     }
 
+    private suspend fun applyBarrelDistortion(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        distortion: Float
+    ) = coroutineScope {
+        val totalPixels = width * height
+        val srcCopy = IntArrayPool.acquire(totalPixels)
+        try {
+            System.arraycopy(pixels, 0, srcCopy, 0, totalPixels)
+
+            val aspect = width.toFloat() / maxOf(1, height).toFloat()
+            val isPortrait = aspect <= 1.0f
+
+            val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+            val rowsPerCore = (height + numCores - 1) / numCores
+
+            (0 until numCores).map { coreIdx ->
+                async(Dispatchers.Default) {
+                    val startY = coreIdx * rowsPerCore
+                    val endY = minOf(height, startY + rowsPerCore)
+
+                    for (y in startY until endY) {
+                        val py = (y.toFloat() / height) - 0.5f
+                        val pPhysY = if (isPortrait) py / aspect else py
+                        val rowOffset = y * width
+
+                        for (x in 0 until width) {
+                            val px = (x.toFloat() / width) - 0.5f
+                            val pPhysX = if (isPortrait) px else px * aspect
+                            val rPhysSq = pPhysX * pPhysX + pPhysY * pPhysY
+
+                            val warpFactor = 1.0f + distortion * rPhysSq * 0.35f
+                            val pDistPhysX = pPhysX * warpFactor
+                            val pDistPhysY = pPhysY * warpFactor
+
+                            val u = (0.5f + (if (isPortrait) pDistPhysX else pDistPhysX / aspect)).coerceIn(0.001f, 0.999f)
+                            val v = (0.5f + (if (isPortrait) pDistPhysY * aspect else pDistPhysY)).coerceIn(0.001f, 0.999f)
+
+                            val sx = (u * (width - 1)).toInt().coerceIn(0, width - 1)
+                            val sy = (v * (height - 1)).toInt().coerceIn(0, height - 1)
+                            pixels[rowOffset + x] = srcCopy[sy * width + sx]
+                        }
+                    }
+                }
+            }.awaitAll()
+        } finally {
+            IntArrayPool.release(srcCopy)
+        }
+    }
+
     // ─── Optical Vignette Shading ────────────────────────────────────────────
     private fun applyTextureVignette(
         pixels: IntArray,
@@ -1739,7 +1797,7 @@ object ImageProcessor {
         "analog_soft_film", "analog_ct2f", "ct2f" -> "lut_ct2f.png"
         "analog_vintage_color", "analog_dexp", "dexp", "d exp" -> "lut_dexp.png"
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
-        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_dfuns.png"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_ccd_flash.png"
         "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
         "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
         "disp_classic", "disp_golf", "golf" -> "lut_disp_classic.png"
@@ -1785,6 +1843,7 @@ object ImageProcessor {
         presetId in listOf("inst_vintage", "inst_c", "inst_paf", "paf") -> "grains/grain_instc.jpg"
         presetId in listOf("analog_dblack", "dblack") -> "grains/grain_dexp.jpg"
         presetId in listOf("analog_nt16", "nt16") -> "grains/grain_ou_lowlight.jpg"
+        presetId in listOf("cam_retro_vhs", "retro_vhs", "vhs") -> "grains/vhs_grain01.jpg"
         presetId in listOf("vsco_handycam", "handycam", "handycam85") -> "grains/grain8mm_01.jpg"
         else                                   -> "grains/grain_dclassic.jpg"
     }

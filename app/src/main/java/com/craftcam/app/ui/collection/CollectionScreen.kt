@@ -64,8 +64,12 @@ import com.craftcam.app.ui.theme.*
 fun CollectionScreen(
     currentPreset: CameraPreset,
     selectedLens: LensProfile = LensProfile.NORMAL,
+    frameEnabled: Boolean = true,
+    grainEnabled: Boolean = true,
     onSelectPreset: (CameraPreset) -> Unit,
     onSelectLens: (LensType) -> Unit = {},
+    onToggleFrame: (Boolean) -> Unit = {},
+    onToggleGrain: (Boolean) -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -77,6 +81,9 @@ fun CollectionScreen(
     var showSampleViewer by remember { mutableStateOf(false) }
     var showBottomSheet by remember { mutableStateOf(false) }
     var bottomSheetTab by remember { mutableStateOf(BottomSheetType.COLOR_PROFILE) }
+    var activeFrameEnabled by remember(frameEnabled) { mutableStateOf(frameEnabled) }
+    var activeGrainEnabled by remember(grainEnabled) { mutableStateOf(grainEnabled) }
+    var selectedColorProfileIndex by remember { mutableStateOf(1) } // 0=03G, 1=C400, 2=07FF, 3=19P
 
     var activeLensType by remember(selectedPresetState.id) {
         val profile = CameraProfileCatalog.getProfileForPreset(selectedPresetState)
@@ -446,6 +453,20 @@ fun CollectionScreen(
                 preset = selectedPresetState,
                 activeLensType = activeLensType,
                 initialTab = bottomSheetTab,
+                selectedColorProfileIndex = selectedColorProfileIndex,
+                frameEnabled = activeFrameEnabled,
+                grainEnabled = activeGrainEnabled,
+                onSelectColorProfile = { index ->
+                    selectedColorProfileIndex = index
+                },
+                onToggleFrame = { enabled ->
+                    activeFrameEnabled = enabled
+                    onToggleFrame(enabled)
+                },
+                onToggleGrain = { enabled ->
+                    activeGrainEnabled = enabled
+                    onToggleGrain(enabled)
+                },
                 onSelectLens = { lensType ->
                     activeLensType = lensType
                     onSelectLens(lensType)
@@ -679,42 +700,15 @@ private fun SamplePhotosViewer(
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 90.dp)
+            contentPadding = PaddingValues(top = 0.dp, bottom = 90.dp)
         ) {
-            // Header
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = preset.name.uppercase(),
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = preset.subtitle,
-                        color = Color(0xFF8E8E93),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-            }
-
-            // Vertical list of large sample images
+            // Vertical continuous contact sheet of large sample images
             if (sampleResIds.isNotEmpty()) {
                 itemsIndexed(sampleResIds) { index, resId ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(0.6.dp, Color(0xFF222224), RoundedCornerShape(6.dp))
+                            .padding(bottom = 4.dp)
                     ) {
                         Image(
                             painter = painterResource(id = resId),
@@ -722,7 +716,7 @@ private fun SamplePhotosViewer(
                             contentScale = ContentScale.FillWidth,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 220.dp, max = 340.dp)
+                                .heightIn(min = 220.dp)
                         )
                     }
                 }
@@ -731,7 +725,7 @@ private fun SamplePhotosViewer(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp),
+                            .height(260.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -744,22 +738,22 @@ private fun SamplePhotosViewer(
                 }
             }
 
-            // Footer info matching reference
+            // Footer info matching Images 3 & 4
             item {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(28.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
+                        .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.Start
                 ) {
                     Text(
                         text = "Samples by",
                         color = Color(0xFF8E8E93),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -768,25 +762,42 @@ private fun SamplePhotosViewer(
                             modifier = Modifier
                                 .size(24.dp)
                                 .clip(CircleShape)
-                                .background(VintageAmber),
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF00C7BE), Color(0xFF007AFF), Color(0xFFFF3B30))
+                                    )
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "C",
-                                color = Color.Black,
+                                color = Color.White,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                         Text(
                             text = "Cameleo",
                             color = Color.White,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "•",
+                            color = Color(0xFF8E8E93),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        // Instagram camera outline icon
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Instagram",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(22.dp))
 
                     Box(
                         modifier = Modifier
@@ -795,12 +806,12 @@ private fun SamplePhotosViewer(
                             .clickable {
                                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             }
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
                     ) {
                         Text(
-                            text = "+ CAMELEO ARCHIVE",
+                            text = "+ SUBMIT MY WORKS",
                             color = Color.White,
-                            fontSize = 11.sp,
+                            fontSize = 11.5.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
@@ -810,7 +821,7 @@ private fun SamplePhotosViewer(
             }
         }
 
-        // Floating Close Button [✕] in bottom right
+        // Floating Close Button [✕] in bottom right matching Image 3 & 4
         IconButton(
             onClick = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -819,7 +830,7 @@ private fun SamplePhotosViewer(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(24.dp)
-                .size(48.dp)
+                .size(46.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF222224))
         ) {
@@ -827,7 +838,7 @@ private fun SamplePhotosViewer(
                 imageVector = Icons.Default.Close,
                 contentDescription = "Close Sample Viewer",
                 tint = Color.White,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -846,6 +857,12 @@ private fun ColorProfileAndLensSheet(
     preset: CameraPreset,
     activeLensType: LensType,
     initialTab: BottomSheetType,
+    selectedColorProfileIndex: Int,
+    frameEnabled: Boolean,
+    grainEnabled: Boolean,
+    onSelectColorProfile: (Int) -> Unit,
+    onToggleFrame: (Boolean) -> Unit,
+    onToggleGrain: (Boolean) -> Unit,
     onSelectLens: (LensType) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -893,113 +910,224 @@ private fun ColorProfileAndLensSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Section 1: Color Profile
-            Text(
-                text = "Color Profile",
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
+            if (initialTab == BottomSheetType.COLOR_PROFILE) {
+                // ==================== COLOR PROFILE TAB (Images 2 & 5) ====================
+                Text(
+                    text = "Color Profile",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-            // Film Profile Swatches
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                FilmProfileCard(label = "03 G", headerColor = Color(0xFF8B5A2B), isSelected = false)
-                FilmProfileCard(label = "C400", headerColor = Color(0xFF00C853), isSelected = true)
-                FilmProfileCard(label = "07 FF", headerColor = Color(0xFF00B4D8), isSelected = false)
-                FilmProfileCard(label = "19 P", headerColor = Color(0xFF7B2CBF), isSelected = false)
-            }
+                // Film Profile Swatches Row (03 G, C400, 07 FF, 19 P)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ColorProfileCard(
+                        label = "03 G",
+                        topColor = Color(0xFF8D6E63),
+                        bodyColor = Color(0xFF3E2723),
+                        isSelected = selectedColorProfileIndex == 0,
+                        hasRainbow = false,
+                        onClick = { onSelectColorProfile(0) }
+                    )
+                    ColorProfileCard(
+                        label = "C400",
+                        topColor = Color.White,
+                        bodyColor = Color(0xFF00C853),
+                        isSelected = selectedColorProfileIndex == 1,
+                        hasRainbow = true,
+                        onClick = { onSelectColorProfile(1) }
+                    )
+                    ColorProfileCard(
+                        label = "07 FF",
+                        topColor = Color(0xFF80DEEA),
+                        bodyColor = Color(0xFF00796B),
+                        isSelected = selectedColorProfileIndex == 2,
+                        hasRainbow = false,
+                        onClick = { onSelectColorProfile(2) }
+                    )
+                    ColorProfileCard(
+                        label = "19 P",
+                        topColor = Color(0xFFD1C4E9),
+                        bodyColor = Color(0xFF4A148C),
+                        isSelected = selectedColorProfileIndex == 3,
+                        hasRainbow = false,
+                        onClick = { onSelectColorProfile(3) }
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = preset.description.ifEmpty {
-                    "Daylight-balanced motion picture film, with vibrant color rendering based on scans from a standard film scanner."
-                },
-                color = Color(0xFF8E8E93),
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.6.dp)
-                    .background(Color(0xFF26272C))
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+                val description = when (selectedColorProfileIndex) {
+                    0 -> "Warm daylight motion picture film with rich gold/amber tones, lifted shadows, and gentle vintage halation."
+                    1 -> "Daylight-balanced motion picture film, with vibrant color rendering based on scans from a standard film scanner."
+                    2 -> "Fine-grain negative emulsion with pastel greens, clean teals, and natural portrait skin tones."
+                    3 -> "High-speed tungsten-balanced film with distinctive violet night glow, punchy saturation, and moody contrast."
+                    else -> preset.description.ifEmpty {
+                        "Daylight-balanced motion picture film, with vibrant color rendering based on scans from a standard film scanner."
+                    }
+                }
 
-            // Section 2: Different Lenses
-            Text(
-                text = "Different Lenses (${supportedLenses.size})",
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
+                Text(
+                    text = description,
+                    color = Color(0xFF8E8E93),
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(0.6.dp)
+                        .background(Color(0xFF26272C))
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(supportedLenses) { lensType ->
-                    val isMounted = activeLensType == lensType
-
-                    Box(
-                        modifier = Modifier
-                            .width(76.dp)
-                            .height(72.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isMounted) Color(0xFF25272D) else Color(0xFF1E1F23))
-                            .border(
-                                width = if (isMounted) 1.5.dp else 0.8.dp,
-                                color = if (isMounted) Color.White else Color(0xFF2E2F35),
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable {
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                onSelectLens(lensType)
+                // Section 2: Frame & Grain Options (Images 2 & 5)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Frame Column
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Frame",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // Off Option (circle with diagonal slash ⊘)
+                            OptionToggleBox(
+                                isSelected = !frameEnabled,
+                                onClick = { onToggleFrame(false) }
+                            ) {
+                                DisabledSlashIcon(modifier = Modifier.size(24.dp))
                             }
-                            .padding(6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Image(
-                                painter = painterResource(id = lensType.iconRes),
-                                contentDescription = lensType.displayName,
-                                modifier = Modifier.size(24.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = lensType.displayName,
-                                color = if (isMounted) Color.White else Color(0xFF8E8E93),
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        }
 
-                        if (isMounted) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Mounted",
-                                tint = Color.White,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(14.dp)
-                            )
+                            // On Option (Frame border preview)
+                            OptionToggleBox(
+                                isSelected = frameEnabled,
+                                onClick = { onToggleFrame(true) }
+                            ) {
+                                FrameThumbnail()
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    // Grain Column
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Grain",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // Off Option (circle with diagonal slash ⊘)
+                            OptionToggleBox(
+                                isSelected = !grainEnabled,
+                                onClick = { onToggleGrain(false) }
+                            ) {
+                                DisabledSlashIcon(modifier = Modifier.size(24.dp))
+                            }
+
+                            // On Option (Grain texture preview)
+                            OptionToggleBox(
+                                isSelected = grainEnabled,
+                                onClick = { onToggleGrain(true) }
+                            ) {
+                                GrainThumbnail()
+                            }
+                        }
+                    }
+                }
+            } else {
+                // ==================== LENSES & RATIOS TAB ====================
+                Text(
+                    text = "Different Lenses (${supportedLenses.size})",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(supportedLenses) { lensType ->
+                        val isMounted = activeLensType == lensType
+
+                        Box(
+                            modifier = Modifier
+                                .width(78.dp)
+                                .height(72.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isMounted) Color(0xFF25272D) else Color(0xFF1E1F23))
+                                .border(
+                                    width = if (isMounted) 1.5.dp else 0.8.dp,
+                                    color = if (isMounted) Color.White else Color(0xFF2E2F35),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onSelectLens(lensType)
+                                }
+                                .padding(6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(id = lensType.iconRes),
+                                    contentDescription = lensType.displayName,
+                                    modifier = Modifier.size(26.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = lensType.displayName,
+                                    color = if (isMounted) Color.White else Color(0xFF8E8E93),
+                                    fontSize = 9.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            if (isMounted) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(2.dp)
+                                        .size(15.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Mounted",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1011,33 +1139,180 @@ private fun ColorProfileAndLensSheet(
 }
 
 /**
- * Single film profile swatch card matching Image 2 & 5.
+ * Clean Canvas circle with diagonal slash icon for ⊘ Disabled toggle.
  */
 @Composable
-private fun FilmProfileCard(
-    label: String,
-    headerColor: Color,
-    isSelected: Boolean
+private fun DisabledSlashIcon(modifier: Modifier = Modifier, color: Color = Color(0xFF8E8E93)) {
+    Canvas(modifier = modifier) {
+        val r = size.minDimension * 0.38f
+        val stroke = Stroke(width = 1.8.dp.toPx())
+        val center = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(color = color, radius = r, center = center, style = stroke)
+        val d = r * 0.7071f
+        drawLine(
+            color = color,
+            start = Offset(center.x - d, center.y - d),
+            end = Offset(center.x + d, center.y + d),
+            strokeWidth = 1.8.dp.toPx()
+        )
+    }
+}
+
+/**
+ * Thumbnail preview for photographic frame border.
+ */
+@Composable
+private fun FrameThumbnail(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.White)
+            .padding(top = 3.dp, start = 3.dp, end = 3.dp, bottom = 7.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color(0xFF222328))
+        )
+    }
+}
+
+/**
+ * Thumbnail preview for authentic silver-halide film grain texture.
+ */
+@Composable
+private fun GrainThumbnail(modifier: Modifier = Modifier) {
+    Canvas(
+        modifier = modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF48484E))
+    ) {
+        val rnd = java.util.Random(1337L)
+        for (i in 0 until 140) {
+            val gx = rnd.nextFloat() * size.width
+            val gy = rnd.nextFloat() * size.height
+            val isWhite = rnd.nextBoolean()
+            val alpha = 0.35f + rnd.nextFloat() * 0.45f
+            drawCircle(
+                color = if (isWhite) Color.White.copy(alpha = alpha) else Color.Black.copy(alpha = alpha),
+                radius = 0.9f + rnd.nextFloat() * 0.6f,
+                center = Offset(gx, gy)
+            )
+        }
+    }
+}
+
+/**
+ * Reusable toggle button for Frame and Grain options with checkmark badge.
+ */
+@Composable
+private fun OptionToggleBox(
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
 ) {
+    val view = LocalView.current
     Box(
         modifier = Modifier
-            .width(72.dp)
-            .height(56.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .size(62.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF222328))
             .border(
                 width = if (isSelected) 1.2.dp else 0.8.dp,
                 color = if (isSelected) Color.White else Color(0xFF2E3036),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clickable {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(3.dp)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = Color.Black,
+                    modifier = Modifier.size(11.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Single film profile swatch card matching Images 2 & 5.
+ */
+@Composable
+private fun ColorProfileCard(
+    label: String,
+    topColor: Color,
+    bodyColor: Color,
+    isSelected: Boolean,
+    hasRainbow: Boolean = false,
+    onClick: () -> Unit
+) {
+    val view = LocalView.current
+    Box(
+        modifier = Modifier
+            .width(74.dp)
+            .height(58.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(bodyColor)
+            .border(
+                width = if (isSelected) 1.5.dp else 0.8.dp,
+                color = if (isSelected) Color.White else Color(0xFF2E3036),
                 shape = RoundedCornerShape(14.dp)
             )
+            .clickable {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(16.dp)
-                    .background(headerColor)
-            )
+                    .height(18.dp)
+                    .background(topColor)
+            ) {
+                if (hasRainbow) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.5.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color(0xFFFF3B30),
+                                        Color(0xFFFF9500),
+                                        Color(0xFFFFCC00),
+                                        Color(0xFF34C759),
+                                        Color(0xFF00C7BE),
+                                        Color(0xFF007AFF),
+                                        Color(0xFF5856D6),
+                                        Color(0xFFAF52DE)
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1047,7 +1322,7 @@ private fun FilmProfileCard(
                 Text(
                     text = label,
                     color = Color.White,
-                    fontSize = 13.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.SansSerif
                 )
@@ -1055,15 +1330,22 @@ private fun FilmProfileCard(
         }
 
         if (isSelected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "Selected",
-                tint = Color.White,
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(4.dp)
-                    .size(12.dp)
-            )
+                    .padding(3.dp)
+                    .size(15.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = Color.Black,
+                    modifier = Modifier.size(10.dp)
+                )
+            }
         }
     }
 }
@@ -1142,36 +1424,26 @@ private fun resolveSampleResIds(context: android.content.Context, preset: Camera
     if (mainId != 0) list.add(mainId)
     for (idx in 2..4) {
         val extraId = context.resources.getIdentifier("${preset.sampleResName}_$idx", "drawable", context.packageName)
-        if (extraId != 0) list.add(extraId)
+        if (extraId != 0 && !list.contains(extraId)) list.add(extraId)
     }
-    if (list.isEmpty()) {
-        val fallbackName = when (preset.id) {
-            "analog_135ne" -> "sample_analog_faded_film"
-            "inst_paf" -> "sample_inst_classic"
-            "analog_s67" -> "sample_inst_soft_polaroid"
-            "analog_dblack" -> "sample_disp_night"
-            "analog_nt16" -> "sample_ccd_cool_digital"
-            "vsco_a6" -> "sample_ccd_classic"
-            "vsco_c1" -> "sample_analog_vintage_color"
-            "vsco_f2" -> "sample_analog_faded_film"
-            "vsco_g3" -> "sample_analog_soft_film"
-            "vsco_m5" -> "sample_disp_warm"
-            "vsco_hb1" -> "sample_analog_fxn_r_2"
-            "vsco_b1" -> "sample_disp_night"
-            "vsco_x1" -> "sample_analog_35mm_classic"
-            "vsco_handycam" -> "sample_cam_retro_vhs"
-            else -> when (preset.category) {
-                CameraCategory.ANALOG_FILM -> "sample_analog_35mm_classic"
-                CameraCategory.CCD_DIGITAL -> "sample_ccd_r"
-                CameraCategory.DISPOSABLE -> "sample_disp_warm"
-                CameraCategory.INSTANT -> "sample_inst_vintage"
-                CameraCategory.CAMCORDER -> "sample_cam_retro_vhs"
-                CameraCategory.VSCO_FILM -> "sample_analog_fxn_r"
-                else -> "sample_analog_35mm_classic"
-            }
+
+    // Always supply at least 3 high-quality sample photos for a continuous contact sheet experience
+    val categoryFallbacks = when (preset.category) {
+        CameraCategory.ANALOG_FILM -> listOf("sample_analog_35mm_classic", "sample_analog_soft_film", "sample_analog_vintage_color", "sample_analog_warm_film")
+        CameraCategory.CCD_DIGITAL -> listOf("sample_ccd_r", "sample_ccd_flash", "sample_ccd_classic", "sample_ccd_y2k_digital")
+        CameraCategory.DISPOSABLE -> listOf("sample_disp_warm", "sample_disp_classic", "sample_disp_flash", "sample_disp_night")
+        CameraCategory.INSTANT -> listOf("sample_inst_vintage", "sample_inst_classic", "sample_inst_soft_polaroid")
+        CameraCategory.CAMCORDER -> listOf("sample_cam_retro_vhs", "sample_cam_analog_video", "sample_cam_90s_camcorder")
+        CameraCategory.VSCO_FILM -> listOf("sample_analog_fxn_r", "sample_analog_fxn_r_2", "sample_analog_fxn_r_3", "sample_analog_fxn_r_4")
+        else -> listOf("sample_analog_35mm_classic", "sample_analog_fxn_r_2", "sample_disp_warm")
+    }
+
+    for (name in categoryFallbacks) {
+        if (list.size >= 4) break
+        val id = context.resources.getIdentifier(name, "drawable", context.packageName)
+        if (id != 0 && !list.contains(id)) {
+            list.add(id)
         }
-        val fallbackId = context.resources.getIdentifier(fallbackName, "drawable", context.packageName)
-        if (fallbackId != 0) list.add(fallbackId)
     }
     return list
 }

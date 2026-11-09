@@ -571,6 +571,14 @@ class CameraManager(private val context: Context) {
         }
     }
 
+    fun setFrameBorderEnabled(enabled: Boolean) {
+        updateTuning { it.copy(frameBorderEnabled = enabled) }
+    }
+
+    fun setGrainEnabled(enabled: Boolean) {
+        updateTuning { it.copy(grainBoost = if (enabled) 1.0f else 0.0f, debugStageGrain = enabled) }
+    }
+
     fun selectLensAccessory(lensType: LensType) {
         val lensProfile = LensProfile.forType(lensType)
         if (lensType == LensType.COLOR_FLASH && _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
@@ -727,6 +735,14 @@ class CameraManager(private val context: Context) {
 
             // Attach Camera2Interop CaptureCallback to receive live sensor readouts & hardware face metadata
             val camera2Extender = Camera2Interop.Extender(previewBuilder)
+            camera2Extender.setCaptureRequestOption(
+                CaptureRequest.NOISE_REDUCTION_MODE,
+                CaptureRequest.NOISE_REDUCTION_MODE_FAST
+            )
+            camera2Extender.setCaptureRequestOption(
+                CaptureRequest.EDGE_MODE,
+                CaptureRequest.EDGE_MODE_FAST
+            )
             try {
                 val cameraService = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
                 val targetFacing = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) {
@@ -872,12 +888,35 @@ class CameraManager(private val context: Context) {
                     .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
                     .build()
 
-                imageCapture = ImageCapture.Builder()
+                val imageCaptureBuilder = ImageCapture.Builder()
                     .setResolutionSelector(photoResolutionSelector)
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .setJpegQuality(95)
                     .setFlashMode(_uiState.value.flashMode)
-                    .build()
+
+                val captureExtender = Camera2Interop.Extender(imageCaptureBuilder)
+                captureExtender.setCaptureRequestOption(
+                    CaptureRequest.NOISE_REDUCTION_MODE,
+                    CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY
+                )
+                captureExtender.setCaptureRequestOption(
+                    CaptureRequest.EDGE_MODE,
+                    CaptureRequest.EDGE_MODE_HIGH_QUALITY
+                )
+                captureExtender.setCaptureRequestOption(
+                    CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,
+                    CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_HIGH_QUALITY
+                )
+                captureExtender.setCaptureRequestOption(
+                    CaptureRequest.HOT_PIXEL_MODE,
+                    CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY
+                )
+                captureExtender.setCaptureRequestOption(
+                    CaptureRequest.SHADING_MODE,
+                    CaptureRequest.SHADING_MODE_HIGH_QUALITY
+                )
+
+                imageCapture = imageCaptureBuilder.build()
 
                 val prev = preview
                 val ic = imageCapture

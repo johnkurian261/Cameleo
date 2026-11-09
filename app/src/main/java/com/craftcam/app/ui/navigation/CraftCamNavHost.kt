@@ -62,12 +62,20 @@ fun CraftCamNavHost(
             CollectionScreen(
                 currentPreset = selectedPreset,
                 selectedLens = uiState.shootingState.selectedLens,
+                frameEnabled = uiState.tuning.frameBorderEnabled,
+                grainEnabled = uiState.tuning.debugStageGrain,
                 onSelectPreset = { preset ->
                     selectedPreset = preset
                     cameraManager.setPreset(preset)
                 },
                 onSelectLens = { lensType ->
                     cameraManager.selectLensAccessory(lensType)
+                },
+                onToggleFrame = { enabled ->
+                    cameraManager.setFrameBorderEnabled(enabled)
+                },
+                onToggleGrain = { enabled ->
+                    cameraManager.setGrainEnabled(enabled)
                 },
                 onNavigateBack = { navController.popBackStack() }
             )
