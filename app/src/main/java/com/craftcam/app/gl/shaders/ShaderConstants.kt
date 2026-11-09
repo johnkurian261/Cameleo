@@ -256,7 +256,7 @@ void main() {
     vec2 uv = vQuadCoord;
     float fisheyeMask = 1.0;
 
-    if (uDebugStageOptics && !uNaturalModeEnabled) {
+    if (uDebugStageOptics) {
         if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
             float rBubble = 0.44; // Safe radius ensuring full 360° circular clearance without border cutoff
             if (rPhys > rBubble) {
@@ -298,7 +298,7 @@ void main() {
     // 2. Transverse Chromatic Aberration & Spectral Dispersion
     vec4 srcColor;
     float effCA = (uDebugStageOptics && !uNaturalModeEnabled) ? uChromaticAberration : 0.0;
-    if (uDebugStageOptics && !uNaturalModeEnabled) {
+    if (uDebugStageOptics) {
         if (uLensType == 2) effCA = max(effCA, 0.016);
         else if (uLensType == 3) effCA = max(effCA, 0.008);
         else if (uLensType == 4) effCA = max(effCA, 0.010);
@@ -935,7 +935,7 @@ void main() {
     vec2 uv = vTextureCoord;
     float fisheyeMask = 1.0;
 
-    if (uDebugStageOptics && !uNaturalModeEnabled) {
+    if (uDebugStageOptics) {
         if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
             float rBubble = 0.44; // Safe radius ensuring full 360° circular clearance without border cutoff
             if (rPhys > rBubble) {
@@ -977,7 +977,7 @@ void main() {
     // 2. Transverse Chromatic Aberration & Spectral Dispersion
     vec4 srcColor;
     float effCA = (uDebugStageOptics && !uNaturalModeEnabled) ? uChromaticAberration : 0.0;
-    if (uDebugStageOptics && !uNaturalModeEnabled) {
+    if (uDebugStageOptics) {
         if (uLensType == 2) effCA = max(effCA, 0.016);
         else if (uLensType == 3) effCA = max(effCA, 0.008);
         else if (uLensType == 4) effCA = max(effCA, 0.010);

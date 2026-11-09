@@ -28,6 +28,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.craftcam.app.R
 import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
 import com.craftcam.app.camera.profile.CameraProfileCatalog
 import com.craftcam.app.camera.profile.LensProfile
@@ -75,7 +78,7 @@ fun CollectionScreen(
     val context = LocalContext.current
     val view = LocalView.current
 
-    var selectedPresetState by remember { mutableStateOf(currentPreset) }
+    var selectedPresetState by remember(currentPreset.id) { mutableStateOf(currentPreset) }
     var selectedCategory by remember { mutableStateOf<CameraCategory?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showSampleViewer by remember { mutableStateOf(false) }
@@ -608,6 +611,10 @@ private fun SamplePhotosViewer(
     onClose: () -> Unit
 ) {
     val view = LocalView.current
+    val isMonochrome = preset.id in listOf("analog_dblack", "vsco_b1", "vsco_x1") || preset.colorGrading.saturation <= 0.05f
+    val sampleColorFilter = remember(isMonochrome) {
+        if (isMonochrome) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) else null
+    }
 
     Box(
         modifier = Modifier
@@ -620,6 +627,40 @@ private fun SamplePhotosViewer(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = 0.dp, bottom = 90.dp)
         ) {
+            // Header showing the specific filter name
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, top = 8.dp, end = 16.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onClose()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dazz_back),
+                            contentDescription = "Back",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${preset.name.uppercase()} SAMPLES",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                }
+            }
+
             // Vertical continuous contact sheet of large sample images
             if (sampleResIds.isNotEmpty()) {
                 itemsIndexed(sampleResIds) { index, resId ->
@@ -632,6 +673,7 @@ private fun SamplePhotosViewer(
                             painter = painterResource(id = resId),
                             contentDescription = "${preset.name} Sample ${index + 1}",
                             contentScale = ContentScale.FillWidth,
+                            colorFilter = sampleColorFilter,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 220.dp)
@@ -1334,30 +1376,50 @@ private fun FrameSquareIcon(modifier: Modifier = Modifier) {
 }
 
 /**
- * Helper to resolve authentic sample images for each preset with fallback mappings.
+ * Helper to resolve authentic sample images for each preset with filter-specific curated mappings.
  */
 private fun resolveSampleResIds(context: android.content.Context, preset: CameraPreset): List<Int> {
     val list = mutableListOf<Int>()
-    val mainId = context.resources.getIdentifier(preset.sampleResName, "drawable", context.packageName)
-    if (mainId != 0) list.add(mainId)
-    for (idx in 2..4) {
-        val extraId = context.resources.getIdentifier("${preset.sampleResName}_$idx", "drawable", context.packageName)
-        if (extraId != 0 && !list.contains(extraId)) list.add(extraId)
+
+    // Filter-specific curated authentic sample image sets
+    val specificDrawables: List<String> = when (preset.id) {
+        "zero" -> listOf("sample_zero", "sample_analog_35mm_classic", "sample_ccd_classic")
+        "analog_fxn_r", "fxnr" -> listOf("sample_analog_fxn_r", "sample_analog_fxn_r_2", "sample_analog_fxn_r_3", "sample_analog_fxn_r_4")
+        "analog_35mm_classic", "d_classic" -> listOf("sample_analog_35mm_classic", "sample_analog_warm_film", "sample_analog_faded_film")
+        "analog_cinema_film", "d3d" -> listOf("sample_analog_cinema_film", "sample_analog_fxn_r_3", "sample_analog_vintage_color")
+        "analog_135ne", "135ne" -> listOf("sample_analog_warm_film", "sample_analog_35mm_classic", "sample_disp_warm")
+        "analog_soft_film", "ct2f" -> listOf("sample_analog_soft_film", "sample_analog_faded_film", "sample_analog_35mm_classic")
+        "disp_warm", "d_funs" -> listOf("sample_disp_warm", "sample_disp_classic", "sample_disp_flash")
+        "analog_warm_film", "grd" -> listOf("sample_analog_warm_film", "sample_ccd_retro_compact", "sample_ccd_r")
+        "ccd_r" -> listOf("sample_ccd_r", "sample_ccd_classic", "sample_ccd_flash")
+        "ccd_y2k_digital", "classic_u" -> listOf("sample_ccd_y2k_digital", "sample_ccd_cool_digital", "sample_ccd_r")
+        "ccd_flash" -> listOf("sample_ccd_flash", "sample_disp_flash", "sample_ccd_r")
+        "ccd_retro_compact", "dqs" -> listOf("sample_ccd_retro_compact", "sample_ccd_classic", "sample_ccd_y2k_digital")
+        "disp_flash" -> listOf("sample_disp_flash", "sample_disp_night", "sample_disp_classic")
+        "disp_classic" -> listOf("sample_disp_classic", "sample_disp_warm", "sample_disp_flash")
+        "analog_fisheye_f", "fisheye" -> listOf("sample_analog_fisheye_f", "sample_analog_cinema_film", "sample_disp_night")
+        "inst_vintage", "inst_c" -> listOf("sample_inst_vintage", "sample_inst_classic", "sample_inst_soft_polaroid")
+        "inst_paf" -> listOf("sample_inst_soft_polaroid", "sample_inst_classic", "sample_inst_vintage")
+        "analog_vintage_color", "dexp" -> listOf("sample_analog_vintage_color", "sample_analog_faded_film", "sample_analog_soft_film")
+        "analog_s67", "s67" -> listOf("sample_analog_35mm_classic", "sample_analog_warm_film", "sample_analog_vintage_color")
+        "analog_dblack", "dblack" -> listOf("sample_analog_35mm_classic", "sample_analog_faded_film", "sample_analog_warm_film")
+        "analog_nt16", "nt16" -> listOf("sample_disp_night", "sample_analog_fxn_r_4", "sample_analog_cinema_film")
+        "vsco_a6", "a6" -> listOf("sample_analog_warm_film", "sample_analog_soft_film", "sample_analog_35mm_classic")
+        "vsco_c1", "c1" -> listOf("sample_analog_vintage_color", "sample_ccd_flash", "sample_disp_warm")
+        "vsco_f2", "f2" -> listOf("sample_analog_faded_film", "sample_analog_soft_film", "sample_analog_fxn_r_2")
+        "vsco_g3", "g3" -> listOf("sample_analog_soft_film", "sample_analog_warm_film", "sample_analog_35mm_classic")
+        "vsco_m5", "m5" -> listOf("sample_analog_vintage_color", "sample_analog_cinema_film", "sample_analog_faded_film")
+        "vsco_hb1", "hb1" -> listOf("sample_analog_fxn_r_2", "sample_analog_fxn_r_3", "sample_analog_cinema_film")
+        "vsco_b1", "b1" -> listOf("sample_analog_35mm_classic", "sample_analog_fxn_r_2", "sample_analog_vintage_color")
+        "vsco_x1", "x1" -> listOf("sample_analog_faded_film", "sample_analog_35mm_classic", "sample_analog_fxn_r_4")
+        "vsco_handycam", "handycam" -> listOf("sample_cam_90s_camcorder", "sample_cam_analog_video", "sample_cam_retro_vhs")
+        "cam_retro_vhs", "vhs" -> listOf("sample_cam_retro_vhs", "sample_cam_analog_video", "sample_cam_90s_camcorder")
+        "cam_analog_video" -> listOf("sample_cam_analog_video", "sample_cam_retro_vhs", "sample_cam_90s_camcorder")
+        "cam_90s_camcorder" -> listOf("sample_cam_90s_camcorder", "sample_cam_analog_video", "sample_cam_retro_vhs")
+        else -> listOf("sample_${preset.id}", "sample_analog_35mm_classic", "sample_analog_fxn_r_2")
     }
 
-    // Always supply at least 3 high-quality sample photos for a continuous contact sheet experience
-    val categoryFallbacks = when (preset.category) {
-        CameraCategory.ANALOG_FILM -> listOf("sample_analog_35mm_classic", "sample_analog_soft_film", "sample_analog_vintage_color", "sample_analog_warm_film")
-        CameraCategory.CCD_DIGITAL -> listOf("sample_ccd_r", "sample_ccd_flash", "sample_ccd_classic", "sample_ccd_y2k_digital")
-        CameraCategory.DISPOSABLE -> listOf("sample_disp_warm", "sample_disp_classic", "sample_disp_flash", "sample_disp_night")
-        CameraCategory.INSTANT -> listOf("sample_inst_vintage", "sample_inst_classic", "sample_inst_soft_polaroid")
-        CameraCategory.CAMCORDER -> listOf("sample_cam_retro_vhs", "sample_cam_analog_video", "sample_cam_90s_camcorder")
-        CameraCategory.VSCO_FILM -> listOf("sample_analog_fxn_r", "sample_analog_fxn_r_2", "sample_analog_fxn_r_3", "sample_analog_fxn_r_4")
-        else -> listOf("sample_analog_35mm_classic", "sample_analog_fxn_r_2", "sample_disp_warm")
-    }
-
-    for (name in categoryFallbacks) {
-        if (list.size >= 4) break
+    for (name in specificDrawables) {
         val id = context.resources.getIdentifier(name, "drawable", context.packageName)
         if (id != 0 && !list.contains(id)) {
             list.add(id)

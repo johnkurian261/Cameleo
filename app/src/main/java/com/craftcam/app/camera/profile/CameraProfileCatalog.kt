@@ -747,7 +747,7 @@ object CameraProfileCatalog {
         presetId = "vsco_a6",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM, LensType.STARBURST),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -794,7 +794,7 @@ object CameraProfileCatalog {
         presetId = "vsco_c1",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -826,7 +826,7 @@ object CameraProfileCatalog {
         presetId = "vsco_f2",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -859,7 +859,7 @@ object CameraProfileCatalog {
         presetId = "vsco_g3",
         focalLengths = listOf(FocalLengthOption("50mm", 50f), FocalLengthOption("85mm", 85f)),
         defaultFocalLengthMm = 50f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.STARBURST),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -893,7 +893,7 @@ object CameraProfileCatalog {
         presetId = "vsco_m5",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_3_2,
         filmProfile = FilmProfile(
@@ -928,7 +928,7 @@ object CameraProfileCatalog {
         presetId = "vsco_hb1",
         focalLengths = listOf(FocalLengthOption("28mm", 28f), FocalLengthOption("35mm", 35f)),
         defaultFocalLengthMm = 28f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -963,7 +963,7 @@ object CameraProfileCatalog {
         presetId = "vsco_b1",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_3_2,
         filmProfile = FilmProfile(
@@ -993,7 +993,7 @@ object CameraProfileCatalog {
         presetId = "vsco_x1",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_3_2,
         filmProfile = FilmProfile(
@@ -1023,7 +1023,7 @@ object CameraProfileCatalog {
         presetId = "vsco_handycam",
         focalLengths = listOf(FocalLengthOption("38mm", 38f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 38f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W, LensType.WIDE, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.WIDE, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -1061,7 +1061,7 @@ object CameraProfileCatalog {
         presetId = "analog_s67",
         focalLengths = listOf(FocalLengthOption("90mm", 90f), FocalLengthOption("105mm", 105f)),
         defaultFocalLengthMm = 90f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM, LensType.STARBURST),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -1106,7 +1106,7 @@ object CameraProfileCatalog {
         presetId = "analog_dblack",
         focalLengths = listOf(FocalLengthOption("35mm", 35f), FocalLengthOption("50mm", 50f)),
         defaultFocalLengthMm = 35f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -1153,7 +1153,7 @@ object CameraProfileCatalog {
         presetId = "analog_nt16",
         focalLengths = listOf(FocalLengthOption("28mm", 28f), FocalLengthOption("35mm", 35f)),
         defaultFocalLengthMm = 28f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.PRISM, LensType.STARBURST),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -1203,7 +1203,7 @@ object CameraProfileCatalog {
         presetId = "cam_retro_vhs",
         focalLengths = listOf(FocalLengthOption("12mm", 12f), FocalLengthOption("24mm", 24f)),
         defaultFocalLengthMm = 12f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W, LensType.PRISM),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -1254,7 +1254,7 @@ object CameraProfileCatalog {
         presetId = "cam_analog_video",
         focalLengths = listOf(FocalLengthOption("10mm", 10f), FocalLengthOption("20mm", 20f)),
         defaultFocalLengthMm = 10f,
-        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
@@ -1293,7 +1293,7 @@ object CameraProfileCatalog {
         presetId = "cam_90s_camcorder",
         focalLengths = listOf(FocalLengthOption("8mm", 8f), FocalLengthOption("16mm", 16f)),
         defaultFocalLengthMm = 8f,
-        supportedLenses = listOf(LensType.NORMAL),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
