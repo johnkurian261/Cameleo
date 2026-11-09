@@ -56,13 +56,9 @@ fun TactileShutterButton(
 
     val activeRed = Color(0xFFFF3B30)
     val pressedRed = Color(0xFFD32F2F)
-    val activeCyan = Color(0xFF00E5FF)
-    val pressedCyan = Color(0xFF00B0FF)
 
     val buttonColor by animateColorAsState(
         targetValue = when {
-            captureMode == CaptureMode.MODE_3D && isPressed -> pressedCyan
-            captureMode == CaptureMode.MODE_3D -> activeCyan
             isPressed -> pressedRed
             else -> activeRed
         },
@@ -94,7 +90,6 @@ fun TactileShutterButton(
             // 1. Outer ring (thin white outer ring / pulses red if recording)
             val ringColor = when {
                 isRecording -> activeRed.copy(alpha = pulseAlpha)
-                captureMode == CaptureMode.MODE_3D -> activeCyan.copy(alpha = 0.90f)
                 else -> Color.White.copy(alpha = 0.85f)
             }
             drawCircle(
