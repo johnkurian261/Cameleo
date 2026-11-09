@@ -1022,7 +1022,7 @@ object CameraProfileCatalog {
         presetId = "vsco_handycam",
         focalLengths = listOf(FocalLengthOption("8.5mm", 8.5f)),
         defaultFocalLengthMm = 8.5f,
-        supportedLenses = listOf(LensType.NORMAL),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_W, LensType.WIDE, LensType.PRISM),
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
