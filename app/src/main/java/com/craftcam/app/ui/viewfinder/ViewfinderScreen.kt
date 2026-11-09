@@ -257,14 +257,12 @@ fun ViewfinderScreen(
                                 rendererRef = renderer
                                 setRenderer(renderer)
                                 cameraManager.setGLRenderer(renderer)
-                                renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                                renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
                                 onResume()
                                 glSurfaceViewRef = this
                             }
                         },
-                        update = { _ ->
-                            cameraManager.setPreset(selectedPreset)
-                        },
+                        update = { _ -> },
                         onRelease = { glSurfaceView ->
                             glSurfaceView.onPause()
                             if (glSurfaceViewRef == glSurfaceView) {
@@ -295,7 +293,11 @@ fun ViewfinderScreen(
                     )
 
                     // Centered, Resizable Camera Framing Composition Window (bypassed for circular Fisheye)
-                    if (uiState.shootingState.selectedLens.type != com.craftcam.app.camera.profile.LensType.FISHEYE_F) {
+                    val isFisheyeActive = uiState.shootingState.selectedLens.type == com.craftcam.app.camera.profile.LensType.FISHEYE_F ||
+                            uiState.shootingState.selectedLens.type == com.craftcam.app.camera.profile.LensType.FISHEYE_W ||
+                            selectedPreset.id == "analog_fisheye_f" ||
+                            selectedPreset.name.contains("Fisheye", ignoreCase = true)
+                    if (!isFisheyeActive) {
                         CaptureFrameOverlay(
                             modifier = Modifier.fillMaxSize(),
                             state = uiState.captureFrameState,

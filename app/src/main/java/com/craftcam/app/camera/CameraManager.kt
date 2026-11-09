@@ -107,6 +107,47 @@ class CameraManager(private val context: Context) {
         captureWatchdogJob = null
     }
 
+    private var lastTelemetryUpdateTime = 0L
+    private var lastReportedIso = 0
+    private var lastReportedExpNs = 0L
+    private var lastReportedFaceCount = 0
+    @Volatile
+    var lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+    private var previewWatchdogJob: Job? = null
+
+    private fun startPreviewWatchdog() {
+        previewWatchdogJob?.cancel()
+        previewWatchdogJob = processingScope.launch {
+            while (isActive) {
+                delay(1000L)
+                val now = SystemClock.elapsedRealtime()
+                val isCapturing = _uiState.value.isCapturing || isCapturingInProgress.get()
+                if (isCameraActive && !isCapturing) {
+                    val timeSinceLastFrame = now - lastPreviewFrameTimestamp
+                    if (timeSinceLastFrame > 2000L) {
+                        Log.w(TAG, "Preview watchdog alert: No camera frame for ${timeSinceLastFrame}ms. Triggering non-destructive recovery.")
+                        lastPreviewFrameTimestamp = now
+                        withContext(Dispatchers.Main) {
+                            try {
+                                glRenderer?.requestRenderSafe()
+                                if (timeSinceLastFrame > 3500L) {
+                                    bindCameraUseCases()
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Preview watchdog recovery encountered error", e)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopPreviewWatchdog() {
+        previewWatchdogJob?.cancel()
+        previewWatchdogJob = null
+    }
+
     private fun checkPendingRebind() {
         if (pendingRebindAfterCapture) {
             pendingRebindAfterCapture = false
@@ -171,6 +212,12 @@ class CameraManager(private val context: Context) {
 
     fun setCameraActive(active: Boolean) {
         isCameraActive = active
+        if (active) {
+            lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+            startPreviewWatchdog()
+        } else {
+            stopPreviewWatchdog()
+        }
     }
 
     fun triggerZoomOverlay(durationMs: Long = 1500L) {
@@ -650,9 +697,15 @@ class CameraManager(private val context: Context) {
         try {
             provider.unbindAll()
 
-            // 1. High-resolution 4:3 optical viewfinder
+            // 1. High-resolution 4:3 optical viewfinder with optimal FHD native display strategy
             val previewResolutionSelector = ResolutionSelector.Builder()
                 .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                .setResolutionStrategy(
+                    ResolutionStrategy(
+                        android.util.Size(1440, 1080),
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                    )
+                )
                 .build()
 
             val previewBuilder = Preview.Builder()
@@ -685,6 +738,8 @@ class CameraManager(private val context: Context) {
             }
             camera2Extender.setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+
                     val iso = result.get(CaptureResult.SENSOR_SENSITIVITY)
                     val expNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME)
                     val focusDist = result.get(CaptureResult.LENS_FOCUS_DISTANCE)
@@ -730,7 +785,22 @@ class CameraManager(private val context: Context) {
                         )
                     } else null
 
-                    if (iso != null || expNs != null || focusDist != null || analysisResult != null || liveFaces.isNotEmpty()) {
+                    val currentIso = iso ?: _uiState.value.liveIso
+                    val currentExp = expNs ?: _uiState.value.liveExposureNs
+                    val faceCount = liveFaces.size
+
+                    val isoDelta = kotlin.math.abs(currentIso - lastReportedIso)
+                    val expRatio = if (lastReportedExpNs > 0) kotlin.math.abs(currentExp - lastReportedExpNs).toFloat() / lastReportedExpNs else 1.0f
+                    val elapsed = now - lastTelemetryUpdateTime
+
+                    // Throttle Compose UI recompositions to max 4 Hz (250ms) unless a significant exposure/face event occurs
+                    val isSignificantChange = isoDelta >= 100 || expRatio >= 0.25f || faceCount != lastReportedFaceCount || analysisResult != null
+                    if (elapsed >= 250 || (isSignificantChange && elapsed >= 100)) {
+                        lastTelemetryUpdateTime = now
+                        lastReportedIso = currentIso
+                        lastReportedExpNs = currentExp
+                        lastReportedFaceCount = faceCount
+
                         val isPortraitBokehActive = when (_uiState.value.portraitConfig.portraitMode) {
                             com.craftcam.app.portrait.PortraitMode.OFF -> false
                             com.craftcam.app.portrait.PortraitMode.AUTO -> liveFaces.isNotEmpty() && liveFaces.any { it.confidence >= 0.40f || it.areaFraction >= 0.03f }
@@ -738,8 +808,8 @@ class CameraManager(private val context: Context) {
                         }
                         _uiState.update { state ->
                             state.copy(
-                                liveIso = iso ?: state.liveIso,
-                                liveExposureNs = expNs ?: state.liveExposureNs,
+                                liveIso = currentIso,
+                                liveExposureNs = currentExp,
                                 liveFocusDistance = focusDist ?: state.liveFocusDistance,
                                 detectedFaces = liveFaces,
                                 sceneAnalysis = analysisResult ?: state.sceneAnalysis,
@@ -1686,6 +1756,7 @@ class CameraManager(private val context: Context) {
     }
 
     fun shutdown() {
+        stopPreviewWatchdog()
         cancelCaptureWatchdog()
         isCapturingInProgress.set(false)
         previewSurface?.release()

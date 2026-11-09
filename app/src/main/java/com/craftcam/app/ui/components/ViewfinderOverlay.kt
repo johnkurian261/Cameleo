@@ -165,14 +165,19 @@ fun ViewfinderOverlay(
             val right = left + frameW
             val bottom = top + frameH
 
-            // 2. Draw Matte / Letterboxing Bars outside active image frame
-            if (top > 0) {
-                drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(canvasW, top))
-                drawRect(color = CameraBlack, topLeft = Offset(0f, bottom), size = Size(canvasW, canvasH - bottom))
-            }
-            if (left > 0) {
-                drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(left, canvasH))
-                drawRect(color = CameraBlack, topLeft = Offset(right, 0f), size = Size(canvasW - right, canvasH))
+            // 2. Draw Matte / Letterboxing Bars outside active image frame (bypassed for fisheye to prevent clipping)
+            val isFisheye = preset.id == "analog_fisheye_f" ||
+                    preset.lens.barrelDistortion >= 0.8f ||
+                    preset.name.contains("Fisheye", ignoreCase = true)
+            if (!isFisheye) {
+                if (top > 0) {
+                    drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(canvasW, top))
+                    drawRect(color = CameraBlack, topLeft = Offset(0f, bottom), size = Size(canvasW, canvasH - bottom))
+                }
+                if (left > 0) {
+                    drawRect(color = CameraBlack, topLeft = Offset(0f, 0f), size = Size(left, canvasH))
+                    drawRect(color = CameraBlack, topLeft = Offset(right, 0f), size = Size(canvasW - right, canvasH))
+                }
             }
 
             // Note: Asset overlays (border cutouts, film dust, and date stamp) are strictly omitted

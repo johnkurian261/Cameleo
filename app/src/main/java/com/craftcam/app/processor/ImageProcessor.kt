@@ -93,9 +93,26 @@ object ImageProcessor {
         val orientedW = orientedBounds.width().roundToInt()
         val orientedH = orientedBounds.height().roundToInt()
 
-        // D. Calculate composition framing crop in oriented space (circular fisheye retains full frame)
-        val cropRect: Rect = if (captureFrameSnapshot != null && lensProfile.type != LensType.FISHEYE_F) {
+        // D. Calculate composition framing crop in oriented space (circular fisheye retains full frame without side cutoff)
+        val isFisheye = lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.id == "analog_fisheye_f" || preset.name.contains("Fisheye", ignoreCase = true)
+        val cropRect: Rect = if (captureFrameSnapshot != null && !isFisheye) {
             CaptureFrameMapper.mapToImageCropRect(captureFrameSnapshot, orientedW, orientedH)
+        } else if (isFisheye && (lensProfile.type == LensType.FISHEYE_F || preset.id == "analog_fisheye_f" || preset.name.contains("Fisheye", ignoreCase = true))) {
+            // Circular fisheye retains full sensor width so left/right borders never cut off the bubble
+            val isPortrait = orientedW <= orientedH
+            if (isPortrait) {
+                val targetRatio = 1.0f / aspectRatio.ratio
+                val cW = orientedW
+                val cH = minOf(orientedH, (cW / targetRatio).toInt())
+                val sY = (orientedH - cH) / 2
+                Rect(0, sY, cW, sY + cH)
+            } else {
+                val targetRatio = aspectRatio.ratio
+                val cH = orientedH
+                val cW = minOf(orientedW, (cH * targetRatio).toInt())
+                val sX = (orientedW - cW) / 2
+                Rect(sX, 0, sX + cW, cH)
+            }
         } else {
             val srcRatio = orientedW.toFloat() / orientedH
             val targetRatio = if (orientedW > orientedH) aspectRatio.ratio else (1.0f / aspectRatio.ratio)
@@ -184,8 +201,9 @@ object ImageProcessor {
                     }
                 }
 
-                // 4. Apply Analog Film Border & Authentic Camera Cutout
-                if (tuning.frameBorderEnabled && preset.border != null && preset.border.style != BorderStyle.NONE) {
+                // 4. Apply Analog Film Border & Authentic Camera Cutout (bypassed for fisheye)
+                val isFisheyeBorder = preset.id == "analog_fisheye_f" || lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.name.contains("Fisheye", ignoreCase = true)
+                if (!isFisheyeBorder && tuning.frameBorderEnabled && preset.border != null && preset.border.style != BorderStyle.NONE) {
                     val bordered = BorderRenderer.applyBorder(workingBitmap, preset.border, context)
                     if (bordered != workingBitmap) {
                         // Instantly return the photo bitmap to the pool, and retain bordered bitmap for saving
@@ -248,8 +266,25 @@ object ImageProcessor {
         val orientedW = orientedBounds.width().roundToInt()
         val orientedH = orientedBounds.height().roundToInt()
 
-        val cropRect: Rect = if (captureFrameSnapshot != null && lensProfile.type != LensType.FISHEYE_F) {
+        val isFisheye = lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.id == "analog_fisheye_f" || preset.name.contains("Fisheye", ignoreCase = true)
+        val cropRect: Rect = if (captureFrameSnapshot != null && !isFisheye) {
             CaptureFrameMapper.mapToImageCropRect(captureFrameSnapshot, orientedW, orientedH)
+        } else if (isFisheye && (lensProfile.type == LensType.FISHEYE_F || preset.id == "analog_fisheye_f" || preset.name.contains("Fisheye", ignoreCase = true))) {
+            // Circular fisheye retains full sensor width so left/right borders never cut off the bubble
+            val isPortrait = orientedW <= orientedH
+            if (isPortrait) {
+                val targetRatio = 1.0f / aspectRatio.ratio
+                val cW = orientedW
+                val cH = minOf(orientedH, (cW / targetRatio).toInt())
+                val sY = (orientedH - cH) / 2
+                Rect(0, sY, cW, sY + cH)
+            } else {
+                val targetRatio = aspectRatio.ratio
+                val cH = orientedH
+                val cW = minOf(orientedW, (cH * targetRatio).toInt())
+                val sX = (orientedW - cW) / 2
+                Rect(sX, 0, sX + cW, cH)
+            }
         } else {
             val srcRatio = orientedW.toFloat() / orientedH
             val targetRatio = if (orientedW > orientedH) aspectRatio.ratio else (1.0f / aspectRatio.ratio)
@@ -1312,7 +1347,7 @@ object ImageProcessor {
             val isPortrait = aspect <= 1.0f
             val isCircularFisheye = profile.type == LensType.FISHEYE_F
 
-            val rBubble = 0.465f
+            val rBubble = 0.44f
             val rCorner = if (isPortrait) {
                 kotlin.math.sqrt(0.25f + 0.25f / (aspect * aspect))
             } else {
@@ -1344,7 +1379,7 @@ object ImageProcessor {
                                 }
                                 val rn = rPhys / rBubble
                                 val rDistNorm = rn * (0.36f + 0.64f * rn * rn)
-                                val rDistPhys = rDistNorm * 0.465f
+                                val rDistPhys = rDistNorm * rBubble
 
                                 val invR = if (rPhys > 0.0001f) 1.0f / rPhys else 0.0f
                                 val pDistPhysX = pPhysX * invR * rDistPhys

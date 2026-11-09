@@ -172,6 +172,7 @@ class GLViewfinderRenderer(
 
     private var dummy2DTextureId = 0
     private var dummy3DTextureId = 0
+    private var fallbackGrainTextureId = 0
 
     private fun initDummyTextures() {
         if (dummy2DTextureId == 0) {
@@ -202,6 +203,26 @@ class GLViewfinderRenderer(
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
+        }
+        if (fallbackGrainTextureId == 0) {
+            val tex = IntArray(1)
+            GLES30.glGenTextures(1, tex, 0)
+            fallbackGrainTextureId = tex[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fallbackGrainTextureId)
+            val size = 256
+            val buf = ByteBuffer.allocateDirect(size * size * 4).order(ByteOrder.nativeOrder())
+            val rnd = java.util.Random(1337L)
+            for (i in 0 until size * size) {
+                val noise = (128 + (rnd.nextGaussian() * 32.0).toInt().coerceIn(-100, 100)).toByte()
+                buf.put(noise).put(noise).put(noise).put(0xFF.toByte())
+            }
+            buf.position(0)
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, size, size, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
         }
     }
 
@@ -280,7 +301,7 @@ class GLViewfinderRenderer(
         textureCoordBuffer.position(0)
     }
 
-    private fun requestRenderSafe() {
+    fun requestRenderSafe() {
         try {
             glSurfaceView.requestRender()
         } catch (t: Throwable) {
@@ -331,9 +352,155 @@ class GLViewfinderRenderer(
         }
     }
 
+    // Asynchronous filter switching state
+    @Volatile
+    private var pendingPreset: CameraPreset? = null
+
+    // Pre-resolved active texture bindings (read directly in onDrawFrame with zero lookup overhead)
+    @Volatile
+    private var activeLutTexId = 0
+    @Volatile
+    private var activeLutTarget = GLES30.GL_TEXTURE_3D
+    @Volatile
+    private var activeSecLutTexId = 0
+    @Volatile
+    private var activeGrainTexId = 0
+    @Volatile
+    private var activeHasGrainTexture = false
+    @Volatile
+    private var activeResolvedGrain: com.craftcam.app.processor.GrainStage.ResolvedGrainConfig? = null
+
+    private val renderScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var frameCallbackThread: android.os.HandlerThread? = null
+
     fun updatePreset(preset: CameraPreset) {
-        activePreset = preset
-        requestRenderSafe()
+        pendingPreset = preset
+        val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+        val canonicalLut = getLutAssetForPreset(preset.id)
+        val profileLut = unifiedProfile.filmProfile.lutAssetPath?.ifEmpty { null }
+        val lutAsset = profileLut ?: canonicalLut
+
+        val cachedLut = LutTextureCache.getCachedLutFast(lutAsset)
+        val secLutAsset = unifiedProfile.filmProfile.secondaryLutAssetPath
+        val cachedSecLut = if (!secLutAsset.isNullOrEmpty()) LutTextureCache.getCachedLutFast(secLutAsset) else null
+
+        if (cachedLut != null && (secLutAsset.isNullOrEmpty() || cachedSecLut != null)) {
+            // Instant zero-lag atomic swap: textures are already resident in GPU memory
+            activePreset = preset
+            activeLutTexId = cachedLut.textureId
+            activeLutTarget = cachedLut.target
+            activeSecLutTexId = cachedSecLut?.textureId ?: 0
+            resolveGrainTexture(preset, unifiedProfile)
+            requestRenderSafe()
+        } else {
+            // Asynchronous swap: keep rendering previous preset smoothly, prepare new textures in background
+            renderScope.launch(Dispatchers.IO) {
+                val preparedPrimary = if (cachedLut == null) LutTextureCache.prepareVoxelDataAsync(context, lutAsset) else null
+                val preparedSec = if (!secLutAsset.isNullOrEmpty() && cachedSecLut == null) {
+                    LutTextureCache.prepareVoxelDataAsync(context, secLutAsset)
+                } else null
+
+                glSurfaceView.queueEvent {
+                    val primaryTex = if (preparedPrimary != null) {
+                        LutTextureCache.uploadPreparedVoxelData(preparedPrimary)
+                    } else cachedLut ?: LutTextureCache.getOrCreateLutTexture(context, lutAsset, prefer3D = true)
+
+                    val secTex = if (preparedSec != null) {
+                        LutTextureCache.uploadPreparedVoxelData(preparedSec)
+                    } else cachedSecLut ?: if (!secLutAsset.isNullOrEmpty()) {
+                        LutTextureCache.getOrCreateLutTexture(context, secLutAsset, prefer3D = true)
+                    } else null
+
+                    if (primaryTex != null && (pendingPreset?.id == preset.id || activePreset.id == preset.id)) {
+                        activePreset = preset
+                        activeLutTexId = primaryTex.textureId
+                        activeLutTarget = primaryTex.target
+                        activeSecLutTexId = secTex?.textureId ?: 0
+                        resolveGrainTexture(preset, unifiedProfile)
+                        requestRenderSafe()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resolveGrainTexture(preset: CameraPreset, unifiedProfile: com.craftcam.app.camera.profile.CameraProfile) {
+        val resolvedGrain = com.craftcam.app.processor.GrainStage.resolve(
+            preset,
+            unifiedProfile.grainProfile,
+            currentTuning,
+            currentTuning.filterIntensity.coerceIn(0.0f, 1.0f)
+        )
+        activeResolvedGrain = resolvedGrain
+        if (resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
+            val asset = resolvedGrain.assetPath
+            val cachedId = grainTextureCache[asset]
+            if (cachedId != null && cachedId != 0) {
+                activeGrainTexId = cachedId
+                activeHasGrainTexture = true
+            } else {
+                activeGrainTexId = fallbackGrainTextureId
+                activeHasGrainTexture = true
+                renderScope.launch(Dispatchers.IO) {
+                    val resolvedAsset = if (asset.startsWith("grains/")) asset else "grains/$asset"
+                    val bmp = try {
+                        context.assets.open(resolvedAsset).use { BitmapFactory.decodeStream(it) }
+                    } catch (_: Exception) {
+                        try { context.assets.open(asset).use { BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
+                    }
+                    if (bmp != null) {
+                        glSurfaceView.queueEvent {
+                            val texIds = IntArray(1)
+                            GLES30.glGenTextures(1, texIds, 0)
+                            val texId = texIds[0]
+                            if (texId != 0) {
+                                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texId)
+                                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+                                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+                                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
+                                GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT)
+                                GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bmp, 0)
+                                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+                                bmp.recycle()
+                                grainTextureCache[asset] = texId
+                                if (activePreset.id == preset.id) {
+                                    activeGrainTexId = texId
+                                    requestRenderSafe()
+                                }
+                            } else {
+                                bmp.recycle()
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            activeGrainTexId = fallbackGrainTextureId
+            activeHasGrainTexture = false
+        }
+    }
+
+    private fun preloadCommonPresets() {
+        renderScope.launch(Dispatchers.IO) {
+            val commonLuts = listOf(
+                "lut_zero.png",
+                "lut_fxn_r.png",
+                "lut_analog_35mm_classic.png",
+                "lut_d3d.png",
+                "lut_ccd_r.png",
+                "lut_inst_c.png"
+            )
+            for (asset in commonLuts) {
+                if (!LutTextureCache.isLutCached(asset)) {
+                    val prepared = LutTextureCache.prepareVoxelDataAsync(context, asset)
+                    if (prepared != null) {
+                        glSurfaceView.queueEvent {
+                            LutTextureCache.uploadPreparedVoxelData(prepared)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var activeColorProfile: com.craftcam.app.color.ColorProfile = com.craftcam.app.color.ColorProfile.Natural
@@ -424,9 +591,11 @@ class GLViewfinderRenderer(
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
 
-        val mainHandler = Handler(Looper.getMainLooper())
+        frameCallbackThread?.quitSafely()
+        frameCallbackThread = android.os.HandlerThread("CameleoPreviewCallbackThread").apply { start() }
+        val callbackHandler = Handler(frameCallbackThread!!.looper)
         surfaceTexture = SurfaceTexture(textureId).apply {
-            setOnFrameAvailableListener(this@GLViewfinderRenderer, mainHandler)
+            setOnFrameAvailableListener(this@GLViewfinderRenderer, callbackHandler)
             onSurfaceTextureReady(this)
         }
 
@@ -555,6 +724,8 @@ class GLViewfinderRenderer(
         uD3DAnaglyphLoc = GLES30.glGetUniformLocation(programId, "uD3DAnaglyph")
 
         initDummyTextures()
+        updatePreset(activePreset)
+        preloadCommonPresets()
 
         // Assign dedicated, non-overlapping texture image units to every active sampler uniform (GLES 3.0 Section 3.8.12)
         GLES30.glUseProgram(programId)
@@ -730,7 +901,7 @@ class GLViewfinderRenderer(
             // Natural Camera Mode: 100% clean, calibrated sensor LUT, bypasses all film simulation
             GLES30.glUniform1i(uNaturalModeEnabledLoc, 1)
             GLES30.glUniform1f(uNaturalShadowLiftLoc, naturalProfile.shadowLift)
-            val cachedLut = LutTextureCache.getOrCreateLutTexture(context, "lut_zero.png", prefer3D = true)
+            val cachedLut = LutTextureCache.getCachedLutFast("lut_zero.png") ?: LutTextureCache.getOrCreateLutTexture(context, "lut_zero.png", prefer3D = true)
             if (cachedLut != null && uLutEnabledLoc != -1) {
                 if (cachedLut.target == GLES30.GL_TEXTURE_3D && sLut3DLoc != -1) {
                     GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
@@ -837,20 +1008,16 @@ class GLViewfinderRenderer(
             GLES30.glUniform1i(uNaturalModeEnabledLoc, 0)
             GLES30.glUniform1f(uNaturalShadowLiftLoc, 0f)
 
-            // Bind 3D/2D Hald CLUT Film Emulsion Texture (unit 1 for 3D, unit 2 for 2D)
+            // Bind Pre-resolved 3D/2D Hald CLUT Film Emulsion Texture (unit 1 for 3D, unit 2 for 2D)
             val preset = activePreset
             val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
-            val canonicalLut = getLutAssetForPreset(preset.id)
-            val profileLut = unifiedProfile.filmProfile.lutAssetPath?.ifEmpty { null }
-            val lutAsset = profileLut ?: canonicalLut
-            var cachedLut = LutTextureCache.getOrCreateLutTexture(context, lutAsset, prefer3D = true)
-            if (cachedLut == null && lutAsset != canonicalLut) {
-                cachedLut = LutTextureCache.getOrCreateLutTexture(context, canonicalLut, prefer3D = true)
-            }
-            if (cachedLut != null && uLutEnabledLoc != -1) {
-                if (cachedLut.target == GLES30.GL_TEXTURE_3D && sLut3DLoc != -1) {
+            val lutTexId = activeLutTexId
+            val lutTarget = activeLutTarget
+
+            if (lutTexId != 0 && uLutEnabledLoc != -1) {
+                if (lutTarget == GLES30.GL_TEXTURE_3D && sLut3DLoc != -1) {
                     GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, cachedLut.textureId)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTexId)
                     GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
                     GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
                     if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 1)
@@ -858,7 +1025,7 @@ class GLViewfinderRenderer(
                     GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
                     GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
                     GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
-                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, cachedLut.textureId)
+                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, lutTexId)
                     if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
                 }
                 GLES30.glUniform1i(uLutEnabledLoc, 1)
@@ -889,31 +1056,15 @@ class GLViewfinderRenderer(
             }
 
             // Dual-LUT support (unit 4 for 3D, unit 5 for 2D)
-            val secLutAsset = unifiedProfile.filmProfile.secondaryLutAssetPath
-            if (!secLutAsset.isNullOrEmpty() && uHasSecondaryLutLoc != -1) {
-                val cachedSecLut = LutTextureCache.getOrCreateLutTexture(context, secLutAsset, prefer3D = true)
-                if (cachedSecLut != null) {
-                    if (cachedSecLut.target == GLES30.GL_TEXTURE_3D && sLut3D_BLoc != -1) {
-                        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
-                        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, cachedSecLut.textureId)
-                        GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
-                        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
-                    } else if (uLutTextureBLoc != -1) {
-                        GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
-                        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
-                        GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
-                        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, cachedSecLut.textureId)
-                    }
-                    GLES30.glUniform1i(uHasSecondaryLutLoc, 1)
-                    if (uDualLutMixLoc != -1) {
-                        GLES30.glUniform1f(uDualLutMixLoc, unifiedProfile.filmProfile.dualLutBlendFactor)
-                    }
-                } else {
-                    GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
-                    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
-                    GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
-                    GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
-                    GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
+            val secTexId = activeSecLutTexId
+            if (secTexId != 0 && uHasSecondaryLutLoc != -1) {
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, secTexId)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+                GLES30.glUniform1i(uHasSecondaryLutLoc, 1)
+                if (uDualLutMixLoc != -1) {
+                    GLES30.glUniform1f(uDualLutMixLoc, unifiedProfile.filmProfile.dualLutBlendFactor)
                 }
             } else if (uHasSecondaryLutLoc != -1) {
                 GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
@@ -929,11 +1080,8 @@ class GLViewfinderRenderer(
                 GLES30.glUniform1f(uFilterIntensityLoc, intensity)
             }
 
-            // Resolve single authoritative GrainStage (prevents double grain stacking) (unit 3)
-            val resolvedGrain = com.craftcam.app.processor.GrainStage.resolve(preset, unifiedProfile.grainProfile, tuning, intensity)
-            val grainTexId = if (resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
-                getOrLoadGrainTexture(resolvedGrain.assetPath)
-            } else 0
+            // Bind pre-resolved or fallback Grain Texture (unit 3)
+            val grainTexId = if (activeGrainTexId != 0) activeGrainTexId else fallbackGrainTextureId
             if (grainTexId != 0 && uGrainTextureLoc != -1) {
                 GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
                 GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, grainTexId)
@@ -989,6 +1137,12 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion * intensity)
             GLES30.glUniform1f(uSoftnessLoc, lens.softness * intensity)
 
+            val resolvedGrain = activeResolvedGrain ?: com.craftcam.app.processor.GrainStage.resolve(
+                preset,
+                unifiedProfile.grainProfile,
+                tuning,
+                intensity
+            )
             val grainIntensity = if (resolvedGrain.useScannedTexture) resolvedGrain.effectiveIntensity else resolvedGrain.proceduralIntensity
             val frameSeed = ((frameCount / 2) % 60).toFloat() / 60.0f
             GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
@@ -1001,6 +1155,7 @@ class GLViewfinderRenderer(
                 GrainBlendMode.SCREEN -> 1
                 GrainBlendMode.MULTIPLY -> 2
                 GrainBlendMode.NORMAL -> 3
+                else -> 0
             }
             GLES30.glUniform1i(uGrainBlendModeLoc, blendModeInt)
             GLES30.glUniform1f(uGrainShadowStrengthLoc, resolvedGrain.shadowStrength)
@@ -1117,6 +1272,11 @@ class GLViewfinderRenderer(
             frameCount = 0
             lastFpsTimestamp = now
         }
+
+        // Animate continuous zebra stripes in Pro mode
+        if (isProMode && proConfig.zebraEnabled) {
+            requestRenderSafe()
+        }
     }
 
     private val histogramScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -1154,6 +1314,8 @@ class GLViewfinderRenderer(
     }
 
     fun release() {
+        frameCallbackThread?.quitSafely()
+        frameCallbackThread = null
         surfaceTexture?.setOnFrameAvailableListener(null)
         surfaceTexture?.release()
         surfaceTexture = null
@@ -1166,6 +1328,10 @@ class GLViewfinderRenderer(
         if (dummy3DTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(dummy3DTextureId), 0)
             dummy3DTextureId = 0
+        }
+        if (fallbackGrainTextureId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(fallbackGrainTextureId), 0)
+            fallbackGrainTextureId = 0
         }
     }
 

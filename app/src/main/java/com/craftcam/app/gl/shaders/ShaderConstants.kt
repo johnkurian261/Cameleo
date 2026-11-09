@@ -258,7 +258,7 @@ void main() {
 
     if (uDebugStageOptics && !uNaturalModeEnabled) {
         if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
-            float rBubble = 0.465; // Radius of circular bubble (93% of frame width)
+            float rBubble = 0.44; // Safe radius ensuring full 360° circular clearance without border cutoff
             if (rPhys > rBubble) {
                 fisheyeMask = 0.0;
                 uv = vec2(0.5);
@@ -267,7 +267,7 @@ void main() {
                 // Authentic hemispherical fisheye warp: cubic radial expansion
                 // rn goes 0..1, rDist goes 0..1 with strong center magnification (2.78x) and perimeter compression
                 float rDistNorm = rn * (0.36 + 0.64 * rn * rn);
-                float rDistPhys = rDistNorm * 0.465;
+                float rDistPhys = rDistNorm * 0.44;
                 vec2 dir = pPhys / max(rPhys, 0.0001);
                 vec2 pDistPhys = dir * rDistPhys;
                 vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);
@@ -373,13 +373,13 @@ void main() {
         color = mix(color, (prism1 + prism2) * 0.5, facetWeight);
     }
 
-    // 2a-star. Starburst Diffraction Rays
+    // 2a-star. Starburst Diffraction Rays (optimized 2-pass sampling for smooth preview)
     if (uLensType == 5 && uLensStarburstStrength > 0.01) {
         float starThresh = uLensStarburstThreshold;
-        vec2 starStep = vec2(4.5) / uViewportSize;
+        vec2 starStep = vec2(5.5) / uViewportSize;
         vec3 starAccum = vec3(0.0);
-        for (int i = 1; i <= 3; i++) {
-            float fi = float(i) * 2.2;
+        for (int i = 1; i <= 2; i++) {
+            float fi = float(i) * 2.5;
             vec2 d1 = vec2(fi * starStep.x, fi * starStep.y);
             vec2 d2 = vec2(-fi * starStep.x, fi * starStep.y);
 
@@ -394,7 +394,7 @@ void main() {
                           max(vec3(0.0), s3 - starThresh) +
                           max(vec3(0.0), s4 - starThresh)) * w;
         }
-        color += starAccum * (uLensStarburstStrength * 0.70);
+        color += starAccum * (uLensStarburstStrength * 0.90);
     }
 
     // 2a-nd. Neutral Density Filter Light Attenuation
@@ -551,43 +551,30 @@ void main() {
         }
     }
 
-    // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with boundary confinement)
+    // 10. Concentric Dual-Radius Film Halation (optimized 4-tap diamond sampling for preview)
     if (uHalationEnabled && uHalationIntensity > 0.01 && uDebugStageHalation) {
         float kThresh = uHalationThreshold;
         if (luma > kThresh - 0.04) {
-            vec2 hInner = (6.0 / uViewportSize);
-            vec2 hOuter = (14.0 / uViewportSize);
+            vec2 hStep = (10.0 / uViewportSize);
+            vec2 diag = hStep * 0.7071;
 
-            vec4 tInL = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(hInner.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tInR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(hInner.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tInT = texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, hInner.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tInB = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, hInner.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tTL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tTR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tBL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            vec4 tBR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
 
-            vec2 diag = hOuter * 0.7071;
-            vec4 tOutTL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tOutTR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tOutBL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tOutBR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
+            float lTL = dot(tTL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lTR = dot(tTR.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lBL = dot(tBL.rgb, vec3(0.2126, 0.7152, 0.0722));
+            float lBR = dot(tBR.rgb, vec3(0.2126, 0.7152, 0.0722));
 
-            float lInL = dot(tInL.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lInR = dot(tInR.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lInT = dot(tInT.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lInB = dot(tInB.rgb, vec3(0.2126, 0.7152, 0.0722));
-
-            float lOutTL = dot(tOutTL.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lOutTR = dot(tOutTR.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lOutBL = dot(tOutBL.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lOutBR = dot(tOutBR.rgb, vec3(0.2126, 0.7152, 0.0722));
-
-            float hInnerSum = max(0.0, lInL - kThresh) + max(0.0, lInR - kThresh) + max(0.0, lInT - kThresh) + max(0.0, lInB - kThresh);
-            float hOuterSum = max(0.0, lOutTL - kThresh) + max(0.0, lOutTR - kThresh) + max(0.0, lOutBL - kThresh) + max(0.0, lOutBR - kThresh);
-
-            float spread = (hInnerSum * 0.18 + hOuterSum * 0.07) / max(0.01, 1.0 - kThresh);
+            float hSum = max(0.0, lTL - kThresh) + max(0.0, lTR - kThresh) + max(0.0, lBL - kThresh) + max(0.0, lBR - kThresh);
+            float spread = (hSum * 0.25) / max(0.01, 1.0 - kThresh);
             if (spread > 0.001) {
                 // Highlight-core preservation: maintain neutral white in specular cores, concentrate red-orange fringe at boundaries
                 float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
                 vec3 haloBase = mix(uHalationColorTint, vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
-                vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.45);
+                vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.50);
                 color += haloColor;
             }
         }
@@ -678,17 +665,15 @@ void main() {
                 color += delta;
             }
         } else {
+            // High-performance single-pass film grain for preview (avoids 15x hash stall)
             vec2 grainCoord = vQuadCoord * uViewportSize.xy * (uGrainScale * 0.45);
-            float fineG = filmNoise(grainCoord, uRandomSeed + 0.18);
-            float clumpG = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.42);
-            float noiseG = fineG * 0.65 + clumpG * 0.35;
-            float fineR = filmNoise(grainCoord, uRandomSeed + 0.31);
-            float clumpR = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.67);
-            float noiseR = fineR * 0.58 + clumpR * 0.42;
-            float fineB = filmNoise(grainCoord, uRandomSeed + 0.53);
-            float clumpB = dyeCloudNoise(grainCoord * 0.28, uRandomSeed + 0.89);
-            float noiseB = fineB * 0.50 + clumpB * 0.50;
-            vec3 grainDelta = uIsColorNoise ? vec3(noiseR, noiseG, noiseB) : mix(vec3(noiseG), vec3(noiseR, noiseG, noiseB), 0.18);
+            float noiseG = filmNoise(grainCoord, uRandomSeed + 0.18);
+            vec3 grainDelta = vec3(noiseG);
+            if (uIsColorNoise) {
+                float noiseR = filmNoise(grainCoord + vec2(17.0, 31.0), uRandomSeed + 0.31);
+                float noiseB = filmNoise(grainCoord + vec2(43.0, 71.0), uRandomSeed + 0.53);
+                grainDelta = vec3(noiseR, noiseG, noiseB);
+            }
             float grainDamp = (uScanlineIntensity > 0.01) ? 0.35 : 1.0;
             color += grainDelta * (grainWeight * uGrainIntensity * 1.35 * grainDamp);
         }
@@ -945,7 +930,7 @@ void main() {
 
     if (uDebugStageOptics && !uNaturalModeEnabled) {
         if (uLensType == 2) { // FISHEYE_F: Classic circular hemispherical fisheye bubble
-            float rBubble = 0.465; // Radius of circular bubble (93% of frame width)
+            float rBubble = 0.44; // Safe radius ensuring full 360° circular clearance without border cutoff
             if (rPhys > rBubble) {
                 fisheyeMask = 0.0;
                 uv = vec2(0.5);
@@ -954,7 +939,7 @@ void main() {
                 // Authentic hemispherical fisheye warp: cubic radial expansion
                 // rn goes 0..1, rDist goes 0..1 with strong center magnification (2.78x) and perimeter compression
                 float rDistNorm = rn * (0.36 + 0.64 * rn * rn);
-                float rDistPhys = rDistNorm * 0.465;
+                float rDistPhys = rDistNorm * 0.44;
                 vec2 dir = pPhys / max(rPhys, 0.0001);
                 vec2 pDistPhys = dir * rDistPhys;
                 vec2 pDist = isPortrait ? vec2(pDistPhys.x, pDistPhys.y * aspect) : vec2(pDistPhys.x / aspect, pDistPhys.y);

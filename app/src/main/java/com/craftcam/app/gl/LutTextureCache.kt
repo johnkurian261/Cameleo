@@ -31,9 +31,130 @@ object LutTextureCache {
         val lastAccessMs: Long = System.currentTimeMillis()
     )
 
-    private val cache = mutableMapOf<String, CachedLut>()
-    private val failedPaths = mutableSetOf<String>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, CachedLut>()
+    private val failedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val lock = Any()
+
+    /**
+     * Lock-free lookup for already cached GPU LUT textures.
+     * Guaranteed zero allocations, zero GL driver queries, and zero thread contention in onDrawFrame().
+     */
+    fun getCachedLutFast(assetPath: String): CachedLut? {
+        return cache[assetPath]
+    }
+
+    /**
+     * Checks if a LUT texture has already been uploaded to GPU.
+     */
+    fun isLutCached(assetPath: String): Boolean {
+        return cache.containsKey(assetPath)
+    }
+
+    data class PreparedVoxelData(
+        val assetPath: String,
+        val buffer: ByteBuffer,
+        val dim: Int = 64
+    )
+
+    /**
+     * Asynchronously decodes and unrolls 512x512 Hald CLUT into a direct voxel buffer.
+     * Designed to run on Dispatchers.IO so the GL render thread is NEVER blocked during filter changes.
+     */
+    fun prepareVoxelDataAsync(context: Context, assetPath: String): PreparedVoxelData? {
+        if (cache.containsKey(assetPath) || failedPaths.contains(assetPath)) return null
+        val bitmap = try {
+            context.assets.open(assetPath).use { input ->
+                BitmapFactory.decodeStream(input)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Asynchronous LUT decode failed: $assetPath", e)
+            failedPaths.add(assetPath)
+            return null
+        } ?: run {
+            failedPaths.add(assetPath)
+            return null
+        }
+
+        if (bitmap.width != 512 || bitmap.height != 512) {
+            bitmap.recycle()
+            return null
+        }
+
+        val dim = 64
+        val haldDim = 512
+        val pixels = IntArray(haldDim * haldDim)
+        bitmap.getPixels(pixels, 0, haldDim, 0, 0, haldDim, haldDim)
+        bitmap.recycle()
+
+        val byteBuffer = ByteBuffer.allocateDirect(dim * dim * dim * 4).apply {
+            order(ByteOrder.nativeOrder())
+        }
+
+        for (z in 0 until dim) {
+            val blockX = z % 8
+            val blockY = z / 8
+            val startPixelX = blockX * dim
+            val startPixelY = blockY * dim
+
+            for (y in 0 until dim) {
+                val haldY = startPixelY + y
+                val rowOffset = haldY * haldDim
+                for (x in 0 until dim) {
+                    val argb = pixels[rowOffset + startPixelX + x]
+                    val r = ((argb shr 16) and 0xFF).toByte()
+                    val g = ((argb shr 8) and 0xFF).toByte()
+                    val b = (argb and 0xFF).toByte()
+                    byteBuffer.put(r).put(g).put(b).put(0xFF.toByte())
+                }
+            }
+        }
+        byteBuffer.position(0)
+        return PreparedVoxelData(assetPath, byteBuffer, dim)
+    }
+
+    /**
+     * Fast sub-millisecond GPU upload of pre-unrolled voxel data.
+     * Must be called on the GL thread (e.g. inside glSurfaceView.queueEvent).
+     */
+    fun uploadPreparedVoxelData(prepared: PreparedVoxelData): CachedLut? {
+        synchronized(lock) {
+            cache[prepared.assetPath]?.let { return it }
+
+            val texIds = IntArray(1)
+            GLES30.glGenTextures(1, texIds, 0)
+            val texId = texIds[0]
+            if (texId == 0) {
+                Log.e(TAG, "Failed to generate GL_TEXTURE_3D for ${prepared.assetPath}")
+                return null
+            }
+
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, texId)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
+
+            GLES30.glTexImage3D(
+                GLES30.GL_TEXTURE_3D,
+                0,
+                GLES30.GL_RGBA8,
+                prepared.dim,
+                prepared.dim,
+                prepared.dim,
+                0,
+                GLES30.GL_RGBA,
+                GLES30.GL_UNSIGNED_BYTE,
+                prepared.buffer
+            )
+
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, 0)
+            val cachedLut = CachedLut(prepared.assetPath, texId, GLES30.GL_TEXTURE_3D, prepared.dim)
+            cache[prepared.assetPath] = cachedLut
+            Log.i(TAG, "Asynchronously uploaded 3D LUT to GPU: ${prepared.assetPath} -> TexID=$texId")
+            return cachedLut
+        }
+    }
 
     /**
      * Retrieves an existing cached GPU texture ID or uploads a new one on the active GL thread.
@@ -48,18 +169,15 @@ object LutTextureCache {
         assetPath: String,
         prefer3D: Boolean = true
     ): CachedLut? {
-        synchronized(lock) {
-            if (failedPaths.contains(assetPath)) {
-                return null
-            }
+        // Fast lock-free path for already cached textures
+        cache[assetPath]?.let { return it }
 
-            cache[assetPath]?.let {
-                if (GLES20.glIsTexture(it.textureId)) {
-                    return it.copy(lastAccessMs = System.currentTimeMillis())
-                } else {
-                    cache.remove(assetPath)
-                }
-            }
+        if (failedPaths.contains(assetPath)) {
+            return null
+        }
+
+        synchronized(lock) {
+            cache[assetPath]?.let { return it }
 
             val bitmap: Bitmap = try {
                 context.assets.open(assetPath).use { input ->
