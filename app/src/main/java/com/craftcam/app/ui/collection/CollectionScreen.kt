@@ -121,14 +121,11 @@ fun CollectionScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            // ==================== 1. TOP PRO BANNER ====================
-            TopProBanner(context = context)
-
-            // ==================== 2. ACTION CONTROLS BAR ====================
+            // ==================== ACTION CONTROLS BAR ====================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -472,85 +469,6 @@ fun CollectionScreen(
                     onSelectLens(lensType)
                 },
                 onDismiss = { showBottomSheet = false }
-            )
-        }
-    }
-}
-
-/**
- * Top Pro Banner matching Dazz reference: gradient card from royal blue to crimson.
- */
-@Composable
-private fun TopProBanner(context: android.content.Context) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 8.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        Color(0xFF0F4C81),
-                        Color(0xFF6A2C70),
-                        Color(0xFFB83B5E),
-                        Color(0xFFD63031)
-                    )
-                )
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                val logoResId = remember {
-                    context.resources.getIdentifier("cameleo_logo", "drawable", context.packageName)
-                }
-                if (logoResId != 0) {
-                    Image(
-                        painter = painterResource(id = logoResId),
-                        contentDescription = "Cameleo Logo",
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.CameraAlt,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Cameleo Pro",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 0.5.sp
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Unlock all Cameras & Accessories.",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.75f),
-                modifier = Modifier.size(20.dp)
             )
         }
     }
