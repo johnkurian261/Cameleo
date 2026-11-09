@@ -40,8 +40,17 @@ class GLViewfinderRenderer(
     private val TAG = "GLViewfinderRenderer"
 
     private var programId = 0
+    private var fallbackProgramId = 0
+    private var fallbackTexMatrixLoc = -1
+    private var fallbackTextureLoc = -1
     private var textureId = 0
     private var surfaceTexture: SurfaceTexture? = null
+
+    @Volatile
+    var useFallbackShader = false
+
+    @Volatile
+    private var hasReceivedFirstFrame = false
 
     private val vertexBuffer: FloatBuffer
     private val textureCoordBuffer: FloatBuffer
@@ -58,6 +67,12 @@ class GLViewfinderRenderer(
     private var bufferHeight = 1080
     private var sensorRotation = 90
     private var isFront = false
+
+    private val geometryLock = Any()
+    @Volatile
+    private var activeQuadWidth = 1080f
+    @Volatile
+    private var activeQuadHeight = 1440f
 
     // Uniform locations
     private var uTexMatrixLoc = -1
@@ -244,10 +259,15 @@ class GLViewfinderRenderer(
     @Volatile
     private var currentTuning: UserTuningConfig = UserTuningConfig()
 
+    @Volatile
+    private var activeUnifiedProfile: com.craftcam.app.camera.profile.CameraProfile =
+        com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(activePreset)
+
     var onHistogramUpdated: ((IntArray) -> Unit)? = null
 
     private val histogramPixelBuffer = ByteBuffer.allocateDirect(64 * 48 * 4).order(ByteOrder.nativeOrder())
     private val histogramBins = IntArray(256)
+    private val histogramBinsExport = IntArray(256)
     @Volatile
     private var isComputingHistogram = false
 
@@ -263,13 +283,77 @@ class GLViewfinderRenderer(
         glSurfaceView.requestRender()
     }
 
-    // Performance telemetry
-    var lastGpuTimeMs: Float = 0f
-        private set
-    var currentFps: Float = 0f
-        private set
+    // High-precision live frame metrics & dynamic performance monitoring
+    val frameMetrics = ViewfinderFrameMetrics()
+
+    class ViewfinderFrameMetrics {
+        @Volatile var currentFps: Float = 60.0f
+            private set
+        @Volatile var avgFrameTimeMs: Float = 16.0f
+            private set
+        @Volatile var maxFrameTimeMs: Float = 16.0f
+            private set
+        @Volatile var lastFrameTimeMs: Float = 16.0f
+            private set
+        @Volatile var droppedFramesCount: Long = 0L
+            private set
+        @Volatile var totalFramesRendered: Long = 0L
+            private set
+
+        private var windowFrameCount = 0
+        private var windowStartTimeNs = System.nanoTime()
+        private var windowTotalFrameTimeMs = 0f
+        private var windowMaxFrameTimeMs = 0f
+        private var consecutiveSlowFrames = 0
+        private var consecutiveFastFrames = 0
+
+        @Volatile var isThrottled: Boolean = false
+            private set
+
+        fun onFrameRendered(frameDurationNs: Long, isDropped: Boolean) {
+            val frameMs = frameDurationNs / 1_000_000f
+            lastFrameTimeMs = frameMs
+            totalFramesRendered++
+            if (isDropped) droppedFramesCount++
+
+            if (frameMs > 25.0f) {
+                consecutiveSlowFrames++
+                consecutiveFastFrames = 0
+                if (consecutiveSlowFrames >= 4 && !isThrottled) {
+                    isThrottled = true
+                }
+            } else if (frameMs < 15.0f) {
+                consecutiveFastFrames++
+                consecutiveSlowFrames = 0
+                if (consecutiveFastFrames >= 60 && isThrottled) {
+                    isThrottled = false
+                }
+            }
+
+            windowFrameCount++
+            windowTotalFrameTimeMs += frameMs
+            if (frameMs > windowMaxFrameTimeMs) {
+                windowMaxFrameTimeMs = frameMs
+            }
+
+            val now = System.nanoTime()
+            val elapsed = now - windowStartTimeNs
+            if (elapsed >= 1_000_000_000L) {
+                currentFps = windowFrameCount * 1_000_000_000f / elapsed
+                avgFrameTimeMs = if (windowFrameCount > 0) windowTotalFrameTimeMs / windowFrameCount else 16.6f
+                maxFrameTimeMs = windowMaxFrameTimeMs
+
+                windowFrameCount = 0
+                windowTotalFrameTimeMs = 0f
+                windowMaxFrameTimeMs = 0f
+                windowStartTimeNs = now
+            }
+        }
+    }
+
+    val lastGpuTimeMs: Float get() = frameMetrics.lastFrameTimeMs
+    val currentFps: Float get() = frameMetrics.currentFps
     private var frameCount = 0
-    private var lastFpsTimestamp = System.nanoTime()
 
     // Default 1:1 quad
     private val squareCoords = floatArrayOf(
@@ -339,6 +423,9 @@ class GLViewfinderRenderer(
                 scaleY = 1.0f
             }
 
+            activeQuadWidth = viewportWidth.toFloat() * scaleX
+            activeQuadHeight = viewportHeight.toFloat() * scaleY
+
             val quad = floatArrayOf(
                 -scaleX,  scaleY, 0.0f,
                 -scaleX, -scaleY, 0.0f,
@@ -346,9 +433,11 @@ class GLViewfinderRenderer(
                  scaleX, -scaleY, 0.0f
             )
 
-            vertexBuffer.clear()
-            vertexBuffer.put(quad)
-            vertexBuffer.position(0)
+            synchronized(geometryLock) {
+                vertexBuffer.clear()
+                vertexBuffer.put(quad)
+                vertexBuffer.position(0)
+            }
         }
     }
 
@@ -376,6 +465,7 @@ class GLViewfinderRenderer(
     fun updatePreset(preset: CameraPreset) {
         pendingPreset = preset
         val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+        activeUnifiedProfile = unifiedProfile
         val canonicalLut = getLutAssetForPreset(preset.id)
         val profileLut = unifiedProfile.filmProfile.lutAssetPath?.ifEmpty { null }
         val lutAsset = profileLut ?: canonicalLut
@@ -387,6 +477,7 @@ class GLViewfinderRenderer(
         if (cachedLut != null && (secLutAsset.isNullOrEmpty() || cachedSecLut != null)) {
             // Instant zero-lag atomic swap: textures are already resident in GPU memory
             activePreset = preset
+            activeUnifiedProfile = unifiedProfile
             activeLutTexId = cachedLut.textureId
             activeLutTarget = cachedLut.target
             activeSecLutTexId = cachedSecLut?.textureId ?: 0
@@ -413,6 +504,7 @@ class GLViewfinderRenderer(
 
                     if (primaryTex != null && (pendingPreset?.id == preset.id || activePreset.id == preset.id)) {
                         activePreset = preset
+                        activeUnifiedProfile = unifiedProfile
                         activeLutTexId = primaryTex.textureId
                         activeLutTarget = primaryTex.target
                         activeSecLutTexId = secTex?.textureId ?: 0
@@ -512,6 +604,7 @@ class GLViewfinderRenderer(
 
     fun updateTuning(tuning: UserTuningConfig) {
         currentTuning = tuning
+        resolveGrainTexture(activePreset, activeUnifiedProfile)
         requestRenderSafe()
     }
 
@@ -605,25 +698,30 @@ class GLViewfinderRenderer(
             ShaderConstants.FRAGMENT_SHADER_VIEWFINDER
         )
 
-        // Safe fallback 1: if complex shader ever fails compilation, fall back to minimal passthrough
-        if (programId == 0) {
-            Log.e(TAG, "Failed to compile full viewfinder shader program, falling back to minimal passthrough")
-            programId = GLShaderHelper.createProgram(
-                ShaderConstants.VERTEX_SHADER_VIEWFINDER,
-                ShaderConstants.FRAGMENT_SHADER_PASSTHROUGH
-            )
-        }
-
-        // Safe fallback 2: universal GLES 2.0 passthrough for any device driver limitations
-        if (programId == 0) {
-            Log.e(TAG, "Failed to compile GLES3 passthrough, falling back to universal GLES2 passthrough")
-            programId = GLShaderHelper.createProgram(
+        // Compile clean baseline camera passthrough fallback program (Section 8)
+        fallbackProgramId = GLShaderHelper.createProgram(
+            ShaderConstants.VERTEX_SHADER_VIEWFINDER,
+            ShaderConstants.FRAGMENT_SHADER_PASSTHROUGH
+        )
+        if (fallbackProgramId == 0) {
+            fallbackProgramId = GLShaderHelper.createProgram(
                 ShaderConstants.VERTEX_SHADER_PASSTHROUGH_ES2,
                 ShaderConstants.FRAGMENT_SHADER_PASSTHROUGH_ES2
             )
         }
+        if (fallbackProgramId != 0) {
+            fallbackTexMatrixLoc = GLES30.glGetUniformLocation(fallbackProgramId, "uTexMatrix")
+            fallbackTextureLoc = GLES30.glGetUniformLocation(fallbackProgramId, "sTexture")
+        }
 
+        // Safe fallback: if complex shader ever fails compilation, fall back to minimal passthrough
         if (programId == 0) {
+            Log.e(TAG, "Failed to compile full viewfinder shader program, activating safe baseline fallback")
+            programId = fallbackProgramId
+            useFallbackShader = true
+        }
+
+        if (programId == 0 && fallbackProgramId == 0) {
             Log.e(TAG, "CRITICAL: All viewfinder shader compilation paths failed")
             return
         }
@@ -757,6 +855,32 @@ class GLViewfinderRenderer(
         updateGeometry()
     }
 
+    private fun renderSafeFallback() {
+        if (fallbackProgramId == 0) return
+        GLES30.glUseProgram(fallbackProgramId)
+
+        synchronized(geometryLock) {
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 12, vertexBuffer)
+
+            GLES30.glEnableVertexAttribArray(1)
+            GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 8, textureCoordBuffer)
+        }
+
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        if (fallbackTextureLoc != -1) GLES30.glUniform1i(fallbackTextureLoc, 0)
+        if (fallbackTexMatrixLoc != -1) {
+            GLES30.glUniformMatrix4fv(fallbackTexMatrixLoc, 1, false, texMatrix, 0)
+        }
+
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+
+        GLES30.glDisableVertexAttribArray(0)
+        GLES30.glDisableVertexAttribArray(1)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+    }
+
     override fun onDrawFrame(gl: GL10?) {
         val startNs = System.nanoTime()
 
@@ -767,6 +891,7 @@ class GLViewfinderRenderer(
                     GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
                     surfaceTexture?.updateTexImage()
                     surfaceTexture?.getTransformMatrix(texMatrix)
+                    hasReceivedFirstFrame = true
                 } catch (t: Throwable) {
                     Log.w(TAG, "Error updating viewfinder surface texture", t)
                 }
@@ -774,18 +899,46 @@ class GLViewfinderRenderer(
             }
         }
 
+        GLES30.glClearColor(0.05f, 0.05f, 0.07f, 1.0f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
-        if (programId == 0) return
 
+        // Safety gate: never render uninitialized camera texture (prevents green/black/corrupted frames)
+        if (!hasReceivedFirstFrame) {
+            return
+        }
+
+        // Guaranteed baseline camera fallback: if complex shader disabled or failed
+        if (useFallbackShader || programId == 0) {
+            renderSafeFallback()
+            val durationNs = System.nanoTime() - startNs
+            frameMetrics.onFrameRendered(durationNs, isDropped = false)
+            return
+        }
+
+        try {
+            renderViewfinderInternal()
+        } catch (t: Throwable) {
+            Log.e(TAG, "Exception during film viewfinder rendering, switching to safe baseline fallback", t)
+            useFallbackShader = true
+            renderSafeFallback()
+        }
+
+        val durationNs = System.nanoTime() - startNs
+        frameMetrics.onFrameRendered(durationNs, isDropped = false)
+    }
+
+    private fun renderViewfinderInternal() {
         GLES30.glUseProgram(programId)
 
         // Set vertices
-        GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 12, vertexBuffer)
+        synchronized(geometryLock) {
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 12, vertexBuffer)
 
-        // Set texture coords
-        GLES30.glEnableVertexAttribArray(1)
-        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 8, textureCoordBuffer)
+            // Set texture coords
+            GLES30.glEnableVertexAttribArray(1)
+            GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 8, textureCoordBuffer)
+        }
 
         // Bind OES texture (unit 0)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
@@ -799,13 +952,13 @@ class GLViewfinderRenderer(
         if (sLut3D_BLoc != -1) GLES30.glUniform1i(sLut3D_BLoc, 4)
         if (uLutTextureBLoc != -1) GLES30.glUniform1i(uLutTextureBLoc, 5)
 
-        // Upload hardware texture transform matrix and viewport dimensions
+        // Upload hardware texture transform matrix and accurate quad dimensions
         if (uTexMatrixLoc != -1) {
             GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, texMatrix, 0)
         }
         if (uViewportSizeLoc != -1) {
-            val vw = if (viewportWidth > 0) viewportWidth.toFloat() else 1080f
-            val vh = if (viewportHeight > 0) viewportHeight.toFloat() else 1920f
+            val vw = if (activeQuadWidth > 0f) activeQuadWidth else 1080f
+            val vh = if (activeQuadHeight > 0f) activeQuadHeight else 1440f
             GLES30.glUniform2f(uViewportSizeLoc, vw, vh)
         }
 
@@ -1010,7 +1163,7 @@ class GLViewfinderRenderer(
 
             // Bind Pre-resolved 3D/2D Hald CLUT Film Emulsion Texture (unit 1 for 3D, unit 2 for 2D)
             val preset = activePreset
-            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+            val unifiedProfile = activeUnifiedProfile
             val lutTexId = activeLutTexId
             val lutTarget = activeLutTarget
 
@@ -1129,13 +1282,16 @@ class GLViewfinderRenderer(
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
 
+            val isPerformanceThrottled = frameMetrics.isThrottled
+
             val lens = preset.lens
             val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0f, 1f)
             GLES30.glUniform1f(uVignetteIntensityLoc, vigIntensity)
             GLES30.glUniform1f(uVignetteRadiusLoc, lens.vignetteRadius)
             GLES30.glUniform1f(uChromaticAberrationLoc, lens.chromaticAberration * intensity)
             GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion * intensity)
-            GLES30.glUniform1f(uSoftnessLoc, lens.softness * intensity)
+            val softStrength = if (isPerformanceThrottled) 0f else lens.softness * intensity
+            GLES30.glUniform1f(uSoftnessLoc, softStrength)
 
             val resolvedGrain = activeResolvedGrain ?: com.craftcam.app.processor.GrainStage.resolve(
                 preset,
@@ -1173,7 +1329,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform2f(uGrainOffsetLoc, seedX, seedY)
 
             val halation = preset.halation
-            val halationActive = tuning.halationEnabled && (halation?.enabled == true || unifiedProfile.filmProfile.halationThreshold < 0.99f) && intensity > 0.01f
+            val halationActive = !isPerformanceThrottled && tuning.halationEnabled && (halation?.enabled == true || unifiedProfile.filmProfile.halationThreshold < 0.99f) && intensity > 0.01f
             GLES30.glUniform1i(uHalationEnabledLoc, if (halationActive) 1 else 0)
             val effHalationThresh = halation?.threshold ?: unifiedProfile.filmProfile.halationThreshold
             GLES30.glUniform1f(uHalationThresholdLoc, effHalationThresh)
@@ -1250,7 +1406,6 @@ class GLViewfinderRenderer(
 
         // Draw quad
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
-        GLShaderHelper.checkGLError("glDrawArrays")
 
         GLES30.glDisableVertexAttribArray(0)
         GLES30.glDisableVertexAttribArray(1)
@@ -1263,15 +1418,7 @@ class GLViewfinderRenderer(
             computeHistogramDownsampled(viewportWidth, viewportHeight)
         }
 
-        // Measure GPU execution time and frame rate
-        lastGpuTimeMs = (System.nanoTime() - startNs) / 1_000_000f
         frameCount++
-        val now = System.nanoTime()
-        if (now - lastFpsTimestamp >= 1_000_000_000L) {
-            currentFps = frameCount * 1_000_000_000f / (now - lastFpsTimestamp)
-            frameCount = 0
-            lastFpsTimestamp = now
-        }
 
         // Animate continuous zebra stripes in Pro mode
         if (isProMode && proConfig.zebraEnabled) {
@@ -1304,8 +1451,8 @@ class GLViewfinderRenderer(
                     histogramBins[luma]++
                     idx += 4
                 }
-                val copy = histogramBins.clone()
-                onHistogramUpdated?.invoke(copy)
+                System.arraycopy(histogramBins, 0, histogramBinsExport, 0, 256)
+                onHistogramUpdated?.invoke(histogramBinsExport)
             } catch (_: Throwable) {
             } finally {
                 isComputingHistogram = false
@@ -1321,6 +1468,14 @@ class GLViewfinderRenderer(
         surfaceTexture = null
         lutTextureCache.clear()
         grainTextureCache.clear()
+        if (programId != 0) {
+            GLES30.glDeleteProgram(programId)
+            programId = 0
+        }
+        if (fallbackProgramId != 0) {
+            GLES30.glDeleteProgram(fallbackProgramId)
+            fallbackProgramId = 0
+        }
         if (dummy2DTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(dummy2DTextureId), 0)
             dummy2DTextureId = 0

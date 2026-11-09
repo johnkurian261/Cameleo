@@ -111,6 +111,8 @@ class CameraManager(private val context: Context) {
     private var lastReportedIso = 0
     private var lastReportedExpNs = 0L
     private var lastReportedFaceCount = 0
+    private val EMPTY_INT_ARRAY = IntArray(0)
+    private val EMPTY_FLOAT_ARRAY = FloatArray(0)
     @Volatile
     var lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
     private var previewWatchdogJob: Job? = null
@@ -774,8 +776,8 @@ class CameraManager(private val context: Context) {
                         }
 
                         sceneAnalysisEngine.analyze(
-                            downsampledPixels = IntArray(0),
-                            downsampledLuminance = FloatArray(0),
+                            downsampledPixels = EMPTY_INT_ARRAY,
+                            downsampledLuminance = EMPTY_FLOAT_ARRAY,
                             width = 64,
                             height = 48,
                             histogram = _uiState.value.histogramBins,
@@ -874,6 +876,12 @@ class CameraManager(private val context: Context) {
                         prev,
                         ic
                     )
+                    val rot = camera?.cameraInfo?.sensorRotationDegrees
+                    val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
+                    val res = prev.resolutionInfo?.resolution
+                    if (rot != null && res != null) {
+                        onCameraOrientationChanged?.invoke(rot, isFront, res.width, res.height)
+                    }
                 }
             } else {
                 // 2B. High-definition VideoCapture Use Case with vintage film overlay effects
