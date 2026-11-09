@@ -430,7 +430,7 @@ object PresetCatalog {
 
         CameraPreset(
             id = "analog_fisheye_f",
-            iconResName = "cam_grdr",
+            iconResName = "cam_hoga",
             name = "Fisheye Bubble",
             subtitle = "Ultra-Wide Circular Fisheye",
             category = CameraCategory.DISPOSABLE,
@@ -715,7 +715,7 @@ object PresetCatalog {
 
         CameraPreset(
             id = "vsco_g3",
-            iconResName = "cam_ct2f",
+            iconResName = "cam_sclassic",
             name = "G3",
             subtitle = "Luminous Portrait Glow",
             category = CameraCategory.VSCO_FILM,
@@ -829,7 +829,7 @@ object PresetCatalog {
 
         CameraPreset(
             id = "vsco_b1",
-            iconResName = "cam_dblack",
+            iconResName = "cam_mono",
             name = "B1",
             subtitle = "B&W Classic Negative",
             category = CameraCategory.VSCO_FILM,
@@ -863,7 +863,7 @@ object PresetCatalog {
 
         CameraPreset(
             id = "vsco_x1",
-            iconResName = "cam_dblack",
+            iconResName = "cam_kino",
             name = "X1",
             subtitle = "B&W Matte Fade",
             category = CameraCategory.VSCO_FILM,
@@ -897,7 +897,7 @@ object PresetCatalog {
 
         CameraPreset(
             id = "vsco_handycam",
-            iconResName = "cam_bessa",
+            iconResName = "cam_cine",
             name = "Handycam 85",
             subtitle = "1985 Video8 Camcorder",
             category = CameraCategory.VSCO_FILM,

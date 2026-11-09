@@ -45,12 +45,6 @@ import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.ui.theme.*
 import kotlinx.coroutines.launch
 
-data class ModelShelfItem(
-    val label: String,
-    val iconResName: String,
-    val presetId: String
-)
-
 @Composable
 fun CollectionScreen(
     currentPreset: CameraPreset,
@@ -65,7 +59,6 @@ fun CollectionScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    val photoShelfState = rememberLazyListState()
 
     var activeLensType by remember(currentPreset.id) {
         val profile = CameraProfileCatalog.getProfileForPreset(currentPreset)
@@ -93,23 +86,11 @@ fun CollectionScreen(
         }
     }
 
-    // Complete Photo Camera models shelf — includes EVERY photo camera from Dazz Cam
-    val photoModels = remember {
-        val photoPresets = PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
-        photoPresets.map { preset ->
-            ModelShelfItem(
-                label = preset.name,
-                iconResName = preset.iconResName,
-                presetId = preset.id
-            )
-        }
-    }
-
-    // Smoothly scroll shelf to active camera on launch or selection change
-    LaunchedEffect(currentPreset.id, photoModels) {
-        val activeIdx = photoModels.indexOfFirst { it.presetId == currentPreset.id }
-        if (activeIdx >= 0) {
-            photoShelfState.animateScrollToItem(activeIdx)
+    // Scroll to the active camera card on initial entry
+    LaunchedEffect(currentPreset.id) {
+        val activeIdx = displayedPresets.indexOfFirst { it.id == currentPreset.id }
+        if (activeIdx > 0) {
+            listState.animateScrollToItem(activeIdx)
         }
     }
 
@@ -123,7 +104,7 @@ fun CollectionScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -179,6 +160,38 @@ fun CollectionScreen(
                 }
             }
 
+            // Pinned Category Filter Tabs (Always visible at top)
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp)
+            ) {
+                item {
+                    val allCount = PresetCatalog.allPresets.count { if (IS_VIDEO_FEATURE_PAUSED) it.category != CameraCategory.CAMCORDER else true }
+                    CategoryFilterPill(
+                        title = "ALL ($allCount)",
+                        isSelected = selectedCategory == null,
+                        onClick = {
+                            selectedCategory = null
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        }
+                    )
+                }
+                items(visibleCategories) { category ->
+                    val catCount = PresetCatalog.allPresets.count { it.category == category }
+                    CategoryFilterPill(
+                        title = "${category.displayName.uppercase()} ($catCount)",
+                        isSelected = selectedCategory == category,
+                        onClick = {
+                            selectedCategory = category
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        }
+                    )
+                }
+            }
+
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -186,79 +199,7 @@ fun CollectionScreen(
                     .weight(1f),
                 contentPadding = PaddingValues(bottom = 90.dp)
             ) {
-                // ==================== 1. 📷 PHOTO CAMERAS 3D SHELF ====================
-                item {
-                    ShelfSectionHeader(title = "📷 Photo Cameras (${photoModels.size})")
-                    LazyRow(
-                        state = photoShelfState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp)
-                    ) {
-                        items(photoModels, key = { it.presetId }) { item ->
-                            val isSelected = currentPreset.id == item.presetId
-                            Camera3DModelTile(
-                                item = item,
-                                isSelected = isSelected,
-                                onClick = {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    val targetPreset = PresetCatalog.getPresetById(item.presetId)
-                                    onSelectPreset(targetPreset)
-                                    if (selectedCategory != null && targetPreset.category != selectedCategory) {
-                                        selectedCategory = null
-                                    }
-                                    val cardIndex = displayedPresets.indexOfFirst { it.id == item.presetId }
-                                    if (cardIndex >= 0) {
-                                        coroutineScope.launch {
-                                            listState.animateScrollToItem((cardIndex + 2).coerceAtLeast(0))
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-
-                // ==================== 2. CATALOG FILTER TABS ====================
-                item {
-                    ShelfSectionHeader(
-                        title = "🎞 All Cameras (${displayedPresets.size})"
-                    )
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp)
-                    ) {
-                        item {
-                            CategoryFilterPill(
-                                title = "ALL",
-                                isSelected = selectedCategory == null,
-                                onClick = {
-                                    selectedCategory = null
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                }
-                            )
-                        }
-                        items(visibleCategories) { category ->
-                            CategoryFilterPill(
-                                title = category.displayName.uppercase(),
-                                isSelected = selectedCategory == category,
-                                onClick = {
-                                    selectedCategory = category
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                }
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // ==================== 3. ALL CAMERA CARDS WITH LENSES & SAMPLE BUTTON ====================
+                // All Camera Cards (Each camera appears exactly once!)
                 items(displayedPresets, key = { it.id }) { preset ->
                     val isSelected = preset.id == currentPreset.id
                     val isSamplesShowing = expandedSamplesPresetId == preset.id
@@ -366,56 +307,6 @@ private fun ShelfSectionHeader(title: String) {
     }
 }
 
-@Composable
-private fun Camera3DModelTile(
-    item: ModelShelfItem,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val context = LocalContext.current
-    val iconResId = remember(item.iconResName) {
-        context.resources.getIdentifier(item.iconResName, "drawable", context.packageName)
-    }
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp)
-    ) {
-        if (iconResId != 0) {
-            Image(
-                painter = painterResource(id = iconResId),
-                contentDescription = item.label,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .size(width = 82.dp, height = 58.dp)
-                    .padding(bottom = 6.dp)
-            )
-        }
-
-        // Tactile Capsule Label
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (isSelected) VintageAmber else SurfaceCard)
-                .border(
-                    width = 1.dp,
-                    color = if (isSelected) VintageAmberGlow else DividerSubtle,
-                    shape = RoundedCornerShape(14.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = item.label,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = if (isSelected) CameraBlack else TextSecondary
-            )
-        }
-    }
-}
 
 @Composable
 private fun CategoryFilterPill(
@@ -468,14 +359,30 @@ private fun CameraCard(
             if (extraId != 0) list.add(extraId)
         }
         if (list.isEmpty()) {
-            val fallbackName = when (preset.category) {
-                CameraCategory.ANALOG_FILM -> "sample_analog_35mm_classic"
-                CameraCategory.CCD_DIGITAL -> "sample_ccd_r"
-                CameraCategory.DISPOSABLE -> "sample_disp_warm"
-                CameraCategory.INSTANT -> "sample_inst_vintage"
-                CameraCategory.CAMCORDER -> "sample_cam_retro_vhs"
-                CameraCategory.VSCO_FILM -> "sample_analog_fxn_r"
-                else -> "sample_analog_35mm_classic"
+            val fallbackName = when (preset.id) {
+                "analog_135ne" -> "sample_analog_faded_film"
+                "inst_paf" -> "sample_inst_classic"
+                "analog_s67" -> "sample_inst_soft_polaroid"
+                "analog_dblack" -> "sample_disp_night"
+                "analog_nt16" -> "sample_ccd_cool_digital"
+                "vsco_a6" -> "sample_ccd_classic"
+                "vsco_c1" -> "sample_analog_vintage_color"
+                "vsco_f2" -> "sample_analog_faded_film"
+                "vsco_g3" -> "sample_analog_soft_film"
+                "vsco_m5" -> "sample_disp_warm"
+                "vsco_hb1" -> "sample_analog_fxn_r_2"
+                "vsco_b1" -> "sample_disp_night"
+                "vsco_x1" -> "sample_analog_35mm_classic"
+                "vsco_handycam" -> "sample_cam_retro_vhs"
+                else -> when (preset.category) {
+                    CameraCategory.ANALOG_FILM -> "sample_analog_35mm_classic"
+                    CameraCategory.CCD_DIGITAL -> "sample_ccd_r"
+                    CameraCategory.DISPOSABLE -> "sample_disp_warm"
+                    CameraCategory.INSTANT -> "sample_inst_vintage"
+                    CameraCategory.CAMCORDER -> "sample_cam_retro_vhs"
+                    CameraCategory.VSCO_FILM -> "sample_analog_fxn_r"
+                    else -> "sample_analog_35mm_classic"
+                }
             }
             val fallbackId = context.resources.getIdentifier(fallbackName, "drawable", context.packageName)
             if (fallbackId != 0) list.add(fallbackId)
@@ -826,37 +733,6 @@ private fun CameraCard(
                 }
                 if (preset.lightLeak?.enabled == true) {
                     SpecBadge("Light Leaks")
-                }
-            }
-
-            // If selected: Direct "USE CAMERA" confirmation button
-            if (isSelected) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onConfirm,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = VintageAmber,
-                        contentColor = CameraBlack
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = CameraBlack
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "USE ${preset.name.uppercase()} • ${activeLensProfile.name.uppercase()}",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
                 }
             }
         }
