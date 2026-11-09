@@ -500,8 +500,15 @@ void main() {
 
     // 4. Preset & User Contrast
     if (uDebugStageToneCurve) {
+        if (!uNaturalModeEnabled) {
+            float sLift = 0.035 * (1.0 - clamp(luma, 0.0, 1.0)) * (1.0 - clamp(luma, 0.0, 1.0));
+            color += vec3(sLift);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
         if (abs(uContrast - 1.0) > 0.01) {
-            color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
+            float pivot = 0.26;
+            color = clamp((color - pivot) * uContrast + pivot, 0.0, 1.0);
         }
 
         // 5. Preset & User Saturation
@@ -523,7 +530,7 @@ void main() {
 
         // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
         if (uHighlightRollOff < 0.99 && !uNaturalModeEnabled) {
-            float knee = uHighlightRollOff;
+            float knee = max(0.86, uHighlightRollOff);
             float maxCh = max(max(color.r, color.g), color.b);
             if (maxCh > knee) {
                 float d = maxCh - knee;
@@ -593,10 +600,10 @@ void main() {
         float vigTotal = uVignetteIntensity + uLensVignette;
         if (vigTotal > 0.01) {
             float rNorm = length(p) / 0.7071068;
-            float rn = rNorm / uVignetteRadius;
-            float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
-            float vignette = mix(1.0, cos4Vig, clamp(vigTotal * 1.15, 0.0, 1.0));
-            color *= clamp(vignette, 0.25, 1.0);
+            float rn = rNorm / max(0.72, uVignetteRadius);
+            float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.45, 2.0);
+            float vignette = mix(1.0, cos4Vig, clamp(vigTotal * 0.65, 0.0, 0.55));
+            color *= clamp(vignette, 0.50, 1.0);
         }
     }
 
@@ -1159,8 +1166,15 @@ void main() {
 
     // 4. Contrast
     if (uDebugStageToneCurve) {
+        if (!uNaturalModeEnabled) {
+            float sLift = 0.035 * (1.0 - clamp(luma, 0.0, 1.0)) * (1.0 - clamp(luma, 0.0, 1.0));
+            color += vec3(sLift);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
         if (abs(uContrast - 1.0) > 0.01) {
-            color = clamp((color - 0.5) * uContrast + 0.5, 0.0, 1.0);
+            float pivot = 0.26;
+            color = clamp((color - pivot) * uContrast + pivot, 0.0, 1.0);
         }
 
         // 5. Saturation
@@ -1182,7 +1196,7 @@ void main() {
 
         // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
         if (uHighlightRollOff < 0.99 && !uNaturalModeEnabled) {
-            float knee = uHighlightRollOff;
+            float knee = max(0.86, uHighlightRollOff);
             float maxCh = max(max(color.r, color.g), color.b);
             if (maxCh > knee) {
                 float d = maxCh - knee;
@@ -1265,10 +1279,10 @@ void main() {
         float vigTotal = uVignetteIntensity + uLensVignette;
         if (vigTotal > 0.01) {
             float rNorm = length(p) / 0.7071068;
-            float rn = rNorm / uVignetteRadius;
-            float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.55, 2.0);
-            float vignette = mix(1.0, cos4Vig, clamp(vigTotal * 1.15, 0.0, 1.0));
-            color *= clamp(vignette, 0.25, 1.0);
+            float rn = rNorm / max(0.72, uVignetteRadius);
+            float cos4Vig = 1.0 / pow(1.0 + rn * rn * 0.45, 2.0);
+            float vignette = mix(1.0, cos4Vig, clamp(vigTotal * 0.65, 0.0, 0.55));
+            color *= clamp(vignette, 0.50, 1.0);
         }
     }
 

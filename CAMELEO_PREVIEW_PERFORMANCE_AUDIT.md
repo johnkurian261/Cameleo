@@ -171,3 +171,4 @@ Display Hardware Composer (120Hz Dynamic AMOLED 2X)
 | **Preview Watchdog** | None (only capture watchdog) | Automated 1000ms preview watchdog with non-destructive Surface reconnect | Prevents persistent preview lockup without app restart |
 
 ---
+

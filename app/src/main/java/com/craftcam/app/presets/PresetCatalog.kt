@@ -62,12 +62,12 @@ object PresetCatalog {
             year = "1984",
             description = "Natural skin tones, balanced contrast, and fine silver halide grain. The iconic standard for everyday 35mm point-and-shoot street photography.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.14f,
+                contrast = 1.08f,
                 saturation = 1.08f,
                 temperature = 0.12f,
                 tint = 0.02f,
                 fade = 0.04f,
-                highlightRollOff = 0.80f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.02f,
                 shadowTintG = 0.01f,
                 shadowTintB = 0.0f
@@ -82,8 +82,8 @@ object PresetCatalog {
                 highlightStrength = 0.15f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.35f,
-                vignetteRadius = 0.80f,
+                vignetteIntensity = 0.24f,
+                vignetteRadius = 0.84f,
                 chromaticAberration = 0.0025f,
                 softness = 0.05f
             ),
@@ -172,18 +172,18 @@ object PresetCatalog {
             year = "1994",
             description = "Authentic Kodak consumer film tones with warm amber highlights, rich midtones, and classic 35mm rebate edges.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.14f,
+                contrast = 1.08f,
                 saturation = 1.08f,
                 temperature = 0.14f,
                 tint = 0.04f,
                 fade = 0.038f,
-                highlightRollOff = 0.78f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.04f,
                 shadowTintG = 0.03f,
                 shadowTintB = 0.01f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.26f, scale = 1.10f, assetPath = "grains/grain_135sr.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.38f, highlightStrength = 0.18f),
-            lens = LensConfig(vignetteIntensity = 0.40f, vignetteRadius = 0.78f, chromaticAberration = 0.004f, softness = 0.06f),
+            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.004f, softness = 0.06f),
             dust = DustConfig(enabled = true, assetPath = "135_dust.png", opacity = 0.55f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.40f, warmColorBias = 0.88f),
             border = BorderConfig(style = BorderStyle.FILM_STRIP_135, assetPath = "135ne_frame_cut1.png"),
@@ -199,18 +199,18 @@ object PresetCatalog {
             year = "1990",
             description = "Carl Zeiss Sonnar 38mm f/2.8 titanium compact styling. Creamy pastel highlights, gentle contrast, and velvety micro-contrast.",
             colorGrading = ColorGradingConfig(
-                contrast = 0.94f,
-                saturation = 0.92f,
+                contrast = 0.96f,
+                saturation = 0.95f,
                 temperature = 0.06f,
                 tint = 0.01f,
-                fade = 0.055f,
-                highlightRollOff = 0.75f,
+                fade = 0.045f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.01f,
                 shadowTintG = 0.02f,
                 shadowTintB = 0.03f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 0.95f, assetPath = "grains/grain_s67.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.14f),
-            lens = LensConfig(vignetteIntensity = 0.32f, vignetteRadius = 0.82f, chromaticAberration = 0.002f, softness = 0.08f),
+            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.95f, assetPath = "grains/grain_s67.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.14f),
+            lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.85f, chromaticAberration = 0.002f, softness = 0.08f),
             halation = HalationConfig(enabled = true, threshold = 0.74f, intensity = 0.22f, radius = 14f, haloRed = 1.0f, haloGreen = 0.42f, haloBlue = 0.20f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.40f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MINIMAL_WHITE, customYearOffset = -34),
@@ -226,18 +226,18 @@ object PresetCatalog {
             year = "1998",
             description = "Fourth-layer color emulsion technology with natural skin rendition, luminous emerald greens, and crisp SLR optics.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.16f,
+                contrast = 1.08f,
                 saturation = 1.10f,
                 temperature = 0.16f,
                 tint = 0.02f,
                 fade = 0.04f,
-                highlightRollOff = 0.78f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.03f,
                 shadowTintG = 0.02f,
                 shadowTintB = 0.01f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.15f, assetPath = "grains/grain540_01.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.36f, highlightStrength = 0.16f),
-            lens = LensConfig(vignetteIntensity = 0.42f, vignetteRadius = 0.75f, chromaticAberration = 0.005f, softness = 0.08f),
+            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.005f, softness = 0.08f),
             dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.55f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.35f, warmColorBias = 0.85f),
             border = BorderConfig(style = BorderStyle.NONE),
@@ -253,18 +253,18 @@ object PresetCatalog {
             year = "2005",
             description = "Legendary 28mm wide street snap camera. High micro-contrast, sharp optical rendering, and deep, evocative shadow delineation.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.26f,
-                saturation = 1.12f,
+                contrast = 1.10f,
+                saturation = 1.10f,
                 temperature = 0.16f,
                 tint = 0.02f,
                 fade = 0.02f,
-                highlightRollOff = 0.82f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.02f,
                 shadowTintG = 0.01f,
                 shadowTintB = 0.00f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.05f, isColorNoise = false, assetPath = "grains/grain_ou.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.36f, highlightStrength = 0.16f),
-            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.72f, chromaticAberration = 0.003f),
+            lens = LensConfig(vignetteIntensity = 0.25f, vignetteRadius = 0.82f, chromaticAberration = 0.003f),
             dust = DustConfig(enabled = true, assetPath = "135_dust.png", opacity = 0.45f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -21)
@@ -279,8 +279,8 @@ object PresetCatalog {
             year = "2006",
             description = "Early CCD rangefinder sensor signature. Rich primary colors, saturated reds, high micro-contrast and punchy highlight response.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.24f,
-                saturation = 1.20f,
+                contrast = 1.12f,
+                saturation = 1.18f,
                 temperature = 0.06f,
                 tint = -0.02f,
                 fade = 0.015f,
@@ -300,7 +300,7 @@ object PresetCatalog {
                 highlightStrength = 0.20f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.32f,
+                vignetteIntensity = 0.24f,
                 vignetteRadius = 0.85f,
                 chromaticAberration = 0.003f
             ),
@@ -319,15 +319,15 @@ object PresetCatalog {
             year = "2002",
             description = "The defining aesthetic of early 2000s digicams. Cool blue sky saturation, sharp edges, and distinctive digital highlight glare.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.28f,
-                saturation = 1.15f,
+                contrast = 1.12f,
+                saturation = 1.14f,
                 temperature = -0.12f,
                 tint = 0.05f,
                 fade = 0.02f,
                 highlightRollOff = 0.90f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_classicu.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.32f, highlightStrength = 0.15f),
-            lens = LensConfig(vignetteIntensity = 0.28f, vignetteRadius = 0.85f, chromaticAberration = 0.005f),
+            lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.85f, chromaticAberration = 0.005f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -22)
@@ -342,15 +342,15 @@ object PresetCatalog {
             year = "2001",
             description = "Punchy high-energy direct flash look. High contrast, saturated neon tones, and rapid radial light falloff.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.30f,
-                saturation = 1.18f,
+                contrast = 1.12f,
+                saturation = 1.16f,
                 temperature = 0.08f,
                 tint = 0.02f,
                 fade = 0.02f,
                 highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.34f, highlightStrength = 0.15f),
-            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.72f, chromaticAberration = 0.004f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.82f, chromaticAberration = 0.004f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -23)
@@ -365,7 +365,7 @@ object PresetCatalog {
             year = "2003",
             description = "Hybrid digital point-and-shoot combining early digital processing with disposable camera optical punch.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.22f,
+                contrast = 1.10f,
                 saturation = 1.10f,
                 temperature = 0.05f,
                 tint = 0.00f,
@@ -373,7 +373,7 @@ object PresetCatalog {
                 highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_dqs.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.12f),
-            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.004f),
+            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.004f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -21)
@@ -388,15 +388,15 @@ object PresetCatalog {
             year = "1996",
             description = "Disposable camera loaded with motion print film featuring intense red/orange halation around bright light sources.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.22f,
+                contrast = 1.10f,
                 saturation = 1.12f,
                 temperature = 0.12f,
                 tint = 0.02f,
                 fade = 0.04f,
-                highlightRollOff = 0.76f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.20f, assetPath = "grains/grain_cpm35.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.40f, highlightStrength = 0.18f),
-            lens = LensConfig(vignetteIntensity = 0.48f, vignetteRadius = 0.72f, chromaticAberration = 0.006f, softness = 0.10f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.84f, chromaticAberration = 0.006f, softness = 0.10f),
             halation = HalationConfig(enabled = true, threshold = 0.72f, intensity = 0.42f, radius = 22f, haloRed = 1.0f, haloGreen = 0.22f, haloBlue = 0.04f),
             dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.55f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.45f, warmColorBias = 0.90f),
@@ -413,15 +413,15 @@ object PresetCatalog {
             year = "1993",
             description = "Sports single-use camera with high-contrast sunlight tuning, fast shutter freeze, and green golf course color boost.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.25f,
+                contrast = 1.10f,
                 saturation = 1.15f,
                 temperature = 0.15f,
                 tint = -0.02f,
                 fade = 0.05f,
-                highlightRollOff = 0.74f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.20f, assetPath = "grains/grain_dexp2.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.40f, highlightStrength = 0.18f),
-            lens = LensConfig(vignetteIntensity = 0.50f, vignetteRadius = 0.70f, chromaticAberration = 0.007f, softness = 0.10f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.84f, chromaticAberration = 0.007f, softness = 0.10f),
             dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.60f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.40f, warmColorBias = 0.80f),
             border = BorderConfig(style = BorderStyle.GOLF_FRAME, assetPath = "golf_frame.jpg"),
@@ -437,15 +437,15 @@ object PresetCatalog {
             year = "1995",
             description = "Curvilinear 180-degree optical fisheye barrel distortion with intense peripheral vignette and psychedelic skate video aesthetic.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.22f,
-                saturation = 1.15f,
+                contrast = 1.08f,
+                saturation = 1.12f,
                 temperature = 0.08f,
                 tint = 0.02f,
                 fade = 0.03f,
-                highlightRollOff = 0.78f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 1.0f, assetPath = "grains/grain_dclassic.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.14f),
-            lens = LensConfig(vignetteIntensity = 0.65f, vignetteRadius = 0.60f, chromaticAberration = 0.022f, barrelDistortion = 0.92f, softness = 0.12f),
+            lens = LensConfig(vignetteIntensity = 0.30f, vignetteRadius = 0.80f, chromaticAberration = 0.022f, barrelDistortion = 0.92f, softness = 0.12f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = false)
         ),
@@ -459,18 +459,18 @@ object PresetCatalog {
             year = "1998",
             description = "Vibrant credit-card size instant analog film with lifted cyan shadows, creamy pastel highlights, and sharp instant optics.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.12f,
+                contrast = 1.08f,
                 saturation = 1.10f,
                 temperature = -0.04f,
                 tint = 0.04f,
                 fade = 0.09f,
-                highlightRollOff = 0.74f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.01f,
                 shadowTintG = 0.04f,
                 shadowTintB = 0.06f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.90f, assetPath = "grains/grain_instc.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.12f),
-            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.82f, chromaticAberration = 0.003f, softness = 0.10f),
+            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.003f, softness = 0.10f),
             dust = DustConfig(enabled = true, assetPath = "dust_instc.png", opacity = 0.45f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.30f, warmColorBias = 0.70f),
             border = BorderConfig(style = BorderStyle.POLAROID_WHITE_CHIN, assetPath = "vinst_border1.png"),
@@ -486,15 +486,15 @@ object PresetCatalog {
             year = "1982",
             description = "Legendary folding SLR instant camera with sonar autofocus, glass 4-element lens, rich chemistry, and iconic square frame.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.16f,
+                contrast = 1.08f,
                 saturation = 1.12f,
                 temperature = 0.10f,
                 tint = 0.03f,
                 fade = 0.08f,
-                highlightRollOff = 0.74f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, assetPath = "grains/grain_paf.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.30f, highlightStrength = 0.14f),
-            lens = LensConfig(vignetteIntensity = 0.40f, vignetteRadius = 0.78f, chromaticAberration = 0.003f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.84f, chromaticAberration = 0.003f),
             dust = DustConfig(enabled = true, assetPath = "dust_instc.png", opacity = 0.40f),
             border = BorderConfig(style = BorderStyle.POLAROID_WHITE_CHIN, assetPath = "vinst_border3.png"),
             dateStamp = DateStampConfig(enabled = false)
@@ -509,18 +509,18 @@ object PresetCatalog {
             year = "1989",
             description = "Dual-layer optical exposure simulation with dreamy blending, magenta/cyan shifts, and creative analog light leaks.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
+                contrast = 1.06f,
                 saturation = 1.05f,
                 temperature = -0.05f,
                 tint = 0.08f,
                 fade = 0.06f,
-                highlightRollOff = 0.72f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.04f,
                 shadowTintG = 0.00f,
                 shadowTintB = 0.03f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.26f, scale = 1.10f, assetPath = "grains/grain_dexp.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.35f, highlightStrength = 0.16f),
-            lens = LensConfig(vignetteIntensity = 0.42f, vignetteRadius = 0.78f, chromaticAberration = 0.006f, softness = 0.12f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.84f, chromaticAberration = 0.006f, softness = 0.12f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.50f, warmColorBias = 0.75f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = false)
@@ -535,15 +535,15 @@ object PresetCatalog {
             year = "1970",
             description = "Legendary 6x7 medium format camera rendering. Enormous optical depth, silky smooth tonal roll-off, and medium format border markers.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.15f,
+                contrast = 1.08f,
                 saturation = 1.10f,
                 temperature = 0.06f,
                 tint = 0.01f,
                 fade = 0.035f,
-                highlightRollOff = 0.78f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.16f, scale = 0.85f, assetPath = "grains/grain_s67.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.25f, highlightStrength = 0.10f),
-            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.82f, chromaticAberration = 0.002f),
+            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.002f),
             dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.40f),
             border = BorderConfig(style = BorderStyle.MEDIUM_FORMAT_67, assetPath = "s67_frame_t1.png"),
             dateStamp = DateStampConfig(enabled = false)
@@ -558,15 +558,15 @@ object PresetCatalog {
             year = "1954",
             description = "High-contrast black-and-white street photography emulsion inspired by Tri-X 400. Deep velvety shadows and punchy midtones.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.30f,
+                contrast = 1.14f,
                 saturation = 0.00f,
                 temperature = 0.00f,
                 tint = 0.00f,
                 fade = 0.02f,
-                highlightRollOff = 0.72f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.32f, scale = 1.25f, assetPath = "grains/grain_dexp.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.45f, highlightStrength = 0.20f),
-            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.72f, chromaticAberration = 0.000f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.82f, chromaticAberration = 0.000f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.50f),
             dateStamp = DateStampConfig(enabled = false),
             border = BorderConfig(style = BorderStyle.NONE)
@@ -581,18 +581,18 @@ object PresetCatalog {
             year = "2001",
             description = "Specialized night street emulsion with cool cyan shadow bias, luminous neon highlight retention, and atmospheric high-speed grain.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.18f,
+                contrast = 1.08f,
                 saturation = 1.08f,
                 temperature = -0.08f,
                 tint = 0.03f,
                 fade = 0.03f,
-                highlightRollOff = 0.72f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.00f,
                 shadowTintG = 0.03f,
                 shadowTintB = 0.05f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.15f, assetPath = "grains/grain_ou_lowlight.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.40f, highlightStrength = 0.16f),
-            lens = LensConfig(vignetteIntensity = 0.45f, vignetteRadius = 0.76f, chromaticAberration = 0.004f),
+            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.004f),
             dust = DustConfig(enabled = false),
             dateStamp = DateStampConfig(enabled = false),
             border = BorderConfig(style = BorderStyle.NONE)
@@ -650,12 +650,12 @@ object PresetCatalog {
             year = "2012",
             description = "Vibrant and crisp classic color film. Saturated primaries, luminous greens, brilliant blue skies, and clean punchy contrast.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.18f,
-                saturation = 1.16f,
+                contrast = 1.10f,
+                saturation = 1.14f,
                 temperature = -0.02f,
                 tint = 0.01f,
                 fade = 0.025f,
-                highlightRollOff = 0.80f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(
                 enabled = true,
@@ -667,8 +667,8 @@ object PresetCatalog {
                 highlightStrength = 0.10f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.28f,
-                vignetteRadius = 0.82f,
+                vignetteIntensity = 0.24f,
+                vignetteRadius = 0.85f,
                 chromaticAberration = 0.002f
             ),
             border = BorderConfig(style = BorderStyle.NONE),
@@ -685,11 +685,11 @@ object PresetCatalog {
             description = "Moody, understated Scandinavian aesthetic. Desaturated foliage, subdued slate blues, warm creamy skin tones, and gentle matte fade.",
             colorGrading = ColorGradingConfig(
                 contrast = 1.05f,
-                saturation = 0.88f,
+                saturation = 0.92f,
                 temperature = 0.08f,
                 tint = 0.02f,
                 fade = 0.055f,
-                highlightRollOff = 0.76f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.000f,
                 shadowTintG = 0.020f,
                 shadowTintB = 0.040f
@@ -704,8 +704,8 @@ object PresetCatalog {
                 highlightStrength = 0.14f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.32f,
-                vignetteRadius = 0.80f,
+                vignetteIntensity = 0.24f,
+                vignetteRadius = 0.85f,
                 chromaticAberration = 0.003f,
                 softness = 0.06f
             ),
@@ -727,7 +727,7 @@ object PresetCatalog {
                 temperature = 0.16f,
                 tint = 0.03f,
                 fade = 0.030f,
-                highlightRollOff = 0.84f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.030f,
                 shadowTintG = 0.015f,
                 shadowTintB = 0.000f
@@ -761,12 +761,12 @@ object PresetCatalog {
             year = "2013",
             description = "1970s faded Kodacolor print simulation. Warm sepia-amber shadow cast, thick matte blacks, and nostalgic mellow colors.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
-                saturation = 0.96f,
+                contrast = 1.08f,
+                saturation = 0.98f,
                 temperature = 0.14f,
                 tint = -0.04f,
                 fade = 0.065f,
-                highlightRollOff = 0.74f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.055f,
                 shadowTintG = 0.030f,
                 shadowTintB = 0.008f
@@ -781,8 +781,8 @@ object PresetCatalog {
                 highlightStrength = 0.16f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.38f,
-                vignetteRadius = 0.78f,
+                vignetteIntensity = 0.25f,
+                vignetteRadius = 0.84f,
                 chromaticAberration = 0.004f,
                 softness = 0.08f
             ),
@@ -799,12 +799,12 @@ object PresetCatalog {
             year = "2014",
             description = "High-contrast urban street photography collaboration. Crisp dark blacks, cool desaturated shadows, and sharp architectural punch.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.26f,
+                contrast = 1.12f,
                 saturation = 0.94f,
                 temperature = -0.06f,
                 tint = 0.01f,
                 fade = 0.012f,
-                highlightRollOff = 0.82f,
+                highlightRollOff = 0.88f,
                 shadowTintR = -0.020f,
                 shadowTintG = 0.010f,
                 shadowTintB = 0.030f
@@ -819,8 +819,8 @@ object PresetCatalog {
                 highlightStrength = 0.14f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.35f,
-                vignetteRadius = 0.80f,
+                vignetteIntensity = 0.25f,
+                vignetteRadius = 0.84f,
                 chromaticAberration = 0.003f
             ),
             border = BorderConfig(style = BorderStyle.NONE),
@@ -836,12 +836,12 @@ object PresetCatalog {
             year = "2012",
             description = "Quintessential Kodak Tri-X 400 panchromatic black and white. Deep velvety blacks, brilliant highlight separation, and rich silver grain.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.22f,
+                contrast = 1.12f,
                 saturation = 0.00f,
                 temperature = 0.00f,
                 tint = 0.00f,
                 fade = 0.035f,
-                highlightRollOff = 0.78f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(
                 enabled = true,
@@ -853,8 +853,8 @@ object PresetCatalog {
                 highlightStrength = 0.18f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.40f,
-                vignetteRadius = 0.76f,
+                vignetteIntensity = 0.26f,
+                vignetteRadius = 0.84f,
                 chromaticAberration = 0.000f
             ),
             border = BorderConfig(style = BorderStyle.NONE),
@@ -870,12 +870,12 @@ object PresetCatalog {
             year = "2013",
             description = "Atmospheric matte black-and-white emulsion. Heavily lifted charcoal shadows, muted contrast, and soft cinematic highlights.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.08f,
+                contrast = 1.06f,
                 saturation = 0.00f,
                 temperature = 0.00f,
                 tint = 0.00f,
                 fade = 0.080f,
-                highlightRollOff = 0.72f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(
                 enabled = true,
@@ -887,8 +887,8 @@ object PresetCatalog {
                 highlightStrength = 0.15f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.38f,
-                vignetteRadius = 0.78f,
+                vignetteIntensity = 0.25f,
+                vignetteRadius = 0.84f,
                 chromaticAberration = 0.000f
             ),
             border = BorderConfig(style = BorderStyle.NONE),
@@ -904,12 +904,12 @@ object PresetCatalog {
             year = "1985",
             description = "VSCO's authentic 1985 Video8 color cube. 1/3-inch CCD video sensor response, slight green OSD cast, and warm analog magnetic tape aesthetics.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.12f,
-                saturation = 0.92f,
+                contrast = 1.10f,
+                saturation = 0.94f,
                 temperature = -0.04f,
                 tint = 0.03f,
                 fade = 0.045f,
-                highlightRollOff = 0.80f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(
                 enabled = true,
@@ -922,8 +922,8 @@ object PresetCatalog {
                 highlightStrength = 0.18f
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.35f,
-                vignetteRadius = 0.80f,
+                vignetteIntensity = 0.25f,
+                vignetteRadius = 0.84f,
                 chromaticAberration = 0.0075f,
                 softness = 0.15f
             ),
@@ -943,18 +943,18 @@ object PresetCatalog {
             year = "1988",
             description = "Magnetic tape artifacts, horizontal color ghosting and iconic tracking distortion.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
+                contrast = 1.08f,
                 saturation = 0.95f,
                 temperature = 0.04f,
                 tint = 0.08f,
                 fade = 0.08f,
-                highlightRollOff = 0.85f,
+                highlightRollOff = 0.88f,
                 shadowTintR = 0.04f,
                 shadowTintG = 0.01f,
                 shadowTintB = 0.05f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.32f, scale = 1.40f, isColorNoise = true, assetPath = "grains/vhs_grain01.jpg", blendMode = GrainBlendMode.SCREEN, shadowStrength = 0.40f, highlightStrength = 0.20f),
-            lens = LensConfig(vignetteIntensity = 0.35f, vignetteRadius = 0.80f, chromaticAberration = 0.012f, softness = 0.25f),
+            lens = LensConfig(vignetteIntensity = 0.25f, vignetteRadius = 0.84f, chromaticAberration = 0.012f, softness = 0.25f),
             dust = DustConfig(enabled = true, assetPath = "vhs_grain_dust01.jpg", opacity = 0.50f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -36)
@@ -974,7 +974,7 @@ object PresetCatalog {
                 temperature = 0.14f,
                 tint = 0.02f,
                 fade = 0.05f,
-                highlightRollOff = 0.82f
+                highlightRollOff = 0.88f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.24f, scale = 1.30f, assetPath = "grains/grain_16mm.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.32f, highlightStrength = 0.16f),
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.85f, chromaticAberration = 0.004f, softness = 0.15f),

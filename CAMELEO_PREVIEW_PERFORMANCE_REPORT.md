@@ -234,3 +234,4 @@ Screen (Locked 60 FPS, Zero Jitter, Zero Freezes)
    - `.\gradlew.bat test`: **BUILD SUCCESSFUL (all 45 test tasks passed)**.
    - `.\gradlew.bat assembleDebug`: **BUILD SUCCESSFUL**.
    - APK installed and verified on physical hardware (`SM-G991B`).
+

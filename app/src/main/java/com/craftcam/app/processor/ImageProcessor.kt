@@ -527,6 +527,7 @@ object ImageProcessor {
             val halation = preset.halation
             val leak = preset.lightLeak
             val isCamcorder = preset.category == CameraCategory.CAMCORDER
+            val isNatural = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
 
             // 1. Identify camera-specific 3D LUT
             val lutFile = selectLutForPreset(preset.id)
@@ -561,7 +562,7 @@ object ImageProcessor {
             val cx = width * 0.5f
             val cy = height * 0.5f
             val maxD2 = cx * cx + cy * cy
-            val rad = lens.vignetteRadius
+            val rad = maxOf(0.72f, lens.vignetteRadius)
             val vigDenom = maxD2 * rad * rad
 
             val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
@@ -798,15 +799,25 @@ object ImageProcessor {
                         }
 
                         if (stageToneCurve) {
+                            var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            if (!isNatural) {
+                                val sLift = 0.035f * (1.0f - curLuma.coerceIn(0f, 1f)) * (1.0f - curLuma.coerceIn(0f, 1f))
+                                r += sLift
+                                g += sLift
+                                b += sLift
+                                curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            }
+
                             // B. Preset & User Contrast
                             if (abs(effectiveContrast - 1.0f) > 0.01f) {
-                                r = (r - 0.5f) * effectiveContrast + 0.5f
-                                g = (g - 0.5f) * effectiveContrast + 0.5f
-                                b = (b - 0.5f) * effectiveContrast + 0.5f
+                                val pivot = 0.26f
+                                r = (r - pivot) * effectiveContrast + pivot
+                                g = (g - pivot) * effectiveContrast + pivot
+                                b = (b - pivot) * effectiveContrast + pivot
                             }
 
                             // C. Preset & User Saturation
-                            var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                             if (abs(effectiveSat - 1.0f) > 0.01f) {
                                 r = curLuma + effectiveSat * (r - curLuma)
                                 g = curLuma + effectiveSat * (g - curLuma)
@@ -830,14 +841,15 @@ object ImageProcessor {
                             b += shadowB * shadowWeight
 
                             // F. Filmic Highlight Rolloff & Desaturating Shoulder
-                            if (rollOff < 0.99f) {
-                                val knee = maxOf(0.01f, 1.0f - rollOff)
-                                if (r > rollOff) r = rollOff + knee * (1.0f - exp(-(r - rollOff) / knee))
-                                if (g > rollOff) g = rollOff + knee * (1.0f - exp(-(g - rollOff) / knee))
-                                if (b > rollOff) b = rollOff + knee * (1.0f - exp(-(b - rollOff) / knee))
+                            val effRollOff = maxOf(0.86f, rollOff)
+                            if (effRollOff < 0.99f && !isNatural) {
+                                val knee = maxOf(0.01f, 1.0f - effRollOff)
+                                if (r > effRollOff) r = effRollOff + knee * (1.0f - exp(-(r - effRollOff) / knee))
+                                if (g > effRollOff) g = effRollOff + knee * (1.0f - exp(-(g - effRollOff) / knee))
+                                if (b > effRollOff) b = effRollOff + knee * (1.0f - exp(-(b - effRollOff) / knee))
                                 curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
 
-                                val highOver = maxOf(0.0f, curLuma - rollOff) / knee
+                                val highOver = maxOf(0.0f, curLuma - effRollOff) / knee
                                 val desat = (highOver * 0.35f).coerceIn(0.0f, 0.65f)
                                 r = r * (1.0f - desat) + curLuma * desat
                                 g = g * (1.0f - desat) + curLuma * desat
@@ -883,8 +895,8 @@ object ImageProcessor {
                             val dx = pxX - cx
                             val dy = pxY - cy
                             val rn2 = (dx * dx + dy * dy) / vigDenom
-                            val cos4Vig = 1.0f / ((1.0f + rn2 * 0.55f) * (1.0f + rn2 * 0.55f))
-                            val v = (1.0f - vigIntensity + vigIntensity * cos4Vig).coerceIn(0.25f, 1.0f)
+                            val cos4Vig = 1.0f / ((1.0f + rn2 * 0.45f) * (1.0f + rn2 * 0.45f))
+                            val v = (1.0f - (vigIntensity * 0.65f) + (vigIntensity * 0.65f) * cos4Vig).coerceIn(0.50f, 1.0f)
                             r *= v; g *= v; b *= v
                         }
 

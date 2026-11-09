@@ -557,6 +557,13 @@ class CameraManager(private val context: Context) {
             glRenderer?.setNaturalMode(newEngineMode == CameraEngineMode.NATURAL, _uiState.value.naturalProfile)
             glRenderer?.updateLensProfile(initialLens, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
 
+            if (newEngineMode != CameraEngineMode.NATURAL) {
+                val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
+                val targetIndex = (_uiState.value.tuning.exposureCompensation / step).roundToInt()
+                    .coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
+                camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
+            }
+
             // If in video mode, re-bind overlay effect for the active preset's video recording profile
             if (_uiState.value.captureMode == CaptureMode.VIDEO) {
                 bindCameraUseCases()
