@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import com.craftcam.app.R
+import com.craftcam.app.ui.gallery.GalleryCache
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.lifecycle.Lifecycle
@@ -133,6 +134,7 @@ fun ViewfinderScreen(
 
     LaunchedEffect(Unit) {
         latestThumbnail = loadLatestCameleoThumbnail(context)
+        GalleryCache.prewarm(context)
     }
 
     var countdown by remember { mutableStateOf<Int?>(null) }
@@ -517,6 +519,8 @@ fun ViewfinderScreen(
                                             Toast.makeText(context, "3D Wigglegram saved to Cameleo album", Toast.LENGTH_SHORT).show()
                                             scope.launch {
                                                 latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                GalleryCache.invalidate()
+                                                GalleryCache.prewarm(context)
                                             }
                                         },
                                         onError = { exc ->
@@ -532,6 +536,8 @@ fun ViewfinderScreen(
                                             Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
                                             scope.launch {
                                                 latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                GalleryCache.invalidate()
+                                                GalleryCache.prewarm(context)
                                             }
                                         },
                                         onError = { exc ->

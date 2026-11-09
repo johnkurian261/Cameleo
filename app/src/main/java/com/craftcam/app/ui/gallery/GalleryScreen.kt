@@ -70,9 +70,9 @@ fun GalleryScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var allPhotos by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
+    var allPhotos by remember { mutableStateOf<List<GalleryItem>>(GalleryCache.cachedItems ?: emptyList()) }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(GalleryCache.cachedItems == null) }
 
     // Multi-select state
     var isSelectionMode by remember { mutableStateOf(false) }
@@ -86,9 +86,10 @@ fun GalleryScreen(
     // Import Photo state
     var isImporting by remember { mutableStateOf(false) }
 
-    // Load initial photos
+    // Refresh photos non-blocking in background
     LaunchedEffect(Unit) {
-        allPhotos = loadCameleoPhotos(context)
+        val fresh = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
+        allPhotos = fresh
         isLoading = false
     }
 
@@ -104,7 +105,8 @@ fun GalleryScreen(
                         ?: PresetCatalog.allPresets.first()
                     val newUri = importAndDevelopPhoto(context, uri, defaultPreset)
                     if (newUri != null) {
-                        allPhotos = loadCameleoPhotos(context)
+                        GalleryCache.invalidate()
+                        allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
                         Toast.makeText(context, "Developed with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
@@ -119,6 +121,7 @@ fun GalleryScreen(
     // Delete single photo
     val onDeletePhoto: (GalleryItem) -> Unit = { item ->
         deletePhoto(context, item.uri)
+        GalleryCache.remove(item.id)
         val updated = allPhotos.filter { it.id != item.id }
         allPhotos = updated
         if (selectedIndex != null && updated.isEmpty()) {
@@ -420,7 +423,10 @@ fun GalleryScreen(
                             showBatchDeleteConfirm = false
                             val toDelete = allPhotos.filter { selectedIds.contains(it.id) }
                             deletePhotos(context, toDelete.map { it.uri })
-                            allPhotos = allPhotos.filter { !selectedIds.contains(it.id) }
+                            toDelete.forEach { GalleryCache.remove(it.id) }
+                            val updated = allPhotos.filter { !selectedIds.contains(it.id) }
+                            allPhotos = updated
+                            GalleryCache.cachedItems = updated
                             selectedIds = emptySet()
                             isSelectionMode = false
                         }
@@ -467,7 +473,8 @@ fun GalleryScreen(
                         isRedeveloping = false
                         redevelopingItem = null
                         if (newUri != null) {
-                            allPhotos = loadCameleoPhotos(context)
+                            GalleryCache.invalidate()
+                            allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
                             Toast.makeText(context, "Frame redeveloped with ${preset.name}", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "Failed to redevelop photo", Toast.LENGTH_SHORT).show()
@@ -490,22 +497,27 @@ private fun DazzGalleryThumbnail(
     onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
-    var bitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var bitmap by remember(item.id) {
+        mutableStateOf(GalleryCache.getThumbnail(item.id))
+    }
 
-    LaunchedEffect(item.uri) {
+    LaunchedEffect(item.id, item.uri) {
+        if (bitmap != null) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             try {
-                if (item.isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val bmp = context.contentResolver.loadThumbnail(item.uri, android.util.Size(512, 512), null)
-                    bitmap = bmp.asImageBitmap()
+                val bmp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    context.contentResolver.loadThumbnail(item.uri, android.util.Size(256, 256), null)
                 } else {
                     context.contentResolver.openInputStream(item.uri)?.use { stream ->
                         val options = BitmapFactory.Options().apply {
-                            inSampleSize = 4 // downscaled thumbnail for silky smooth scroll
+                            inSampleSize = 8
                         }
-                        val bmp = BitmapFactory.decodeStream(stream, null, options)
-                        bmp?.let { bitmap = it.asImageBitmap() }
+                        BitmapFactory.decodeStream(stream, null, options)
                     }
+                }
+                bmp?.asImageBitmap()?.also { ib ->
+                    GalleryCache.putThumbnail(item.id, ib)
+                    bitmap = ib
                 }
             } catch (_: Exception) {}
         }
@@ -1076,80 +1088,7 @@ private fun resolveFilterName(name: String?, cameraModel: String?): String {
 }
 
 private suspend fun loadCameleoPhotos(context: Context): List<GalleryItem> = withContext(Dispatchers.IO) {
-    val items = mutableListOf<GalleryItem>()
-    val imgProjection = arrayOf(
-        MediaStore.Images.Media._ID,
-        MediaStore.Images.Media.DISPLAY_NAME,
-        MediaStore.Images.Media.DATE_ADDED
-    )
-    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-    val selectionArgs = arrayOf("CAMELEO_%", "CRAFTCAM_%")
-    val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-
-    // 1. Query Images
-    try {
-        context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            imgProjection,
-            selection,
-            selectionArgs,
-            sortOrder
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val name = cursor.getString(nameCol)
-                val date = cursor.getLong(dateCol)
-                val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
-
-                val cameraModel = try {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                        val exif = ExifInterface(pfd.fileDescriptor)
-                        exif.getAttribute(ExifInterface.TAG_MODEL)
-                            ?.replace("CAMELEO", "", ignoreCase = true)
-                            ?.trim()
-                            ?.takeIf { it.isNotBlank() }
-                    }
-                } catch (_: Exception) { null }
-
-                items.add(GalleryItem(id, uri, name, date, cameraModel, isVideo = false))
-            }
-        }
-    } catch (_: Exception) {}
-
-    // 2. Query Videos
-    try {
-        val vidProjection = arrayOf(
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DATE_ADDED
-        )
-        context.contentResolver.query(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            vidProjection,
-            selection,
-            selectionArgs,
-            sortOrder
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-            val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
-
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val name = cursor.getString(nameCol)
-                val date = cursor.getLong(dateCol)
-                val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
-
-                items.add(GalleryItem(id, uri, name, date, "Analog Camcorder", isVideo = true))
-            }
-        }
-    } catch (_: Exception) {}
-
-    items.sortedByDescending { it.dateAdded }
+    GalleryCache.queryCameleoMedia(context)
 }
 
 private fun deletePhoto(context: Context, uri: Uri) {
