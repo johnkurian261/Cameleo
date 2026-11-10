@@ -307,6 +307,17 @@ object LutTextureCache {
     }
 
     /**
+     * Clears in-memory references when the EGL context is lost or recreated without invoking
+     * glDeleteTextures on stale/invalid GL context handles.
+     */
+    fun onContextLost() {
+        synchronized(lock) {
+            cache.clear()
+            failedPaths.clear()
+        }
+    }
+
+    /**
      * Purges expired or all cached textures from GPU memory.
      * Must be called on an active EGL Context thread.
      */

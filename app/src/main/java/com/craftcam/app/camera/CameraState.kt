@@ -42,6 +42,7 @@ data class UserTuningConfig(
     val frameBorderEnabled: Boolean = true,
     val dateStampEnabled: Boolean = true,
     val customYear: String? = null,
+    val filmColorProfileIndex: Int = 1, // 0=03 G, 1=C400 (default), 2=07 FF, 3=19 P
     val preLinearizationEnabled: Boolean = true,
     val preLinearizationStrength: Float = 1.0f, // 0.0 = bypassed, 1.0 = full ISP contrast flattening
     val d3dStrengthOffset: Float = 0.0f, // -0.4 to +0.6 offset for D3D depth intensity

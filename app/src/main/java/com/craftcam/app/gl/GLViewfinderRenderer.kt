@@ -14,6 +14,7 @@ import android.util.Log
 import com.craftcam.app.camera.UserTuningConfig
 import com.craftcam.app.camera.profile.LensProfile
 import com.craftcam.app.camera.profile.LensType
+import com.craftcam.app.config.filmColorProfileAdjustment
 import com.craftcam.app.gl.shaders.ShaderConstants
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.util.concurrent.ConcurrentHashMap
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -67,6 +69,17 @@ class GLViewfinderRenderer(
     private var bufferHeight = 1080
     private var sensorRotation = 90
     private var isFront = false
+
+    @Volatile
+    private var mirrorFrontPreview: Boolean = true
+
+    fun setMirrorFrontPreview(mirror: Boolean) {
+        if (mirrorFrontPreview != mirror) {
+            mirrorFrontPreview = mirror
+            updateGeometry()
+            requestRenderSafe()
+        }
+    }
 
     private val geometryLock = Any()
     @Volatile
@@ -182,8 +195,8 @@ class GLViewfinderRenderer(
         requestRenderSafe()
     }
 
-    private val lutTextureCache = HashMap<String, Int>()
-    private val grainTextureCache = HashMap<String, Int>()
+    private val lutTextureCache = ConcurrentHashMap<String, Int>()
+    private val grainTextureCache = ConcurrentHashMap<String, Int>()
 
     private var dummy2DTextureId = 0
     private var dummy3DTextureId = 0
@@ -426,11 +439,13 @@ class GLViewfinderRenderer(
             activeQuadWidth = viewportWidth.toFloat() * scaleX
             activeQuadHeight = viewportHeight.toFloat() * scaleY
 
+            val quadScaleX = if (isFront && !mirrorFrontPreview) -scaleX else scaleX
+
             val quad = floatArrayOf(
-                -scaleX,  scaleY, 0.0f,
-                -scaleX, -scaleY, 0.0f,
-                 scaleX,  scaleY, 0.0f,
-                 scaleX, -scaleY, 0.0f
+                -quadScaleX,  scaleY, 0.0f,
+                -quadScaleX, -scaleY, 0.0f,
+                 quadScaleX,  scaleY, 0.0f,
+                 quadScaleX, -scaleY, 0.0f
             )
 
             synchronized(geometryLock) {
@@ -580,7 +595,7 @@ class GLViewfinderRenderer(
                 "lut_analog_35mm_classic.png",
                 "lut_d3d.png",
                 "lut_ccd_r.png",
-                "lut_inst_c.png"
+                "lut_inst_classic.png"
             )
             for (asset in commonLuts) {
                 if (!LutTextureCache.isLutCached(asset)) {
@@ -671,6 +686,20 @@ class GLViewfinderRenderer(
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        LutTextureCache.onContextLost()
+        lutTextureCache.clear()
+        grainTextureCache.clear()
+        dummy2DTextureId = 0
+        dummy3DTextureId = 0
+        fallbackGrainTextureId = 0
+        activeLutTexId = 0
+        activeSecLutTexId = 0
+        activeGrainTexId = 0
+        activeHasGrainTexture = false
+        hasReceivedFirstFrame = false
+        useFallbackShader = false
+        synchronized(this) { updateSurface = false }
+
         GLES30.glClearColor(0.05f, 0.05f, 0.07f, 1.0f)
 
         // 1. Initialize OES external texture & SurfaceTexture first so camera preview pipeline ALWAYS connects
@@ -1234,7 +1263,7 @@ class GLViewfinderRenderer(
             }
 
             // Bind pre-resolved or fallback Grain Texture (unit 3)
-            val grainTexId = if (activeGrainTexId != 0) activeGrainTexId else fallbackGrainTextureId
+            val grainTexId = if (activeHasGrainTexture && activeGrainTexId != 0) activeGrainTexId else 0
             if (grainTexId != 0 && uGrainTextureLoc != -1) {
                 GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
                 GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, grainTexId)
@@ -1256,14 +1285,15 @@ class GLViewfinderRenderer(
             val baseShadowG = if (film.shadowTintG != 0.0f) film.shadowTintG else color.shadowTintG
             val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else color.shadowTintB
 
-            val rawContrast = (baseContrast * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
+            val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
+            val rawContrast = (baseContrast * colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
             val contrast = 1.0f + (rawContrast - 1.0f) * intensity
-            val rawSat = (baseSaturation * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+            val rawSat = (baseSaturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
             val saturation = 1.0f + (rawSat - 1.0f) * intensity
-            val temperature = ((baseTemp + tuning.temperatureOffset) * intensity).coerceIn(-1.0f, 1.0f)
-            val tint = ((baseTint + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val temperature = ((baseTemp + colorProfileAdj.tempDelta + tuning.temperatureOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val tint = ((baseTint + colorProfileAdj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
             val gamma = 1.0f + (color.gamma - 1.0f) * intensity
-            val fade = color.fade * intensity
+            val fade = (color.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0.0f) * intensity
             val highlightRollOff = 1.0f - (1.0f - baseHighlightRollOff) * intensity
 
             GLES30.glUniform1f(uContrastLoc, contrast)
@@ -1468,6 +1498,12 @@ class GLViewfinderRenderer(
         surfaceTexture = null
         lutTextureCache.clear()
         grainTextureCache.clear()
+    }
+
+    /**
+     * Releases all GL objects on the active GLSurfaceView GL thread.
+     */
+    fun releaseGLResources() {
         if (programId != 0) {
             GLES30.glDeleteProgram(programId)
             programId = 0
@@ -1475,6 +1511,10 @@ class GLViewfinderRenderer(
         if (fallbackProgramId != 0) {
             GLES30.glDeleteProgram(fallbackProgramId)
             fallbackProgramId = 0
+        }
+        if (textureId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(textureId), 0)
+            textureId = 0
         }
         if (dummy2DTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(dummy2DTextureId), 0)
@@ -1488,6 +1528,18 @@ class GLViewfinderRenderer(
             GLES30.glDeleteTextures(1, intArrayOf(fallbackGrainTextureId), 0)
             fallbackGrainTextureId = 0
         }
+        for (texId in grainTextureCache.values.distinct()) {
+            if (texId != 0) GLES30.glDeleteTextures(1, intArrayOf(texId), 0)
+        }
+        grainTextureCache.clear()
+        for (texId in lutTextureCache.values.distinct()) {
+            if (texId != 0) GLES30.glDeleteTextures(1, intArrayOf(texId), 0)
+        }
+        lutTextureCache.clear()
+        activeLutTexId = 0
+        activeSecLutTexId = 0
+        activeGrainTexId = 0
+        LutTextureCache.clear()
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {

@@ -64,6 +64,7 @@ fun CraftCamNavHost(
                 selectedLens = uiState.shootingState.selectedLens,
                 frameEnabled = uiState.tuning.frameBorderEnabled,
                 grainEnabled = uiState.tuning.debugStageGrain,
+                colorProfileIndex = uiState.tuning.filmColorProfileIndex,
                 onSelectPreset = { preset ->
                     selectedPreset = preset
                     cameraManager.setPreset(preset)
@@ -76,6 +77,9 @@ fun CraftCamNavHost(
                 },
                 onToggleGrain = { enabled ->
                     cameraManager.setGrainEnabled(enabled)
+                },
+                onSelectColorProfile = { index ->
+                    cameraManager.setFilmColorProfileIndex(index)
                 },
                 onNavigateBack = { navController.popBackStack() }
             )

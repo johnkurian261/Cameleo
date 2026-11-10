@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.craftcam.app.camera.CameraManager
+import com.craftcam.app.config.AppSettingsStore
+import com.craftcam.app.config.LocalAppSettings
 import com.craftcam.app.ui.navigation.CraftCamNavHost
 import com.craftcam.app.ui.theme.*
 
@@ -38,47 +40,52 @@ class MainActivity : ComponentActivity() {
         cameraManager = CameraManager(this)
 
         setContent {
-            CraftCamTheme {
-                val requiredPermissions = remember {
-                    val list = mutableListOf(
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO
-                    )
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        list.add(Manifest.permission.READ_MEDIA_IMAGES)
-                    } else {
-                        list.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                        list.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    }
-                    list.toTypedArray()
-                }
+            val appSettingsStore = remember { AppSettingsStore.get(applicationContext) }
+            val appSettings by appSettingsStore.state.collectAsState()
 
-                var permissionsGranted by remember {
-                    mutableStateOf(
-                        requiredPermissions.all {
-                            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+            CompositionLocalProvider(LocalAppSettings provides appSettings) {
+                CraftCamTheme {
+                    val requiredPermissions = remember {
+                        val list = mutableListOf(
+                            Manifest.permission.CAMERA,
+                            Manifest.permission.RECORD_AUDIO
+                        )
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            list.add(Manifest.permission.READ_MEDIA_IMAGES)
+                        } else {
+                            list.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                            list.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         }
-                    )
-                }
+                        list.toTypedArray()
+                    }
 
-                val permissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestMultiplePermissions()
-                ) { results ->
-                    permissionsGranted = results[Manifest.permission.CAMERA] == true
-                }
-
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = CameraBlack
-                ) {
-                    if (permissionsGranted) {
-                        CraftCamNavHost(cameraManager = cameraManager)
-                    } else {
-                        PermissionRequestContent(
-                            onRequestPermissions = {
-                                permissionLauncher.launch(requiredPermissions)
+                    var permissionsGranted by remember {
+                        mutableStateOf(
+                            requiredPermissions.all {
+                                ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
                             }
                         )
+                    }
+
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestMultiplePermissions()
+                    ) { results ->
+                        permissionsGranted = results[Manifest.permission.CAMERA] == true
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = CameraBlack
+                    ) {
+                        if (permissionsGranted) {
+                            CraftCamNavHost(cameraManager = cameraManager)
+                        } else {
+                            PermissionRequestContent(
+                                onRequestPermissions = {
+                                    permissionLauncher.launch(requiredPermissions)
+                                }
+                            )
+                        }
                     }
                 }
             }

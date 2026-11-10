@@ -18,6 +18,7 @@ import com.craftcam.app.gl.shaders.ShaderConstants
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.camera.UserTuningConfig
+import com.craftcam.app.config.filmColorProfileAdjustment
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -112,9 +113,64 @@ class GPUVideoProcessor(
     private var uScanlineIntensityLoc = -1
     private var uLutTextureLoc = -1
     private var uLutEnabledLoc = -1
+    private var sLut3DLoc = -1
+    private var uLutTextureBLoc = -1
+    private var sLut3D_BLoc = -1
+    private var uUseLut3DLoc = -1
+    private var uHasSecondaryLutLoc = -1
+    private var uDualLutMixLoc = -1
+    private var uLutInputSpaceLoc = -1
+    private var uPreLinearizationEnabledLoc = -1
+    private var uPreLinearizationStrengthLoc = -1
+    private var uFilterIntensityLoc = -1
+    private var uClarityStrengthLoc = -1
+    private var uSkinProtectionLoc = -1
+    private var uToeLiftLoc = -1
+    private var uShoulderClipLoc = -1
+    private var uLensTypeLoc = -1
+    private var uLensDistortionLoc = -1
+    private var uLensEdgeCurvatureLoc = -1
+    private var uLensVignetteLoc = -1
+    private var uLensPrismDispersionLoc = -1
+    private var uLensStarburstStrengthLoc = -1
+    private var uLensStarburstThresholdLoc = -1
+    private var uLensNdFactorLoc = -1
+    private var uLensColorFlashTintLoc = -1
+    private var uLensIsFlashActiveLoc = -1
+    private var uD3DEnabledLoc = -1
+    private var uD3DStrengthLoc = -1
+    private var uD3DParallaxLoc = -1
+    private var uD3DRgbSeparationLoc = -1
+    private var uD3DAnaglyphLoc = -1
+    private var sGrainTextureLoc = -1
+    private var uHasGrainTextureLoc = -1
+    private var uGrainBlendModeLoc = -1
+    private var uGrainOffsetLoc = -1
+    private var uGrainShadowStrengthLoc = -1
+    private var uGrainHighlightStrengthLoc = -1
+    private var uGrainLumaWeightEnabledLoc = -1
+    private var uGrainLumaWeightPowerLoc = -1
+    private var uHalationColorTintLoc = -1
+    private var uDebugStagePreLinearizationLoc = -1
+    private var uDebugStageLutLoc = -1
+    private var uDebugStageToneCurveLoc = -1
+    private var uDebugStageGrainLoc = -1
+    private var uDebugStageHalationLoc = -1
+    private var uDebugStageOpticsLoc = -1
+    private var uDebugStageVignetteLoc = -1
+    private var uNaturalModeEnabledLoc = -1
+    private var uNaturalShadowLiftLoc = -1
+    private var uFocusPeakingEnabledLoc = -1
+    private var uPeakingColorLoc = -1
+    private var uPeakingThresholdLoc = -1
+    private var uZebraEnabledLoc = -1
+    private var uZebraThresholdLoc = -1
+    private var uZebraTimeLoc = -1
 
-    // 3D Hald LUT Cache
+    // 3D Hald LUT Cache + Dummy Safe Textures
     private val lutTextureCache = mutableMapOf<String, Int>()
+    private var dummy2DTextureId = 0
+    private var dummy3DTextureId = 0
 
     // Geometry Buffers
     private val vertexBuffer: FloatBuffer
@@ -259,6 +315,61 @@ class GPUVideoProcessor(
         uScanlineIntensityLoc = GLES30.glGetUniformLocation(programId, "uScanlineIntensity")
         uLutTextureLoc = GLES30.glGetUniformLocation(programId, "uLutTexture")
         uLutEnabledLoc = GLES30.glGetUniformLocation(programId, "uLutEnabled")
+        sLut3DLoc = GLES30.glGetUniformLocation(programId, "sLut3D")
+        uLutTextureBLoc = GLES30.glGetUniformLocation(programId, "uLutTextureB")
+        sLut3D_BLoc = GLES30.glGetUniformLocation(programId, "sLut3D_B")
+        uUseLut3DLoc = GLES30.glGetUniformLocation(programId, "uUseLut3D")
+        uHasSecondaryLutLoc = GLES30.glGetUniformLocation(programId, "uHasSecondaryLut")
+        uDualLutMixLoc = GLES30.glGetUniformLocation(programId, "uDualLutMix")
+        uLutInputSpaceLoc = GLES30.glGetUniformLocation(programId, "uLutInputSpace")
+        uPreLinearizationEnabledLoc = GLES30.glGetUniformLocation(programId, "uPreLinearizationEnabled")
+        uPreLinearizationStrengthLoc = GLES30.glGetUniformLocation(programId, "uPreLinearizationStrength")
+        uFilterIntensityLoc = GLES30.glGetUniformLocation(programId, "uFilterIntensity")
+        uClarityStrengthLoc = GLES30.glGetUniformLocation(programId, "uClarityStrength")
+        uSkinProtectionLoc = GLES30.glGetUniformLocation(programId, "uSkinProtection")
+        uToeLiftLoc = GLES30.glGetUniformLocation(programId, "uToeLift")
+        uShoulderClipLoc = GLES30.glGetUniformLocation(programId, "uShoulderClip")
+        uLensTypeLoc = GLES30.glGetUniformLocation(programId, "uLensType")
+        uLensDistortionLoc = GLES30.glGetUniformLocation(programId, "uLensDistortion")
+        uLensEdgeCurvatureLoc = GLES30.glGetUniformLocation(programId, "uLensEdgeCurvature")
+        uLensVignetteLoc = GLES30.glGetUniformLocation(programId, "uLensVignette")
+        uLensPrismDispersionLoc = GLES30.glGetUniformLocation(programId, "uLensPrismDispersion")
+        uLensStarburstStrengthLoc = GLES30.glGetUniformLocation(programId, "uLensStarburstStrength")
+        uLensStarburstThresholdLoc = GLES30.glGetUniformLocation(programId, "uLensStarburstThreshold")
+        uLensNdFactorLoc = GLES30.glGetUniformLocation(programId, "uLensNdFactor")
+        uLensColorFlashTintLoc = GLES30.glGetUniformLocation(programId, "uLensColorFlashTint")
+        uLensIsFlashActiveLoc = GLES30.glGetUniformLocation(programId, "uLensIsFlashActive")
+        uD3DEnabledLoc = GLES30.glGetUniformLocation(programId, "uD3DEnabled")
+        uD3DStrengthLoc = GLES30.glGetUniformLocation(programId, "uD3DStrength")
+        uD3DParallaxLoc = GLES30.glGetUniformLocation(programId, "uD3DParallax")
+        uD3DRgbSeparationLoc = GLES30.glGetUniformLocation(programId, "uD3DRgbSeparation")
+        uD3DAnaglyphLoc = GLES30.glGetUniformLocation(programId, "uD3DAnaglyph")
+        sGrainTextureLoc = GLES30.glGetUniformLocation(programId, "sGrainTexture")
+        uHasGrainTextureLoc = GLES30.glGetUniformLocation(programId, "uHasGrainTexture")
+        uGrainBlendModeLoc = GLES30.glGetUniformLocation(programId, "uGrainBlendMode")
+        uGrainOffsetLoc = GLES30.glGetUniformLocation(programId, "uGrainOffset")
+        uGrainShadowStrengthLoc = GLES30.glGetUniformLocation(programId, "uGrainShadowStrength")
+        uGrainHighlightStrengthLoc = GLES30.glGetUniformLocation(programId, "uGrainHighlightStrength")
+        uGrainLumaWeightEnabledLoc = GLES30.glGetUniformLocation(programId, "uGrainLumaWeightEnabled")
+        uGrainLumaWeightPowerLoc = GLES30.glGetUniformLocation(programId, "uGrainLumaWeightPower")
+        uHalationColorTintLoc = GLES30.glGetUniformLocation(programId, "uHalationColorTint")
+        uDebugStagePreLinearizationLoc = GLES30.glGetUniformLocation(programId, "uDebugStagePreLinearization")
+        uDebugStageLutLoc = GLES30.glGetUniformLocation(programId, "uDebugStageLut")
+        uDebugStageToneCurveLoc = GLES30.glGetUniformLocation(programId, "uDebugStageToneCurve")
+        uDebugStageGrainLoc = GLES30.glGetUniformLocation(programId, "uDebugStageGrain")
+        uDebugStageHalationLoc = GLES30.glGetUniformLocation(programId, "uDebugStageHalation")
+        uDebugStageOpticsLoc = GLES30.glGetUniformLocation(programId, "uDebugStageOptics")
+        uDebugStageVignetteLoc = GLES30.glGetUniformLocation(programId, "uDebugStageVignette")
+        uNaturalModeEnabledLoc = GLES30.glGetUniformLocation(programId, "uNaturalModeEnabled")
+        uNaturalShadowLiftLoc = GLES30.glGetUniformLocation(programId, "uNaturalShadowLift")
+        uFocusPeakingEnabledLoc = GLES30.glGetUniformLocation(programId, "uFocusPeakingEnabled")
+        uPeakingColorLoc = GLES30.glGetUniformLocation(programId, "uPeakingColor")
+        uPeakingThresholdLoc = GLES30.glGetUniformLocation(programId, "uPeakingThreshold")
+        uZebraEnabledLoc = GLES30.glGetUniformLocation(programId, "uZebraEnabled")
+        uZebraThresholdLoc = GLES30.glGetUniformLocation(programId, "uZebraThreshold")
+        uZebraTimeLoc = GLES30.glGetUniformLocation(programId, "uZebraTime")
+
+        initDummyTextures()
 
         // Create CameraX external OES texture
         val textures = IntArray(1)
@@ -383,38 +494,107 @@ class GPUVideoProcessor(
             GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, inputTextureId)
             GLES30.glUniform1i(sTextureLoc, 0)
 
-            // Bind 3D Hald LUT Texture (unit 1)
+            // Assign dedicated non-overlapping units to 2D/3D LUT and grain samplers
             val preset = presetProvider()
             val tuning = tuningProvider()
+            val intensity = tuning.filterIntensity.coerceIn(0.0f, 1.0f)
             val lutAsset = ShaderConstants.getLutAssetForPreset(preset.id)
             val lutId = getOrLoadLutTexture(lutAsset)
 
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            if (sLut3DLoc != -1) GLES30.glUniform1i(sLut3DLoc, 1)
+
             val lutActive = (lutId != 0 && uLutTextureLoc != -1)
-            if (lutActive) {
-                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, lutId)
-                GLES30.glUniform1i(uLutTextureLoc, 1)
-                GLES30.glUniform1i(uLutEnabledLoc, 1)
-            } else if (uLutEnabledLoc != -1) {
-                GLES30.glUniform1i(uLutEnabledLoc, 0)
-            }
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (lutActive) lutId else dummy2DTextureId)
+            if (uLutTextureLoc != -1) GLES30.glUniform1i(uLutTextureLoc, 2)
+            if (uLutEnabledLoc != -1) GLES30.glUniform1i(uLutEnabledLoc, if (lutActive) 1 else 0)
+            if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
+
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            if (sGrainTextureLoc != -1) GLES30.glUniform1i(sGrainTextureLoc, 3)
+
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            if (sLut3D_BLoc != -1) GLES30.glUniform1i(sLut3D_BLoc, 4)
+
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            if (uLutTextureBLoc != -1) GLES30.glUniform1i(uLutTextureBLoc, 5)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+
+            if (uHasSecondaryLutLoc != -1) GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
+            if (uDualLutMixLoc != -1) GLES30.glUniform1f(uDualLutMixLoc, 0f)
+            if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, 0)
+            if (uPreLinearizationEnabledLoc != -1) GLES30.glUniform1i(uPreLinearizationEnabledLoc, if (tuning.preLinearizationEnabled) 1 else 0)
+            if (uPreLinearizationStrengthLoc != -1) GLES30.glUniform1f(uPreLinearizationStrengthLoc, tuning.preLinearizationStrength)
+            if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, intensity)
+            if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
+            if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
+            if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, 0f)
+            if (uShoulderClipLoc != -1) GLES30.glUniform1f(uShoulderClipLoc, 1f)
+
+            if (uLensTypeLoc != -1) GLES30.glUniform1i(uLensTypeLoc, 0)
+            if (uLensDistortionLoc != -1) GLES30.glUniform1f(uLensDistortionLoc, 0f)
+            if (uLensEdgeCurvatureLoc != -1) GLES30.glUniform1f(uLensEdgeCurvatureLoc, 0f)
+            if (uLensVignetteLoc != -1) GLES30.glUniform1f(uLensVignetteLoc, 0f)
+            if (uLensPrismDispersionLoc != -1) GLES30.glUniform1f(uLensPrismDispersionLoc, 0f)
+            if (uLensStarburstStrengthLoc != -1) GLES30.glUniform1f(uLensStarburstStrengthLoc, 0f)
+            if (uLensStarburstThresholdLoc != -1) GLES30.glUniform1f(uLensStarburstThresholdLoc, 1f)
+            if (uLensNdFactorLoc != -1) GLES30.glUniform1f(uLensNdFactorLoc, 1f)
+            if (uLensColorFlashTintLoc != -1) GLES30.glUniform3f(uLensColorFlashTintLoc, 1f, 1f, 1f)
+            if (uLensIsFlashActiveLoc != -1) GLES30.glUniform1i(uLensIsFlashActiveLoc, 0)
+
+            if (uD3DEnabledLoc != -1) GLES30.glUniform1i(uD3DEnabledLoc, 0)
+            if (uD3DStrengthLoc != -1) GLES30.glUniform1f(uD3DStrengthLoc, 0f)
+            if (uD3DParallaxLoc != -1) GLES30.glUniform1f(uD3DParallaxLoc, 0f)
+            if (uD3DRgbSeparationLoc != -1) GLES30.glUniform1f(uD3DRgbSeparationLoc, 0f)
+            if (uD3DAnaglyphLoc != -1) GLES30.glUniform1f(uD3DAnaglyphLoc, 0f)
+
+            if (uHasGrainTextureLoc != -1) GLES30.glUniform1i(uHasGrainTextureLoc, 0)
+            if (uGrainBlendModeLoc != -1) GLES30.glUniform1i(uGrainBlendModeLoc, 0)
+            if (uGrainOffsetLoc != -1) GLES30.glUniform2f(uGrainOffsetLoc, 0f, 0f)
+            if (uGrainShadowStrengthLoc != -1) GLES30.glUniform1f(uGrainShadowStrengthLoc, preset.grain.shadowStrength)
+            if (uGrainHighlightStrengthLoc != -1) GLES30.glUniform1f(uGrainHighlightStrengthLoc, preset.grain.highlightStrength)
+            if (uGrainLumaWeightEnabledLoc != -1) GLES30.glUniform1i(uGrainLumaWeightEnabledLoc, 0)
+            if (uGrainLumaWeightPowerLoc != -1) GLES30.glUniform1f(uGrainLumaWeightPowerLoc, 1f)
+
+            if (uDebugStagePreLinearizationLoc != -1) GLES30.glUniform1i(uDebugStagePreLinearizationLoc, 1)
+            if (uDebugStageLutLoc != -1) GLES30.glUniform1i(uDebugStageLutLoc, 1)
+            if (uDebugStageToneCurveLoc != -1) GLES30.glUniform1i(uDebugStageToneCurveLoc, 1)
+            if (uDebugStageGrainLoc != -1) GLES30.glUniform1i(uDebugStageGrainLoc, 1)
+            if (uDebugStageHalationLoc != -1) GLES30.glUniform1i(uDebugStageHalationLoc, 1)
+            if (uDebugStageOpticsLoc != -1) GLES30.glUniform1i(uDebugStageOpticsLoc, 1)
+            if (uDebugStageVignetteLoc != -1) GLES30.glUniform1i(uDebugStageVignetteLoc, 1)
+
+            if (uNaturalModeEnabledLoc != -1) GLES30.glUniform1i(uNaturalModeEnabledLoc, 0)
+            if (uNaturalShadowLiftLoc != -1) GLES30.glUniform1f(uNaturalShadowLiftLoc, 0f)
+            if (uFocusPeakingEnabledLoc != -1) GLES30.glUniform1i(uFocusPeakingEnabledLoc, 0)
+            if (uPeakingColorLoc != -1) GLES30.glUniform3f(uPeakingColorLoc, 1f, 0.7f, 0f)
+            if (uPeakingThresholdLoc != -1) GLES30.glUniform1f(uPeakingThresholdLoc, 0.2f)
+            if (uZebraEnabledLoc != -1) GLES30.glUniform1i(uZebraEnabledLoc, 0)
+            if (uZebraThresholdLoc != -1) GLES30.glUniform1f(uZebraThresholdLoc, 0.95f)
+            if (uZebraTimeLoc != -1) GLES30.glUniform1f(uZebraTimeLoc, 0f)
 
             // Uniforms
             GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, finalTexMatrix, 0)
             GLES30.glUniform2f(uViewportSizeLoc, outputSize.width.toFloat(), outputSize.height.toFloat())
 
             val color = preset.colorGrading
-            val contrast = (color.contrast * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
-            val saturation = (color.saturation * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
-            val temperature = (color.temperature + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
-            val tint = (color.tint + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+            val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
+            val contrast = (color.contrast * colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
+            val saturation = (color.saturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+            val temperature = (color.temperature + colorProfileAdj.tempDelta + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+            val tint = (color.tint + colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
 
             GLES30.glUniform1f(uContrastLoc, contrast)
             GLES30.glUniform1f(uSaturationLoc, saturation)
             GLES30.glUniform1f(uTemperatureLoc, temperature)
             GLES30.glUniform1f(uTintLoc, tint)
             GLES30.glUniform1f(uGammaLoc, color.gamma)
-            GLES30.glUniform1f(uFadeLoc, color.fade)
+            GLES30.glUniform1f(uFadeLoc, (color.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0f))
             GLES30.glUniform1f(uHighlightRollOffLoc, color.highlightRollOff)
             GLES30.glUniform3f(uShadowTintLoc, color.shadowTintR, color.shadowTintG, color.shadowTintB)
 
@@ -440,6 +620,14 @@ class GPUVideoProcessor(
             GLES30.glUniform1i(uHalationEnabledLoc, if (halationActive) 1 else 0)
             GLES30.glUniform1f(uHalationThresholdLoc, halation?.threshold ?: 0.85f)
             GLES30.glUniform1f(uHalationIntensityLoc, halation?.intensity ?: 0f)
+            if (uHalationColorTintLoc != -1) {
+                GLES30.glUniform3f(
+                    uHalationColorTintLoc,
+                    halation?.haloRed ?: 1.0f,
+                    halation?.haloGreen ?: 0.35f,
+                    halation?.haloBlue ?: 0.1f
+                )
+            }
 
             val leak = preset.lightLeak
             val leakActive = tuning.lightLeakEnabled && leak?.enabled == true
@@ -461,6 +649,38 @@ class GPUVideoProcessor(
 
         } catch (t: Throwable) {
             Log.e(TAG, "Error during GPU video frame rendering", t)
+        }
+    }
+
+    private fun initDummyTextures() {
+        if (dummy2DTextureId == 0) {
+            val tex = IntArray(1)
+            GLES30.glGenTextures(1, tex, 0)
+            dummy2DTextureId = tex[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            val buf = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+            buf.put(byteArrayOf(0, 0, 0, 0))
+            buf.position(0)
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, 1, 1, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        }
+        if (dummy3DTextureId == 0) {
+            val tex = IntArray(1)
+            GLES30.glGenTextures(1, tex, 0)
+            dummy3DTextureId = tex[0]
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            val buf = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+            buf.put(byteArrayOf(0, 0, 0, 0))
+            buf.position(0)
+            GLES30.glTexImage3D(GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGBA, 1, 1, 1, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
         }
     }
 
@@ -507,6 +727,14 @@ class GPUVideoProcessor(
             if (inputTextureId != 0) {
                 GLES30.glDeleteTextures(1, intArrayOf(inputTextureId), 0)
                 inputTextureId = 0
+            }
+            if (dummy2DTextureId != 0) {
+                GLES30.glDeleteTextures(1, intArrayOf(dummy2DTextureId), 0)
+                dummy2DTextureId = 0
+            }
+            if (dummy3DTextureId != 0) {
+                GLES30.glDeleteTextures(1, intArrayOf(dummy3DTextureId), 0)
+                dummy3DTextureId = 0
             }
 
             if (programId != 0) {

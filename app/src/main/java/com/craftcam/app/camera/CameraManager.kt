@@ -43,6 +43,7 @@ import com.craftcam.app.computational.CapturedFrame
 import com.craftcam.app.computational.FrameSequence
 import com.craftcam.app.computational.ComputationalPhotoConfig
 import com.craftcam.app.computational.ComputationalStats
+import com.craftcam.app.config.AppSettingsStore
 import com.craftcam.app.config.ProcessingProfile
 import com.craftcam.app.config.SceneProcessingConfig
 import com.craftcam.app.scene.SceneAnalysisEngine
@@ -227,7 +228,7 @@ class CameraManager(private val context: Context) {
             state.copy(zoomState = state.zoomState.copy(isOverlayVisible = true))
         }
         zoomOverlayJob?.cancel()
-        zoomOverlayJob = CoroutineScope(Dispatchers.Main).launch {
+        zoomOverlayJob = processingScope.launch(Dispatchers.Main) {
             delay(durationMs)
             _uiState.update { state ->
                 state.copy(zoomState = state.zoomState.copy(isOverlayVisible = false))
@@ -235,8 +236,20 @@ class CameraManager(private val context: Context) {
         }
     }
 
+    fun setMirrorFrontPreview(mirror: Boolean) {
+        glRenderer?.setMirrorFrontPreview(mirror)
+    }
+
+    fun clearGLRenderer(renderer: GLViewfinderRenderer) {
+        if (glRenderer === renderer) {
+            glRenderer?.onHistogramUpdated = null
+            glRenderer = null
+        }
+    }
+
     fun setGLRenderer(renderer: GLViewfinderRenderer) {
         glRenderer = renderer
+        glRenderer?.setMirrorFrontPreview(AppSettingsStore.get(context).current.mirrorFrontCamera)
         glRenderer?.updatePreset(currentPreset)
         glRenderer?.updateTuning(_uiState.value.tuning)
         glRenderer?.setNaturalMode(
@@ -577,6 +590,10 @@ class CameraManager(private val context: Context) {
 
     fun setGrainEnabled(enabled: Boolean) {
         updateTuning { it.copy(grainBoost = if (enabled) 1.0f else 0.0f, debugStageGrain = enabled) }
+    }
+
+    fun setFilmColorProfileIndex(index: Int) {
+        updateTuning { it.copy(filmColorProfileIndex = index.coerceIn(0, 3)) }
     }
 
     fun selectLensAccessory(lensType: LensType) {
@@ -1324,7 +1341,7 @@ class CameraManager(private val context: Context) {
         _uiState.update { it.copy(tuning = defaultTuning, exposureIndex = 0) }
     }
 
-    fun tapToFocus(tapX: Float, tapY: Float) {
+    fun tapToFocus(tapX: Float, tapY: Float, viewWidth: Int = 0, viewHeight: Int = 0) {
         val previewView = currentPreviewView
         if (previewView != null) {
             val factory = previewView.meteringPointFactory
@@ -1343,7 +1360,9 @@ class CameraManager(private val context: Context) {
                 windowManager?.defaultDisplay
             } ?: return
             val metrics = context.resources.displayMetrics
-            val factory = DisplayOrientedMeteringPointFactory(display, cam.cameraInfo, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+            val targetW = if (viewWidth > 0) viewWidth.toFloat() else metrics.widthPixels.toFloat()
+            val targetH = if (viewHeight > 0) viewHeight.toFloat() else metrics.heightPixels.toFloat()
+            val factory = DisplayOrientedMeteringPointFactory(display, cam.cameraInfo, targetW, targetH)
             val point = factory.createPoint(tapX, tapY)
             val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
                 .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
@@ -1554,6 +1573,7 @@ class CameraManager(private val context: Context) {
 
         val capturedFrames = ArrayList<CapturedFrame>()
         val cam = camera
+        val previousExposureIndex = _uiState.value.exposureIndex
 
         fun processCapturedSequence() {
             cancelCaptureWatchdog()
@@ -1616,8 +1636,8 @@ class CameraManager(private val context: Context) {
 
         fun captureNextFrame(frameIndex: Int) {
             if (frameIndex >= targetFrames) {
-                // Restore exposure compensation to 0 after bracketing
-                cam?.cameraControl?.setExposureCompensationIndex(0)
+                // Restore user exposure compensation after bracketing
+                cam?.cameraControl?.setExposureCompensationIndex(previousExposureIndex)
                 processCapturedSequence()
                 return
             }
@@ -1667,10 +1687,14 @@ class CameraManager(private val context: Context) {
                         Log.w(TAG, "Burst frame #$frameIndex capture error: ${exception.message}", exception)
                         if (capturedFrames.isNotEmpty()) {
                             // Safe fallback: proceed with captured subset
-                            cam?.cameraControl?.setExposureCompensationIndex(0)
+                            cam?.cameraControl?.setExposureCompensationIndex(previousExposureIndex)
                             processCapturedSequence()
                         } else {
+                            cancelCaptureWatchdog()
+                            isCapturingInProgress.set(false)
+                            cam?.cameraControl?.setExposureCompensationIndex(previousExposureIndex)
                             _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false) }
+                            checkPendingRebind()
                             ContextCompat.getMainExecutor(context).execute {
                                 onError(exception.message ?: "Burst capture failed")
                             }
@@ -1747,6 +1771,7 @@ class CameraManager(private val context: Context) {
             cameraExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
+                    _uiState.update { it.copy(isCapturing = false) }
                     onImageCaptured(image)
                 }
 

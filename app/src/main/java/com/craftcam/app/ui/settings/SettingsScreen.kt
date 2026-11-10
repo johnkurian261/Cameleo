@@ -11,21 +11,30 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.craftcam.app.config.AppSettingsStore
+import com.craftcam.app.config.performCameleoHaptic
 import com.craftcam.app.ui.theme.*
 
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
-    var mirrorFrontCamera by remember { mutableStateOf(true) }
-    var saveFilmNegatives by remember { mutableStateOf(true) }
-    var highResolutionExport by remember { mutableStateOf(true) }
-    var tactileHaptics by remember { mutableStateOf(true) }
-    var preserveExif by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val view = LocalView.current
+    val settingsStore = remember(context) { AppSettingsStore.get(context) }
+    val settings by settingsStore.state.collectAsState()
+
+    val mirrorFrontCamera = settings.mirrorFrontCamera
+    val saveFilmNegatives = settings.saveFilmNegatives
+    val highResolutionExport = settings.highResolutionExport
+    val tactileHaptics = settings.tactileHaptics
+    val preserveExif = settings.preserveExif
 
     Column(
         modifier = Modifier
@@ -39,7 +48,10 @@ fun SettingsScreen(
                 .padding(horizontal = 8.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onNavigateBack) {
+            IconButton(onClick = {
+                view.performCameleoHaptic(tactileHaptics)
+                onNavigateBack()
+            }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -68,21 +80,30 @@ fun SettingsScreen(
                         title = "Mirror Front Camera",
                         subtitle = "Flip front camera preview and captured selfies horizontally",
                         checked = mirrorFrontCamera,
-                        onCheckedChange = { mirrorFrontCamera = it }
+                        onCheckedChange = {
+                            view.performCameleoHaptic(tactileHaptics)
+                            settingsStore.setMirrorFrontCamera(it)
+                        }
                     )
                     HorizontalDivider(color = DividerSubtle, modifier = Modifier.padding(vertical = 12.dp))
                     SettingsToggle(
                         title = "Save Film Negatives",
                         subtitle = "Preserve raw un-graded captures for darkroom redevelopment",
                         checked = saveFilmNegatives,
-                        onCheckedChange = { saveFilmNegatives = it }
+                        onCheckedChange = {
+                            view.performCameleoHaptic(tactileHaptics)
+                            settingsStore.setSaveFilmNegatives(it)
+                        }
                     )
                     HorizontalDivider(color = DividerSubtle, modifier = Modifier.padding(vertical = 12.dp))
                     SettingsToggle(
                         title = "High-Resolution Export",
                         subtitle = "Maximize hardware sensor resolution without downscaling",
                         checked = highResolutionExport,
-                        onCheckedChange = { highResolutionExport = it }
+                        onCheckedChange = {
+                            view.performCameleoHaptic(tactileHaptics)
+                            settingsStore.setHighResolutionExport(it)
+                        }
                     )
                 }
             }
@@ -97,14 +118,20 @@ fun SettingsScreen(
                         title = "Tactile Shutter Haptics",
                         subtitle = "Simulate mechanical camera shutter spring and vibration clicks",
                         checked = tactileHaptics,
-                        onCheckedChange = { tactileHaptics = it }
+                        onCheckedChange = {
+                            view.performCameleoHaptic(it)
+                            settingsStore.setTactileHaptics(it)
+                        }
                     )
                     HorizontalDivider(color = DividerSubtle, modifier = Modifier.padding(vertical = 12.dp))
                     SettingsToggle(
                         title = "Preserve Camera EXIF",
                         subtitle = "Embed simulated camera body and film stock name in photo metadata",
                         checked = preserveExif,
-                        onCheckedChange = { preserveExif = it }
+                        onCheckedChange = {
+                            view.performCameleoHaptic(tactileHaptics)
+                            settingsStore.setPreserveExif(it)
+                        }
                     )
                 }
             }

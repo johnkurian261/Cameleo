@@ -607,20 +607,6 @@ void main() {
         }
     }
 
-    // Fisheye Barrel Mask & Outer Boundary Falloff
-    if (uLensType == 2) { // FISHEYE_F: Classic circular hood vignette
-        color *= fisheyeMask;
-        if (rPhys <= 0.465) {
-            float rim = smoothstep(0.44, 0.462, rPhys) * (1.0 - smoothstep(0.462, 0.466, rPhys));
-            color += vec3(0.08, 0.075, 0.07) * rim;
-        }
-    } else if (uLensType == 3) { // FISHEYE_W: Full-frame peripheral soft falloff
-        float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
-        float rn = clamp(rPhys / rCorner, 0.0, 1.0);
-        float wideVig = 1.0 - smoothstep(0.65, 1.05, rn);
-        color *= mix(1.0, wideVig, 0.30);
-    }
-
     // 13. Authentic Scanned Photographic Film Halide Grain
     if (uGrainIntensity > 0.005 && uDebugStageGrain) {
         float shadowT = clamp(luma / 0.35, 0.0, 1.0);
@@ -694,6 +680,20 @@ void main() {
 
         float scanline = sin(vQuadCoord.y * 480.0 * 3.14159) * 0.5 + 0.5;
         color *= mix(1.0, 0.88 + 0.12 * scanline, uScanlineIntensity);
+    }
+
+    // Fisheye Barrel Mask & Outer Boundary Falloff (applied after grain/scanlines so lens barrel stays pitch black)
+    if (uLensType == 2) { // FISHEYE_F: Classic circular hood vignette
+        color *= fisheyeMask;
+        if (rPhys <= 0.465) {
+            float rim = smoothstep(0.44, 0.462, rPhys) * (1.0 - smoothstep(0.462, 0.466, rPhys));
+            color += vec3(0.08, 0.075, 0.07) * rim;
+        }
+    } else if (uLensType == 3) { // FISHEYE_W: Full-frame peripheral soft falloff
+        float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
+        float rn = clamp(rPhys / rCorner, 0.0, 1.0);
+        float wideVig = 1.0 - smoothstep(0.65, 1.05, rn);
+        color *= mix(1.0, wideVig, 0.30);
     }
 
     // 15. Pro Focus Peaking (Sobel-like gradient edge detection on camera preview)
@@ -1002,8 +1002,8 @@ void main() {
 
     // 2-D3D. Single-Image Stereoscopic Parallax & Depth Separation
     if (uD3DEnabled && uD3DStrength > 0.01) {
-        float yNorm = vQuadCoord.y;
-        float centerDist = length(vec2(vQuadCoord.x - 0.5, (vQuadCoord.y - 0.5) * aspect));
+        float yNorm = vTextureCoord.y;
+        float centerDist = length(vec2(vTextureCoord.x - 0.5, (vTextureCoord.y - 0.5) * aspect));
         float depthPrior = clamp((1.0 - yNorm) * 0.65 + (1.0 - centerDist * 1.3) * 0.35, 0.0, 1.0);
         float pivot = 0.45;
         float delta = (depthPrior - pivot) * uD3DStrength;
@@ -1014,8 +1014,8 @@ void main() {
         vec2 uvL = clamp(uv + vec2(-parallaxOffset + caOffset, 0.0), vec2(0.001), vec2(0.999));
         vec2 uvR = clamp(uv + vec2(parallaxOffset - caOffset, 0.0), vec2(0.001), vec2(0.999));
 
-        vec2 oesL = (uTexMatrix * vec4(uvL, 0.0, 1.0)).xy;
-        vec2 oesR = (uTexMatrix * vec4(uvR, 0.0, 1.0)).xy;
+        vec2 oesL = uvL;
+        vec2 oesR = uvR;
 
         float rL = texture(sTexture, oesL).r;
         float bR = texture(sTexture, oesR).b;
@@ -1286,20 +1286,6 @@ void main() {
         }
     }
 
-    // Fisheye Barrel Mask & Outer Boundary Falloff
-    if (uLensType == 2) { // FISHEYE_F: Classic circular hood vignette
-        color *= fisheyeMask;
-        if (rPhys <= 0.465) {
-            float rim = smoothstep(0.44, 0.462, rPhys) * (1.0 - smoothstep(0.462, 0.466, rPhys));
-            color += vec3(0.08, 0.075, 0.07) * rim;
-        }
-    } else if (uLensType == 3) { // FISHEYE_W: Full-frame peripheral soft falloff
-        float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
-        float rn = clamp(rPhys / rCorner, 0.0, 1.0);
-        float wideVig = 1.0 - smoothstep(0.65, 1.05, rn);
-        color *= mix(1.0, wideVig, 0.30);
-    }
-
     // 13. Authentic Scanned Photographic Film Halide Grain
     if (uGrainIntensity > 0.005 && uDebugStageGrain) {
         float shadowT = clamp(luma / 0.35, 0.0, 1.0);
@@ -1377,6 +1363,20 @@ void main() {
         color *= mix(1.0, 0.88 + 0.12 * scanline, uScanlineIntensity);
     }
 
+    // Fisheye Barrel Mask & Outer Boundary Falloff (applied after grain/scanlines so lens barrel stays pitch black)
+    if (uLensType == 2) { // FISHEYE_F: Classic circular hood vignette
+        color *= fisheyeMask;
+        if (rPhys <= 0.465) {
+            float rim = smoothstep(0.44, 0.462, rPhys) * (1.0 - smoothstep(0.462, 0.466, rPhys));
+            color += vec3(0.08, 0.075, 0.07) * rim;
+        }
+    } else if (uLensType == 3) { // FISHEYE_W: Full-frame peripheral soft falloff
+        float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
+        float rn = clamp(rPhys / rCorner, 0.0, 1.0);
+        float wideVig = 1.0 - smoothstep(0.65, 1.05, rn);
+        color *= mix(1.0, wideVig, 0.30);
+    }
+
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
 """
@@ -1436,7 +1436,8 @@ void main() {
         presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
         presetId in listOf("disp_flash", "disp_cpm35") -> "grains/grain_cpm35.jpg"
         presetId in listOf("disp_warm", "135sr") -> "grains/grain540_01.jpg"
-        presetId in listOf("inst_vintage", "inst_c", "inst_paf", "paf") -> "grains/grain_instc.jpg"
+        presetId in listOf("inst_vintage", "inst_c") -> "grains/grain_instc.jpg"
+        presetId in listOf("inst_paf", "paf") -> "grains/grain_paf.jpg"
         presetId in listOf("analog_dblack", "dblack") -> "grains/grain_dexp.jpg"
         presetId in listOf("analog_nt16", "nt16") -> "grains/grain_ou_lowlight.jpg"
         presetId in listOf("cam_retro_vhs", "retro_vhs", "vhs") -> "grains/vhs_grain01.jpg"

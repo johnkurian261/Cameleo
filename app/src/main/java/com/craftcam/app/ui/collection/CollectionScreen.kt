@@ -69,10 +69,12 @@ fun CollectionScreen(
     selectedLens: LensProfile = LensProfile.NORMAL,
     frameEnabled: Boolean = true,
     grainEnabled: Boolean = true,
+    colorProfileIndex: Int = 1,
     onSelectPreset: (CameraPreset) -> Unit,
     onSelectLens: (LensType) -> Unit = {},
     onToggleFrame: (Boolean) -> Unit = {},
     onToggleGrain: (Boolean) -> Unit = {},
+    onSelectColorProfile: (Int) -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -86,7 +88,7 @@ fun CollectionScreen(
     var bottomSheetTab by remember { mutableStateOf(BottomSheetType.COLOR_PROFILE) }
     var activeFrameEnabled by remember(frameEnabled) { mutableStateOf(frameEnabled) }
     var activeGrainEnabled by remember(grainEnabled) { mutableStateOf(grainEnabled) }
-    var selectedColorProfileIndex by remember { mutableStateOf(1) } // 0=03G, 1=C400, 2=07FF, 3=19P
+    var selectedColorProfileIndex by remember(colorProfileIndex) { mutableStateOf(colorProfileIndex) } // 0=03G, 1=C400, 2=07FF, 3=19P
 
     var activeLensType by remember(selectedPresetState.id) {
         val profile = CameraProfileCatalog.getProfileForPreset(selectedPresetState)
@@ -422,6 +424,7 @@ fun CollectionScreen(
                 grainEnabled = activeGrainEnabled,
                 onSelectColorProfile = { index ->
                     selectedColorProfileIndex = index
+                    onSelectColorProfile(index)
                 },
                 onToggleFrame = { enabled ->
                     activeFrameEnabled = enabled

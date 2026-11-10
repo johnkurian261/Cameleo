@@ -17,6 +17,8 @@ import com.craftcam.app.camera.profile.LensProfile
 import com.craftcam.app.camera.profile.LensType
 import com.craftcam.app.captureframe.CaptureFrameMapper
 import com.craftcam.app.captureframe.CaptureFrameSnapshot
+import com.craftcam.app.config.AppSettingsStore
+import com.craftcam.app.config.filmColorProfileAdjustment
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.model.BorderStyle
@@ -75,10 +77,13 @@ object ImageProcessor {
         val rawW = rawBitmap.width
         val rawH = rawBitmap.height
 
+        val appSettings = AppSettingsStore.get(context).current
+        val maxExportDim = if (appSettings.highResolutionExport) 4096 else 2048
+
         val matrix = Matrix()
-        // A. Cap at 4096px only for ultra-high megapixel sensors to protect heap
-        if (rawW > 4096 || rawH > 4096) {
-            val scale = 4096f / maxOf(rawW, rawH)
+        // A. Cap export resolution based on user high-resolution export setting
+        if (rawW > maxExportDim || rawH > maxExportDim) {
+            val scale = maxExportDim.toFloat() / maxOf(rawW, rawH)
             matrix.postScale(scale, scale)
         }
 
@@ -150,6 +155,7 @@ object ImageProcessor {
             rawBitmap.recycle()
         }
 
+        var savedNegativeBitmap: Bitmap? = null
         try {
             val uri: Uri?
             if (engineMode == com.craftcam.app.model.CameraEngineMode.NATURAL) {
@@ -170,6 +176,10 @@ object ImageProcessor {
                 // Film grain, halation, dust, light leaks, borders, date stamps are 100% disabled
                 uri = saveToGallery(context, workingBitmap, if (preset.id == "zero") "Pro" else preset.name)
             } else {
+                if (appSettings.saveFilmNegatives) {
+                    savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
+                }
+
                 // 1.5 D3D Single-Image 3D Photography Filter
                 val d3dProf = preset.d3dProfile ?: if (preset.id == "analog_cinema_film" || preset.id == "d3d") {
                     com.craftcam.app.camera.profile.D3DProfile.Default
@@ -214,13 +224,14 @@ object ImageProcessor {
                 }
 
                 // 5. Save to MediaStore (DCIM/Cameleo)
-                uri = saveToGallery(context, workingBitmap, preset.name)
+                uri = saveToGallery(context, workingBitmap, preset.name, negativeBitmap = savedNegativeBitmap)
             }
             uri
         } catch (t: Throwable) {
             Log.e(TAG, "Error in image processing pipeline", t)
             null
         } finally {
+            savedNegativeBitmap?.recycle()
             // Release workingBitmap back into BitmapPool (or recycle if unpooled border bitmap)
             BitmapPool.release(workingBitmap)
         }
@@ -252,9 +263,11 @@ object ImageProcessor {
         val rawW = rawBitmap.width
         val rawH = rawBitmap.height
 
+        val maxExportDim = if (AppSettingsStore.get(context).current.highResolutionExport) 4096 else 2048
+
         val matrix = Matrix()
-        if (rawW > 4096 || rawH > 4096) {
-            val scale = 4096f / maxOf(rawW, rawH)
+        if (rawW > maxExportDim || rawH > maxExportDim) {
+            val scale = maxExportDim.toFloat() / maxOf(rawW, rawH)
             matrix.postScale(scale, scale)
         }
         if (rotation != 0) matrix.postRotate(rotation.toFloat())
@@ -530,43 +543,60 @@ object ImageProcessor {
             val isCamcorder = preset.category == CameraCategory.CAMCORDER
             val isNatural = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
 
-            // 1. Identify camera-specific 3D LUT
-            val lutFile = selectLutForPreset(preset.id)
+            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+            val film = unifiedProfile.filmProfile
+
+            // 1. Identify camera-specific 3D LUT (matches GLViewfinderRenderer priority)
+            val canonicalLut = selectLutForPreset(preset.id)
+            val profileLut = film.lutAssetPath?.ifEmpty { null }
+            val lutFile = profileLut ?: canonicalLut
             val lut = getOrLoadLut(context, lutFile)
 
-            // Micro-tuning user offsets
-            val tempShift = tuning.temperatureOffset.coerceIn(-1.0f, 1.0f)
-            val tintShift = tuning.tintOffset.coerceIn(-1.0f, 1.0f)
-            val satBoost  = (1.0f + tuning.saturationOffset).coerceIn(0.0f, 2.0f)
-            val contBoost = (1.0f + tuning.contrastOffset).coerceIn(0.5f, 2.0f)
+            // Match GLViewfinderRenderer base grading resolution
+            val baseContrast = if (film.contrast != 1.0f) film.contrast else grading.contrast
+            val baseSaturation = if (film.saturation != 1.0f) film.saturation else grading.saturation
+            val baseTemp = if (film.temperature != 0.0f) film.temperature else grading.temperature
+            val baseTint = if (film.tint != 0.0f) film.tint else grading.tint
+            val baseHighlightRollOff = if (film.highlightRollOff != 1.0f) film.highlightRollOff else grading.highlightRollOff
+            val baseShadowR = if (film.shadowTintR != 0.0f) film.shadowTintR else grading.shadowTintR
+            val baseShadowG = if (film.shadowTintG != 0.0f) film.shadowTintG else grading.shadowTintG
+            val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else grading.shadowTintB
+
+            // Micro-tuning user offsets + selected film emulsion color profile
+            val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
+            val tempShift = (colorProfileAdj.tempDelta + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+            val tintShift = (colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+            val satBoost = (colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceIn(0.0f, 2.0f)
+            val contBoost = (colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceIn(0.5f, 2.0f)
 
             // Filter intensity interpolation (0.0 = clean raw image, 1.0 = full analog photochemical grade)
             val intensity = tuning.filterIntensity.coerceIn(0.0f, 1.0f)
 
             // Combined preset color grading + user tuning scaled by filter intensity
-            val rawContrast = (grading.contrast * contBoost).coerceAtLeast(0.1f)
+            val rawContrast = (baseContrast * contBoost).coerceAtLeast(0.1f)
             val effectiveContrast = 1.0f + (rawContrast - 1.0f) * intensity
-            val rawSat = (grading.saturation * satBoost).coerceAtLeast(0.0f)
+            val rawSat = (baseSaturation * satBoost).coerceAtLeast(0.0f)
             val effectiveSat = 1.0f + (rawSat - 1.0f) * intensity
-            val effectiveTemp = ((grading.temperature + tempShift) * intensity).coerceIn(-1.0f, 1.0f)
-            val effectiveTint = ((grading.tint + tintShift) * intensity).coerceIn(-1.0f, 1.0f)
+            val effectiveTemp = ((baseTemp + tempShift) * intensity).coerceIn(-1.0f, 1.0f)
+            val effectiveTint = ((baseTint + tintShift) * intensity).coerceIn(-1.0f, 1.0f)
             val effectiveGamma = 1.0f + (grading.gamma - 1.0f) * intensity
-            val effectiveFade = grading.fade * intensity
-            val shadowR = grading.shadowTintR * intensity
-            val shadowG = grading.shadowTintG * intensity
-            val shadowB = grading.shadowTintB * intensity
-            val rollOff = 1.0f - (1.0f - grading.highlightRollOff) * intensity
+            val effectiveFade = (grading.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0.0f) * intensity
+            val shadowR = baseShadowR * intensity
+            val shadowG = baseShadowG * intensity
+            val shadowB = baseShadowB * intensity
+            val rollOff = 1.0f - (1.0f - baseHighlightRollOff) * intensity
 
             // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
             val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0.0f, 1.0f)
-            val hasVig = vigIntensity > 0.03f
+            val vigTotal = vigIntensity + lensProfile.vignetteStrength
+            val hasVig = vigTotal > 0.01f
+            val vigMix = (vigTotal * 0.65f).coerceIn(0.0f, 0.55f)
             val cx = width * 0.5f
             val cy = height * 0.5f
             val maxD2 = cx * cx + cy * cy
             val rad = maxOf(0.72f, lens.vignetteRadius)
             val vigDenom = maxD2 * rad * rad
 
-            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
             val resolvedGrain = GrainStage.resolve(preset, unifiedProfile.grainProfile, tuning, intensity)
             val grainData = if (applyGrain && resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
                 GrainStage.getOrLoadGrainPixels(context, resolvedGrain.assetPath)
@@ -904,7 +934,7 @@ object ImageProcessor {
                             val dy = pxY - cy
                             val rn2 = (dx * dx + dy * dy) / vigDenom
                             val cos4Vig = 1.0f / ((1.0f + rn2 * 0.45f) * (1.0f + rn2 * 0.45f))
-                            val v = (1.0f - (vigIntensity * 0.65f) + (vigIntensity * 0.65f) * cos4Vig).coerceIn(0.50f, 1.0f)
+                            val v = (1.0f - vigMix + vigMix * cos4Vig).coerceIn(0.50f, 1.0f)
                             r *= v; g *= v; b *= v
                         }
 
@@ -916,9 +946,9 @@ object ImageProcessor {
                         }
                         if (lensProfile.type == LensType.COLOR_FLASH && isFlashActive) {
                             val (tr, tg, tb) = lensProfile.colorFlashTint.rgb
-                            r = (r * tr * 1.30f).coerceIn(0f, 1f)
-                            g = (g * tg * 1.30f).coerceIn(0f, 1f)
-                            b = (b * tb * 1.30f).coerceIn(0f, 1f)
+                            r = (r * 0.30f + (r * tr * 1.30f) * 0.70f).coerceIn(0f, 1f)
+                            g = (g * 0.30f + (g * tg * 1.30f) * 0.70f).coerceIn(0f, 1f)
+                            b = (b * 0.30f + (b * tb * 1.30f) * 0.70f).coerceIn(0f, 1f)
                         }
 
                         // Fused Multi-Tone Film Halide Grain with Anti-Tiling, Dye Cloud Separation & S-Curve Weighting
@@ -1127,6 +1157,24 @@ object ImageProcessor {
                     }
                     BorderRenderer.drawAssetCover(canvas, tex, 0f, 0f, width.toFloat(), height.toFloat(), paint)
                 }
+            }
+
+            // 4e. Circular Fisheye Optical Hood Bezel Mask (enforced after grain/fade/leaks for pitch-black perimeter)
+            if (lensProfile.type == LensType.FISHEYE_F && tuning.debugStageOptics) {
+                val hoodCx = width * 0.5f
+                val hoodCy = height * 0.5f
+                val minDim = minOf(width, height).toFloat()
+                val rInner = 0.425f * minDim
+                val rOuter = 0.440f * minDim
+                val hoodPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = RadialGradient(
+                        hoodCx, hoodCy, rOuter,
+                        intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.BLACK),
+                        floatArrayOf(0f, rInner / rOuter, 1f),
+                        Shader.TileMode.CLAMP
+                    )
+                }
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), hoodPaint)
             }
 
             return source
@@ -1858,7 +1906,8 @@ object ImageProcessor {
         presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
         presetId in listOf("disp_flash", "disp_cpm35") -> "grains/grain_cpm35.jpg"
         presetId in listOf("disp_warm", "135sr") -> "grains/grain540_01.jpg"
-        presetId in listOf("inst_vintage", "inst_c", "inst_paf", "paf") -> "grains/grain_instc.jpg"
+        presetId in listOf("inst_vintage", "inst_c") -> "grains/grain_instc.jpg"
+        presetId in listOf("inst_paf", "paf") -> "grains/grain_paf.jpg"
         presetId in listOf("analog_dblack", "dblack") -> "grains/grain_dexp.jpg"
         presetId in listOf("analog_nt16", "nt16") -> "grains/grain_ou_lowlight.jpg"
         presetId in listOf("cam_retro_vhs", "retro_vhs", "vhs") -> "grains/vhs_grain01.jpg"
@@ -1875,7 +1924,7 @@ object ImageProcessor {
         "disp_flash", "disp_cpm35"             -> "vignette_cpm35.jpg"
         "disp_warm", "analog_135sr", "analog_srx" -> "135sr_vig.jpg"
         "inst_vintage", "inst_c", "inst_sq", "inst_sqc", "inst_ss", "inst_paf" -> "135sr_vig.jpg"
-        "analog_hoga"                          -> "mask_lens_paf.jpg"
+        "analog_hoga"                          -> "blur_mask_hoga.jpg"
         "ccd_flash", "ccd_y2k_digital", "classicu", "ccd_r", "ccdr", "ccd_dam" -> "sclassic_vintage.jpg"
         else                                   -> null
     }
@@ -1961,7 +2010,109 @@ object ImageProcessor {
         return Bitmap.createBitmap(bitmap, startX, startY, cropW, cropH)
     }
 
-    internal fun saveToGallery(context: Context, bitmap: Bitmap, cameraName: String): Uri? {
+    /**
+     * Develops an existing upright Bitmap (from a saved film negative or imported photo)
+     * through D3D depth separation, preset film chemistry, date stamp, and film border,
+     * then persists it into MediaStore while preserving EXIF and negative archive preferences.
+     */
+    suspend fun developBitmap(
+        context: Context,
+        sourceBitmap: Bitmap,
+        preset: CameraPreset,
+        tuning: UserTuningConfig = UserTuningConfig(),
+        lensProfile: LensProfile = LensProfile.NORMAL
+    ): Uri? = withContext(Dispatchers.Default) {
+        val appSettings = AppSettingsStore.get(context).current
+        val maxExportDim = if (appSettings.highResolutionExport) 4096 else 2048
+        val srcW = sourceBitmap.width
+        val srcH = sourceBitmap.height
+        val scale = if (srcW > maxExportDim || srcH > maxExportDim) {
+            maxExportDim.toFloat() / maxOf(srcW, srcH)
+        } else 1.0f
+        val targetW = (srcW * scale).roundToInt().coerceAtLeast(1)
+        val targetH = (srcH * scale).roundToInt().coerceAtLeast(1)
+
+        var workingBitmap = BitmapPool.acquire(targetW, targetH)
+        val canvas = Canvas(workingBitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val destRect = Rect(0, 0, targetW, targetH)
+        canvas.drawBitmap(sourceBitmap, null, destRect, paint)
+
+        var savedNegativeBitmap: Bitmap? = null
+        try {
+            if (appSettings.saveFilmNegatives) {
+                savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
+            }
+
+            val d3dProf = preset.d3dProfile ?: if (preset.id == "analog_cinema_film" || preset.id == "d3d") {
+                com.craftcam.app.camera.profile.D3DProfile.Default
+            } else null
+
+            if (d3dProf != null) {
+                val strength = (d3dProf.depthStrength + tuning.d3dStrengthOffset).coerceIn(0.05f, 1.0f)
+                val isAnaglyph = tuning.d3dAnaglyphMode || d3dProf.isAnaglyphMode
+                val d3dBitmap = com.craftcam.app.threed.D3DPhotoFilter.apply(
+                    sourceBitmap = workingBitmap,
+                    profile = d3dProf,
+                    faces = emptyList(),
+                    strength = strength,
+                    isAnaglyphOverride = isAnaglyph
+                )
+                BitmapPool.release(workingBitmap)
+                workingBitmap = d3dBitmap
+            }
+
+            workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive = false)
+
+            if (tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
+                val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear, context)
+                if (stamped != workingBitmap) {
+                    BitmapPool.release(workingBitmap)
+                    workingBitmap = stamped
+                }
+            }
+
+            val isFisheyeBorder = preset.id == "analog_fisheye_f" || lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.name.contains("Fisheye", ignoreCase = true)
+            if (!isFisheyeBorder && tuning.frameBorderEnabled && preset.border != null && preset.border.style != BorderStyle.NONE) {
+                val bordered = BorderRenderer.applyBorder(workingBitmap, preset.border, context)
+                if (bordered != workingBitmap) {
+                    BitmapPool.release(workingBitmap)
+                    workingBitmap = bordered
+                }
+            }
+
+            saveToGallery(context, workingBitmap, preset.name, negativeBitmap = savedNegativeBitmap)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error developing bitmap in darkroom", t)
+            null
+        } finally {
+            savedNegativeBitmap?.recycle()
+            BitmapPool.release(workingBitmap)
+        }
+    }
+
+    private fun saveFilmNegativeFile(context: Context, mediaId: Long, negativeBitmap: Bitmap) {
+        try {
+            val dir = File(context.filesDir, "negatives")
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, "neg_${mediaId}.jpg")
+            FileOutputStream(file).use { fos ->
+                java.io.BufferedOutputStream(fos, 65536).use { bos ->
+                    negativeBitmap.compress(Bitmap.CompressFormat.JPEG, 92, bos)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to archive film negative for ID=$mediaId", e)
+        }
+    }
+
+    internal fun saveToGallery(
+        context: Context,
+        bitmap: Bitmap,
+        cameraName: String,
+        negativeBitmap: Bitmap? = null
+    ): Uri? {
+        val appSettings = AppSettingsStore.get(context).current
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val cleanTag = cameraName.replace("CAMELEO", "", ignoreCase = true).trim()
             .replace(" ", "_")
@@ -1988,15 +2139,17 @@ object ImageProcessor {
                 }
             }
 
-            // 2. Set EXIF metadata directly on the local temp file (takes <5ms in local flash VFS vs 600ms over MediaStore Binder)
-            try {
-                val exif = ExifInterface(tempFile.absolutePath)
-                exif.setAttribute(ExifInterface.TAG_MAKE, "Cameleo")
-                exif.setAttribute(ExifInterface.TAG_MODEL, cleanModel)
-                exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Cameleo Vintage Camera 1.0")
-                exif.saveAttributes()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to write EXIF attributes to temp file", e)
+            // 2. Set EXIF metadata directly on the local temp file when enabled
+            if (appSettings.preserveExif) {
+                try {
+                    val exif = ExifInterface(tempFile.absolutePath)
+                    exif.setAttribute(ExifInterface.TAG_MAKE, "Cameleo")
+                    exif.setAttribute(ExifInterface.TAG_MODEL, cleanModel)
+                    exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Cameleo Vintage Camera 1.0")
+                    exif.saveAttributes()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to write EXIF attributes to temp file", e)
+                }
             }
 
             // 3. Insert into MediaStore and stream in a single sequential copy
@@ -2018,10 +2171,12 @@ object ImageProcessor {
                     context.contentResolver.update(uri, contentValues, null, null)
                 }
 
-                // 4. Instant Gallery Integration: Pre-generate thumbnail in-memory (takes ~2ms)
-                // and populate GalleryCache before returning so Gallery opens with 0ms lag
+                // 4. Instant Gallery Integration & Negative Archival
                 val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
                 if (id > 0L) {
+                    if (appSettings.saveFilmNegatives && negativeBitmap != null && !negativeBitmap.isRecycled) {
+                        saveFilmNegativeFile(context, id, negativeBitmap)
+                    }
                     val thumbBitmap = com.craftcam.app.ui.gallery.GalleryCache.createThumbnail(bitmap, 256)
                     com.craftcam.app.ui.gallery.GalleryCache.putThumbnail(id, thumbBitmap)
                     com.craftcam.app.ui.gallery.GalleryCache.addNewItem(

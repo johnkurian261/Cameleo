@@ -125,6 +125,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 35f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.PRISM,
             LensType.ND
         ),
@@ -173,6 +175,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 35f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.STARBURST,
             LensType.ND
         ),
@@ -224,6 +228,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 35f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.STARBURST,
             LensType.ND
         ),
@@ -275,6 +281,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 35f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.STARBURST,
             LensType.ND
         ),
@@ -328,6 +336,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 32f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.COLOR_FLASH,
             LensType.STARBURST
         ),
@@ -380,6 +390,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 35f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.PRISM,
             LensType.COLOR_FLASH
         ),
@@ -561,6 +573,8 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 32f,
         supportedLenses = listOf(
             LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
             LensType.COLOR_FLASH
         ),
         defaultLens = LensType.NORMAL,
@@ -1325,6 +1339,146 @@ object CameraProfileCatalog {
         )
     )
 
+    val CPM_35 = CameleoCameraProfile(
+        id = "disposable_cpm35",
+        name = "CPM 35",
+        subtitle = "Color Print Motion 35",
+        presetId = "disp_flash",
+        focalLengths = listOf(
+            FocalLengthOption("32mm", 32f),
+            FocalLengthOption("50mm", 50f)
+        ),
+        defaultFocalLengthMm = 32f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
+            LensType.COLOR_FLASH,
+            LensType.STARBURST
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
+        filmProfile = FilmProfile(
+            id = "film_cpm35",
+            name = "Color Print Motion 35",
+            lutAssetPath = "lut_disp_flash.png",
+            contrast = 1.12f,
+            saturation = 1.12f,
+            temperature = 0.12f,
+            tint = 0.02f,
+            fade = 0.04f,
+            toeLift = 0.035f,
+            shoulderClip = 0.960f,
+            highlightRollOff = 0.88f,
+            halationThreshold = 0.72f,
+            halationIntensity = 0.42f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.22f,
+            halationColorTintB = 0.04f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_cpm35",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_cpm35.jpg",
+            intensity = 0.28f,
+            scale = 1.20f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        )
+    )
+
+    val ONE_THREE_FIVE_SR = CameleoCameraProfile(
+        id = "analog_135_sr",
+        name = "135 SR",
+        subtitle = "Superia Reala 135 SLR",
+        presetId = "disp_warm",
+        focalLengths = listOf(
+            FocalLengthOption("35mm", 35f),
+            FocalLengthOption("50mm", 50f)
+        ),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
+            LensType.PRISM,
+            LensType.ND
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
+        filmProfile = FilmProfile(
+            id = "film_135_sr",
+            name = "Superia Reala 135",
+            lutAssetPath = "lut_disp_warm.png",
+            contrast = 1.08f,
+            saturation = 1.10f,
+            temperature = 0.16f,
+            tint = 0.02f,
+            fade = 0.04f,
+            toeLift = 0.030f,
+            shoulderClip = 0.970f,
+            highlightRollOff = 0.88f,
+            shadowTintR = 0.03f,
+            shadowTintG = 0.02f,
+            shadowTintB = 0.01f,
+            halationThreshold = 0.78f,
+            halationIntensity = 0.24f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_135_sr",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain540_01.jpg",
+            intensity = 0.25f,
+            scale = 1.15f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        )
+    )
+
+    val PAF_INSTANT = CameleoCameraProfile(
+        id = "instant_paf",
+        name = "PAF",
+        subtitle = "Polaroid Autofocus SLR 680",
+        presetId = "inst_paf",
+        focalLengths = listOf(
+            FocalLengthOption("35mm", 35f)
+        ),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.FISHEYE_F,
+            LensType.FISHEYE_W,
+            LensType.PRISM,
+            LensType.COLOR_FLASH
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_1_1,
+        filmProfile = FilmProfile(
+            id = "film_paf",
+            name = "Polaroid Autofocus 680",
+            lutAssetPath = "lut_inst_vintage.png",
+            contrast = 1.08f,
+            saturation = 1.12f,
+            temperature = 0.10f,
+            tint = 0.03f,
+            fade = 0.08f,
+            toeLift = 0.070f,
+            shoulderClip = 0.940f,
+            highlightRollOff = 0.88f,
+            halationThreshold = 0.74f,
+            halationIntensity = 0.24f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_paf",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_paf.jpg",
+            intensity = 0.22f,
+            scale = 1.00f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        )
+    )
+
     val allProfiles = listOf(
         FXN_R,
         D_CLASSIC,
@@ -1335,10 +1489,13 @@ object CameraProfileCatalog {
         CLASSIC_U,
         DQS_CAMERA,
         INSTANT_CAMERA,
+        PAF_INSTANT,
         FISHEYE_CAMERA,
         SOFT_FILM,
         WARM_FILM,
         DISPOSABLE_FUNS,
+        CPM_35,
+        ONE_THREE_FIVE_SR,
         ONE_THREE_FIVE_NE,
         ZERO_CAMERA,
         S_67,
@@ -1373,8 +1530,11 @@ object CameraProfileCatalog {
             "ccd_flash", "d_funs", "dfuns" -> return CCD_FLASH
             "ccd_y2k_digital", "classic_u", "classicu" -> return CLASSIC_U
             "dqs", "ccd_retro_compact" -> return DQS_CAMERA
-            "inst_vintage", "inst_c", "inst_paf", "paf" -> return INSTANT_CAMERA
-            "disp_classic", "disp_golf", "disp_flash", "disp_warm" -> return DISPOSABLE_FUNS
+            "inst_vintage", "inst_c" -> return INSTANT_CAMERA
+            "inst_paf", "paf" -> return PAF_INSTANT
+            "disp_classic", "disp_golf", "golf" -> return DISPOSABLE_FUNS
+            "disp_flash", "disp_cpm35", "cpm35", "cpm 35" -> return CPM_35
+            "disp_warm", "analog_135sr", "135sr", "135 sr" -> return ONE_THREE_FIVE_SR
             "analog_135ne", "135ne", "135 ne" -> return ONE_THREE_FIVE_NE
             "analog_fisheye_f", "fisheye" -> return FISHEYE_CAMERA
             "analog_soft_film", "ct2f" -> return SOFT_FILM
