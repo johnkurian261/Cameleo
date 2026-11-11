@@ -197,3 +197,4 @@ New unit tests in [`CaptureMenuAndSettingsAuditTest.kt`](file:///C:/Users/User/D
 | **Timestamp Format** | `PARTIAL` | Preference persisted; timestamp overlay renderer formats date string. |
 | **Preserve Setting** | `UI ONLY` | Displays submenu chevron. |
 | **Language** | `UI PRESENT (NOT IMPLEMENTED)` | Displays language row. App uses system locale. No fake localization engine added. |
+

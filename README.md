@@ -16,15 +16,15 @@ Anyone can download and install Cameleo directly on an Android device:
 
 | Release | Format | Link |
 |---|---|---|
-| **v1.0.0 (Latest Build)** | APK (Ready to install) | [**Download Cameleo.apk (v1.0.0)**](https://github.com/johnkurian261/Cameleo/releases/download/v1.0.0/Cameleo.apk) |
-| **All Releases & Release Notes** | Asset Catalog | [**GitHub Releases (v1.0.0)**](https://github.com/johnkurian261/Cameleo/releases/tag/v1.0.0) |
+| **v2.0.0 (Latest Release)** | APK (Ready to install) | [**Download Cameleo.apk (v2.0.0)**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) |
+| **All Releases & Release Notes** | Asset Catalog | [**GitHub Releases**](https://github.com/johnkurian261/Cameleo/releases) |
 
 ### 📲 Quick Installation Guide (Android Phone)
-1. **Download**: Tap [**Cameleo.apk**](https://github.com/johnkurian261/Cameleo/releases/download/v1.0.0/Cameleo.apk) from Chrome or your phone's browser.
+1. **Download**: Tap [**Cameleo.apk**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) from Chrome or your phone's browser.
 2. **Enable Unknown Apps**: If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **"Allow from this source"**.
 3. **Install**: Return to the installer and tap **Install**.
 4. **Permissions**: Open **Cameleo** and grant Camera, Audio, and Storage permissions.
-5. **Shoot**: Explore vintage films (FXN R, CCD Digital, 135NE, GR D), high-fidelity **Zero** camera, and the classic tactile red shutter!
+5. **Shoot**: Explore vintage films (FXN R, CCD Digital, 135NE, GR D), high-fidelity **Zero** camera, authentic floating 3-dot control menu, and the classic tactile red shutter!
 
 ---
 
@@ -79,11 +79,13 @@ Anyone can download and install Cameleo directly on an Android device:
 - Android MediaStore export to `DCIM/CRAFTCAM` preserving EXIF metadata.
 - Non-destructive negative caching for darkroom redevelopment.
 
-### 4. Tactile UI & Dark Photographic Canvas
-- Deep matte graphite and black aesthetic (`#0A0B0E`, `#14161B`) with vintage amber accents (`#FF8C1A`).
-- Mechanical dual-ring shutter button with spring physics and haptic click feedback.
-- Rule of Thirds assistive grid and tap-to-focus reticle.
-- Comprehensive integrated Darkroom Gallery with full-screen viewer and photo details.
+### 4. Tactile UI & Floating Control Menu (Dazz Cam Fidelity)
+- **Authentic Floating 3-Dot Control Menu**: Quick-access floating panel with circular buttons and diagonal slash states for Flash (OFF / AUTO / ON), Composition Frame overlay toggle, and Assistive 3×3 Grid.
+- **Dedicated Zoom Mode Selection**: Seamlessly toggle between **Frame** mode (compositional crop adjustment) and **Lens** mode (physical optical / sensor hardware zoom).
+- **Grouped Settings Screen**: Dazz-style preferences with coral toggles (`#E25241`), front preview & capture mirroring, shutter vibration gating, and local storage safety advisories.
+- **Deep Matte Canvas**: Dark graphite photographic UI (`#0A0B0E`, `#14161B`) with vintage amber accents.
+- **Mechanical Shutter**: Dual-ring shutter button with tactile spring physics and synchronized haptic click feedback.
+- **Prewarmed Darkroom Gallery**: Instant gallery opening with background image pre-caching and high-speed photo development.
 
 ---
 

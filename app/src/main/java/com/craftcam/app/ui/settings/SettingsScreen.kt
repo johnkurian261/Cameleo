@@ -362,7 +362,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "VERSION 1.0.0",
+                    text = "VERSION 2.0.0",
                     color = Color(0xFF48484A),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
