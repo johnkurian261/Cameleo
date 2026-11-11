@@ -204,10 +204,22 @@ class CameraManager(private val context: Context) {
                     maxZoom = zoomProfile.maxZoomRatio,
                     zoomState = initialZoomState,
                     captureFrameState = it.captureFrameState.copy(baseFocalLengthMm = baseEq),
-                    sensorTelemetry = telemetry
+                    sensorTelemetry = telemetry,
+                    showGrid = AppSettingsStore.get(context).current.assistiveGrid
                 )
             }
             lastSelectedRearLens = defaultRear
+
+            processingScope.launch {
+                AppSettingsStore.get(context).state.collect { settings ->
+                    _uiState.update { current ->
+                        if (current.showGrid != settings.assistiveGrid) {
+                            current.copy(showGrid = settings.assistiveGrid)
+                        } else current
+                    }
+                    glRenderer?.setMirrorFrontPreview(settings.mirrorFrontCamera)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Lens initialization failed", e)
         }
@@ -586,6 +598,7 @@ class CameraManager(private val context: Context) {
 
     fun setFrameBorderEnabled(enabled: Boolean) {
         updateTuning { it.copy(frameBorderEnabled = enabled) }
+        _uiState.update { it.copy(captureFrameState = it.captureFrameState.copy(isVisible = enabled)) }
     }
 
     fun setGrainEnabled(enabled: Boolean) {
@@ -1163,11 +1176,16 @@ class CameraManager(private val context: Context) {
     }
 
     fun setFlashMode(flashMode: Int) {
-        _uiState.update { it.copy(flashMode = flashMode) }
-        imageCapture?.flashMode = flashMode
+        val targetMode = if (flashMode != ImageCapture.FLASH_MODE_OFF && camera?.cameraInfo?.hasFlashUnit() == false) {
+            ImageCapture.FLASH_MODE_OFF
+        } else {
+            flashMode
+        }
+        _uiState.update { it.copy(flashMode = targetMode) }
+        imageCapture?.flashMode = targetMode
         glRenderer?.updateLensProfile(
             _uiState.value.shootingState.selectedLens,
-            isFlashActive = flashMode != ImageCapture.FLASH_MODE_OFF
+            isFlashActive = targetMode != ImageCapture.FLASH_MODE_OFF
         )
     }
 
@@ -1304,7 +1322,14 @@ class CameraManager(private val context: Context) {
     }
 
     fun toggleGrid() {
-        _uiState.update { it.copy(showGrid = !it.showGrid) }
+        val next = !_uiState.value.showGrid
+        _uiState.update { it.copy(showGrid = next) }
+        AppSettingsStore.get(context).setAssistiveGrid(next)
+    }
+
+    fun setGridEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(showGrid = enabled) }
+        AppSettingsStore.get(context).setAssistiveGrid(enabled)
     }
 
     fun toggleLevel() {
@@ -1388,8 +1413,8 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        // Freeze immutable composition frame snapshot at shutter trigger instant
-        val frameSnapshot = createCaptureFrameSnapshot(aspectRatio)
+        // Freeze immutable composition frame snapshot at shutter trigger instant (null if frame overlay disabled)
+        val frameSnapshot = if (_uiState.value.tuning.frameBorderEnabled) createCaptureFrameSnapshot(aspectRatio) else null
 
         // Branch into multi-frame computational photography pipeline when in NATURAL mode and forceMultiFrameHdr is explicitly active
         if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
@@ -1482,7 +1507,7 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        val frameSnapshot = createCaptureFrameSnapshot(aspectRatio)
+        val frameSnapshot = if (_uiState.value.tuning.frameBorderEnabled) createCaptureFrameSnapshot(aspectRatio) else null
 
         _uiState.update { it.copy(isCapturing = true, threeDProgressMessage = "Capturing 3D...") }
         startCaptureWatchdog(timeoutMs = 15000L)
@@ -1553,7 +1578,7 @@ class CameraManager(private val context: Context) {
         preset: CameraPreset,
         aspectRatio: AspectRatioMode,
         mirrorFrontCamera: Boolean,
-        frameSnapshot: CaptureFrameSnapshot,
+        frameSnapshot: CaptureFrameSnapshot?,
         onPhotoSaved: (Uri) -> Unit = {},
         onError: (String) -> Unit = {}
     ) {

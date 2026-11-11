@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import com.craftcam.app.R
+import com.craftcam.app.config.AppSettingsStore
 import com.craftcam.app.ui.gallery.GalleryCache
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -294,16 +295,22 @@ fun ViewfinderScreen(
                         }
                     )
 
-                    // Centered, Resizable Camera Framing Composition Window (displayed for all filters)
-                    CaptureFrameOverlay(
-                        modifier = Modifier.fillMaxSize(),
-                        state = uiState.captureFrameState,
-                        aspectRatio = uiState.aspectRatio,
-                        onResize = { scale ->
-                            val previewAspect = 1f / uiState.aspectRatio.ratio
-                            cameraManager.resizeCaptureFrame(scale, previewAspect)
-                        }
-                    )
+                    // Centered, Resizable Camera Framing Composition Window (displayed when frame border is enabled)
+                    if (uiState.tuning.frameBorderEnabled) {
+                        CaptureFrameOverlay(
+                            modifier = Modifier.fillMaxSize(),
+                            state = uiState.captureFrameState,
+                            aspectRatio = uiState.aspectRatio,
+                            onResize = { scale ->
+                                val previewAspect = 1f / uiState.aspectRatio.ratio
+                                if (AppSettingsStore.get(context).current.zoomMode == "Lens") {
+                                    cameraManager.onPinchZoom(scale)
+                                } else {
+                                    cameraManager.resizeCaptureFrame(scale, previewAspect)
+                                }
+                            }
+                        )
+                    }
 
                     // Developing 3D Wigglegram Overlay
                     if (uiState.threeDProgressMessage != null) {
@@ -514,7 +521,8 @@ fun ViewfinderScreen(
                                     cameraManager.captureAndProcessThreeDPhoto(
                                         preset = selectedPreset,
                                         aspectRatio = uiState.aspectRatio,
-                                        mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
+                                        mirrorFrontCamera = (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) &&
+                                                AppSettingsStore.get(context).current.mirrorFrontCamera,
                                         onVideoSaved = { uri ->
                                             Toast.makeText(context, "3D Wigglegram saved to Cameleo album", Toast.LENGTH_SHORT).show()
                                             val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
@@ -535,7 +543,8 @@ fun ViewfinderScreen(
                                     cameraManager.captureAndProcessPhoto(
                                         preset = selectedPreset,
                                         aspectRatio = uiState.aspectRatio,
-                                        mirrorFrontCamera = uiState.lensFacing == CameraSelector.LENS_FACING_FRONT,
+                                        mirrorFrontCamera = (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) &&
+                                                AppSettingsStore.get(context).current.mirrorFrontCamera,
                                         onPhotoSaved = { uri ->
                                             Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
                                             val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }

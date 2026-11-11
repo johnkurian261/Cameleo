@@ -164,7 +164,6 @@ fun CameraControlMenu(
                                 .clickable {
                                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                     onToggleGrid()
-                                    settingsStore.setAssistiveGrid(!showGrid)
                                 },
                             contentAlignment = Alignment.Center
                         ) {
