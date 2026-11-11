@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,8 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -30,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.craftcam.app.R
 import com.craftcam.app.config.AppSettingsStore
 import com.craftcam.app.config.performCameleoHaptic
 
@@ -331,7 +335,7 @@ fun SettingsScreen(
                 val hashtagText = buildAnnotatedString {
                     append("Please use the hashtag ")
                     withStyle(style = SpanStyle(color = Color(0xFFE25241), fontWeight = FontWeight.SemiBold)) {
-                        append("#cameleo")
+                        append("#dazzcam")
                     }
                     append(" when you post content on social media.")
                 }
@@ -349,14 +353,13 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = "CAMELEO",
-                    color = Color(0xFF2C2C2E),
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 4.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                Image(
+                    painter = painterResource(id = R.drawable.dazz_logo_footer),
+                    contentDescription = "Dazz",
+                    colorFilter = ColorFilter.tint(Color(0xFF2C2C2E)),
+                    modifier = Modifier
+                        .height(34.dp)
+                        .align(Alignment.CenterHorizontally)
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
