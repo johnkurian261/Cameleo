@@ -544,7 +544,10 @@ class CameraManager(private val context: Context) {
                 _uiState.value.engineMode
             }
 
-            val newCaptureMode = if (_uiState.value.captureMode == CaptureMode.MODE_3D) {
+            val isD3D = preset.id == "analog_cinema_film" || preset.id == "d3d" || preset.name.equals("D3D", ignoreCase = true) || preset.name.equals("D 3D", ignoreCase = true)
+            val newCaptureMode = if (isD3D) {
+                CaptureMode.MODE_3D
+            } else if (_uiState.value.captureMode == CaptureMode.MODE_3D) {
                 CaptureMode.PHOTO
             } else {
                 _uiState.value.captureMode

@@ -10,23 +10,26 @@ data class ThreeDConfig(
     /** Number of distinct physical lens viewpoints (4 for Nishika N8000 / Nimslo 3D quad-lens). */
     val frameCount: Int = 4,
 
-    /** Maximum horizontal disparity displacement as a fraction of image width (0.018 = 1.8%). */
-    val maxParallaxDisplacement: Float = 0.018f,
+    /** Configurable D3D parallax displacement parameter as a fraction of image width (0.012 = 1.2%). */
+    val d3dParallaxStrength: Float = 0.012f,
+
+    /** Maximum horizontal disparity displacement as a fraction of image width. Defaults to [d3dParallaxStrength]. */
+    val maxParallaxDisplacement: Float = d3dParallaxStrength,
 
     /** Default fallback normalized disparity of the convergence / in-focus subject plane. */
     val pivotDisparity: Float = 0.45f,
 
     /** Transverse chromatic / RGB channel misalignment in pixels (subtle optical aberration). */
-    val rgbSeparationPx: Float = 0.8f,
+    val rgbSeparationPx: Float = 0.5f,
 
     /** Mechanical frame registration jitter amplitude in pixels (film gate tolerance). */
-    val mechanicalJitterPx: Float = 0.35f,
+    val mechanicalJitterPx: Float = 0.25f,
 
-    /** Frame-to-frame leaf shutter exposure variation multiplier amplitude (±1.2%). */
-    val exposureVariance: Float = 0.012f,
+    /** Frame-to-frame leaf shutter exposure variation multiplier amplitude (±0.8%). */
+    val exposureVariance: Float = 0.008f,
 
     /** Authentic analog 35mm film grain blending intensity. */
-    val grainIntensity: Float = 0.22f,
+    val grainIntensity: Float = 0.18f,
 
     /** Subtle optical lens softness diffusion radius (0.0 = tack sharp). */
     val softnessRadius: Float = 0.0f,

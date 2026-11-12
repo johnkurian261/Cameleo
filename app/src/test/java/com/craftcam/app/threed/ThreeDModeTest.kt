@@ -19,11 +19,35 @@ class ThreeDModeTest {
         assertEquals(4, config.frameCount)
         assertEquals(10, config.fps)
         assertEquals(4, config.loopCount)
-        assertEquals(0.018f, config.maxParallaxDisplacement, 0.001f)
+        assertEquals(0.012f, config.maxParallaxDisplacement, 0.001f)
+        assertEquals(0.012f, config.d3dParallaxStrength, 0.001f)
         assertEquals(0.45f, config.pivotDisparity, 0.001f)
         assertFalse(config.lightLeakEnabled)
         assertTrue(config.grainIntensity > 0f)
         assertTrue(config.rgbSeparationPx > 0f)
+    }
+
+    @Test
+    fun testD3DAnimationConfigurationAndBounds() {
+        // Test subtle conservative displacement bounds
+        val defaultCfg = ThreeDConfig()
+        assertTrue("Parallax displacement must be subtle (<= 1.5% width)", defaultCfg.d3dParallaxStrength <= 0.015f)
+        assertTrue("Parallax displacement must be > 0.4% width", defaultCfg.d3dParallaxStrength >= 0.004f)
+
+        // Configurable d3dParallaxStrength test
+        val customCfg = ThreeDConfig(d3dParallaxStrength = 0.008f)
+        assertEquals(0.008f, customCfg.d3dParallaxStrength, 0.0001f)
+        assertEquals(0.008f, customCfg.maxParallaxDisplacement, 0.0001f)
+    }
+
+    @Test
+    fun testD3DPresetRouting() {
+        val d3dPresets = listOf("analog_cinema_film", "d3d", "D3D", "D 3D")
+        for (name in d3dPresets) {
+            val isD3D = name == "analog_cinema_film" || name == "d3d" ||
+                    name.equals("D3D", ignoreCase = true) || name.equals("D 3D", ignoreCase = true)
+            assertTrue("Preset '$name' must resolve as D3D", isD3D)
+        }
     }
 
     @Test

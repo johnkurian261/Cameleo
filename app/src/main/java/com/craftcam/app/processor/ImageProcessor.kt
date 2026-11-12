@@ -180,24 +180,8 @@ object ImageProcessor {
                     savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
                 }
 
-                // 1.5 D3D Single-Image 3D Photography Filter
-                val d3dProf = preset.d3dProfile ?: if (preset.id == "analog_cinema_film" || preset.id == "d3d") {
-                    com.craftcam.app.camera.profile.D3DProfile.Default
-                } else null
-
-                if (d3dProf != null) {
-                    val strength = (d3dProf.depthStrength + tuning.d3dStrengthOffset).coerceIn(0.05f, 1.0f)
-                    val isAnaglyph = tuning.d3dAnaglyphMode || d3dProf.isAnaglyphMode
-                    val d3dBitmap = com.craftcam.app.threed.D3DPhotoFilter.apply(
-                        sourceBitmap = workingBitmap,
-                        profile = d3dProf,
-                        faces = faces,
-                        strength = strength,
-                        isAnaglyphOverride = isAnaglyph
-                    )
-                    BitmapPool.release(workingBitmap)
-                    workingBitmap = d3dBitmap
-                }
+                // 1.5 D3D multi-frame wigglegrams are handled authoritatively via processAndSaveThreeDImage.
+                // Obsolete static 2D displacement is disabled to prevent single-frame smearing / stretching.
 
                 // 2. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
                 // Executed in-place on workingBitmap using pooled IntArrays (zero new Bitmap allocations)
@@ -344,8 +328,13 @@ object ImageProcessor {
                 applyGrain = false
             )
 
-            // Feed to 3D Wigglegram pipeline
-            val threeDProcessor = com.craftcam.app.threed.ThreeDPhotoProcessor()
+            // Feed to 3D Wigglegram pipeline with calibrated subtle parallax strength
+            val parallaxStrength = (0.012f + tuning.d3dStrengthOffset * 0.008f).coerceIn(0.004f, 0.024f)
+            val threeDConfig = com.craftcam.app.threed.ThreeDConfig(
+                d3dParallaxStrength = parallaxStrength,
+                maxParallaxDisplacement = parallaxStrength
+            )
+            val threeDProcessor = com.craftcam.app.threed.ThreeDPhotoProcessor(threeDConfig)
             val uri = threeDProcessor.processAndSaveThreeDPhoto(
                 context = context,
                 sourceBitmap = workingBitmap,
@@ -2044,23 +2033,8 @@ object ImageProcessor {
                 savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
             }
 
-            val d3dProf = preset.d3dProfile ?: if (preset.id == "analog_cinema_film" || preset.id == "d3d") {
-                com.craftcam.app.camera.profile.D3DProfile.Default
-            } else null
-
-            if (d3dProf != null) {
-                val strength = (d3dProf.depthStrength + tuning.d3dStrengthOffset).coerceIn(0.05f, 1.0f)
-                val isAnaglyph = tuning.d3dAnaglyphMode || d3dProf.isAnaglyphMode
-                val d3dBitmap = com.craftcam.app.threed.D3DPhotoFilter.apply(
-                    sourceBitmap = workingBitmap,
-                    profile = d3dProf,
-                    faces = emptyList(),
-                    strength = strength,
-                    isAnaglyphOverride = isAnaglyph
-                )
-                BitmapPool.release(workingBitmap)
-                workingBitmap = d3dBitmap
-            }
+            // D3D multi-frame wigglegram is handled authoritatively via processAndSaveThreeDImage.
+            // Obsolete static 2D displacement is disabled to avoid single-frame smearing / stretching.
 
             workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive = false)
 

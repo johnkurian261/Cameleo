@@ -327,33 +327,9 @@ void main() {
 
     vec3 color = srcColor.rgb;
 
-    // 2-D3D. Single-Image Stereoscopic Parallax & Depth Separation
-    if (uD3DEnabled && uD3DStrength > 0.01) {
-        float yNorm = vQuadCoord.y;
-        float centerDist = length(vec2(vQuadCoord.x - 0.5, (vQuadCoord.y - 0.5) * aspect));
-        float depthPrior = clamp((1.0 - yNorm) * 0.65 + (1.0 - centerDist * 1.3) * 0.35, 0.0, 1.0);
-        float pivot = 0.45;
-        float delta = (depthPrior - pivot) * uD3DStrength;
-
-        float parallaxOffset = delta * uD3DParallax * 0.5;
-        float caOffset = delta * uD3DRgbSeparation;
-
-        vec2 uvL = clamp(uv + vec2(-parallaxOffset + caOffset, 0.0), vec2(0.001), vec2(0.999));
-        vec2 uvR = clamp(uv + vec2(parallaxOffset - caOffset, 0.0), vec2(0.001), vec2(0.999));
-
-        vec2 oesL = (uTexMatrix * vec4(uvL, 0.0, 1.0)).xy;
-        vec2 oesR = (uTexMatrix * vec4(uvR, 0.0, 1.0)).xy;
-
-        float rL = texture(sTexture, oesL).r;
-        float bR = texture(sTexture, oesR).b;
-
-        if (uD3DAnaglyph > 0.5) {
-            float leftLuma = 0.299 * rL + 0.587 * texture(sTexture, oesL).g + 0.114 * texture(sTexture, oesL).b;
-            color = vec3(leftLuma, texture(sTexture, oesR).g, bR);
-        } else {
-            color = vec3(rL * 0.70 + color.r * 0.30, color.g, bR * 0.70 + color.b * 0.30);
-        }
-    }
+    // 2-D3D. Live Viewfinder Stability:
+    // D3D stereoscopy is synthesized upon capture as an authentic multi-frame wigglegram.
+    // The live preview remains clean, stable, and tack-sharp with D3D film color science and grain (zero UV stretching).
 
     // 2a. Prism Multi-Facet Refraction & Chromatic Splitting
     if (uLensType == 4 && uLensPrismDispersion > 0.01) {
@@ -1000,33 +976,7 @@ void main() {
 
     vec3 color = srcColor.rgb;
 
-    // 2-D3D. Single-Image Stereoscopic Parallax & Depth Separation
-    if (uD3DEnabled && uD3DStrength > 0.01) {
-        float yNorm = vTextureCoord.y;
-        float centerDist = length(vec2(vTextureCoord.x - 0.5, (vTextureCoord.y - 0.5) * aspect));
-        float depthPrior = clamp((1.0 - yNorm) * 0.65 + (1.0 - centerDist * 1.3) * 0.35, 0.0, 1.0);
-        float pivot = 0.45;
-        float delta = (depthPrior - pivot) * uD3DStrength;
-
-        float parallaxOffset = delta * uD3DParallax * 0.5;
-        float caOffset = delta * uD3DRgbSeparation;
-
-        vec2 uvL = clamp(uv + vec2(-parallaxOffset + caOffset, 0.0), vec2(0.001), vec2(0.999));
-        vec2 uvR = clamp(uv + vec2(parallaxOffset - caOffset, 0.0), vec2(0.001), vec2(0.999));
-
-        vec2 oesL = uvL;
-        vec2 oesR = uvR;
-
-        float rL = texture(sTexture, oesL).r;
-        float bR = texture(sTexture, oesR).b;
-
-        if (uD3DAnaglyph > 0.5) {
-            float leftLuma = 0.299 * rL + 0.587 * texture(sTexture, oesL).g + 0.114 * texture(sTexture, oesL).b;
-            color = vec3(leftLuma, texture(sTexture, oesR).g, bR);
-        } else {
-            color = vec3(rL * 0.70 + color.r * 0.30, color.g, bR * 0.70 + color.b * 0.30);
-        }
-    }
+    // 2-D3D. Stable D3D video/preview (zero UV stretching).
 
     // 2a. Prism Multi-Facet Refraction & Chromatic Splitting
     if (uLensType == 4 && uLensPrismDispersion > 0.01) {
