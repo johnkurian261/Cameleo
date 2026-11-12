@@ -314,7 +314,8 @@ private fun CompactControlsPill(
 
 /**
  * Expanded Temperature Control:
- * Cool Cyan → Neutral Daylight (5500K) → Warm Orange Gradient Slider.
+ * Authentic Dazz Cam color temperature slider with bold centered Kelvin readout,
+ * rounded gradient pill track, dotted center line, and black/white ring thumb.
  */
 @Composable
 private fun ExpandedTemperaturePanel(
@@ -332,96 +333,57 @@ private fun ExpandedTemperaturePanel(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ── Top Header Row with [ A ], Centered Kelvin, and [ ⟲ ] ──
-        Box(
+        // ── Authentic Dazz Cam Centered Kelvin Readout (e.g. "5373K") ──
+        Text(
+            text = "${state.kelvin}K",
+            color = Color.White,
+            fontSize = 19.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp,
+            textAlign = TextAlign.Center,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            // Auto White Balance circular [ A ] button
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(if (state.isAuto) Color.White else Color(0x33FFFFFF))
-                    .clickable(onClick = onAutoToggle),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "A",
-                    color = if (state.isAuto) Color.Black else Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Centered Kelvin readout (e.g. "5373K") matching reference
-            Text(
-                text = "${state.kelvin}K",
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                textAlign = TextAlign.Center
-            )
-
-            // Reset / Undo button
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x33FFFFFF))
-                    .clickable {
-                        if (!state.isAuto || state.kelvin != 5500) {
-                            onReset()
-                        } else {
-                            onClose()
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (!state.isAuto || state.kelvin != 5500) {
-                        Icons.AutoMirrored.Filled.Undo
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    if (!state.isAuto) {
+                        onAutoToggle()
                     } else {
-                        Icons.Default.Close
-                    },
-                    contentDescription = "Reset",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
+                        onReset()
+                    }
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                }
+        )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // ── Authentic Dazz Cam Gradient Slider with Dotted Line & Black/White Thumb ──
         TemperatureGradientSlider(
             kelvin = state.kelvin,
             minKelvin = state.minKelvin,
             maxKelvin = state.maxKelvin,
-            onKelvinChange = onKelvinChange
+            onKelvinChange = onKelvinChange,
+            onResetToDaylight = onReset
         )
     }
 }
 
 /**
  * Authentic Dazz Cam color temperature gradient slider:
- * - Wide rounded pill track (height 62dp, corner radius 20dp).
- * - Authentic gradient: cool periwinkle blue (#556FF2) → lavender/mauve (#947FC3, #AA83AB) → warm golden orange (#F8955A).
+ * - Wide rounded pill track (aspect ratio ~3.2:1, corner radius 22dp).
+ * - Exact 11-stop color gradient: cool periwinkle blue (#5F75E3) → mauve/lavender (#AB82A6) → warm apricot orange (#FE9E5A).
  * - Horizontal dotted center line through the track.
  * - Solid black thumb with crisp white outline ring centered vertically on the dotted line.
  * - Continuous 1K fine adjustment matching reference readout (e.g. 5373K).
+ * - Double tap to reset to 5500K daylight.
  */
 @Composable
 private fun TemperatureGradientSlider(
     kelvin: Int,
     minKelvin: Int,
     maxKelvin: Int,
-    onKelvinChange: (Int) -> Unit
+    onKelvinChange: (Int) -> Unit,
+    onResetToDaylight: () -> Unit = {}
 ) {
     val view = LocalView.current
     var trackSize by remember { mutableStateOf(IntSize.Zero) }
@@ -432,13 +394,17 @@ private fun TemperatureGradientSlider(
     val gradientBrush = remember {
         Brush.horizontalGradient(
             colors = listOf(
-                Color(0xFF556FF2), // Cool periwinkle blue (2500K)
-                Color(0xFF6E76E1),
-                Color(0xFF947FC3), // Lavender transition
-                Color(0xFFAA83AB), // Neutral mauve
-                Color(0xFFCB8B8A), // Soft rose
-                Color(0xFFE39076), // Warm peach
-                Color(0xFFF8955A)  // Warm golden orange (9500K)
+                Color(0xFF5F75E3), // Cool periwinkle blue (2500K)
+                Color(0xFF6674EA),
+                Color(0xFF7979D9),
+                Color(0xFF8C7DC8), // Soft violet
+                Color(0xFF9D83BB),
+                Color(0xFFAB82A6), // Neutral mauve / lavender
+                Color(0xFFBF8996), // Dusty rose
+                Color(0xFFD08B84),
+                Color(0xFFE39076), // Peach
+                Color(0xFFF29563), // Apricot
+                Color(0xFFFE9E5A)  // Warm golden orange (9500K)
             )
         )
     }
@@ -446,7 +412,7 @@ private fun TemperatureGradientSlider(
     fun updateValueFromOffset(x: Float) {
         val width = trackSize.width.toFloat()
         if (width <= 0f) return
-        val minXPx = with(density) { 16.dp.toPx() }
+        val minXPx = with(density) { 18.dp.toPx() }
         val maxXPx = (width - minXPx).coerceAtLeast(minXPx)
         val newFraction = ((x - minXPx) / (maxXPx - minXPx)).coerceIn(0f, 1f)
         val rawK = minKelvin + newFraction * (maxKelvin - minKelvin)
@@ -461,15 +427,22 @@ private fun TemperatureGradientSlider(
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(62.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .fillMaxWidth(0.86f)
+            .widthIn(max = 310.dp)
+            .height(74.dp)
+            .clip(RoundedCornerShape(22.dp))
             .background(gradientBrush)
             .onSizeChanged { trackSize = it }
             .pointerInput(minKelvin, maxKelvin, kelvin) {
-                detectTapGestures { offset ->
-                    updateValueFromOffset(offset.x)
-                }
+                detectTapGestures(
+                    onDoubleTap = {
+                        onResetToDaylight()
+                        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    },
+                    onTap = { offset ->
+                        updateValueFromOffset(offset.x)
+                    }
+                )
             }
             .pointerInput(minKelvin, maxKelvin, kelvin) {
                 detectDragGestures { change, _ ->
@@ -482,14 +455,14 @@ private fun TemperatureGradientSlider(
         // Horizontal dotted center line running through the track
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cy = size.height / 2f
-            val dotRadius = 1.3.dp.toPx()
-            val spacing = 5.5.dp.toPx()
+            val dotRadius = 1.35.dp.toPx()
+            val spacing = 5.2.dp.toPx()
             val startX = 14.dp.toPx()
             val endX = size.width - 14.dp.toPx()
             var curX = startX
             while (curX <= endX) {
                 drawCircle(
-                    color = Color(0xEE0B0C10),
+                    color = Color(0xDD0C0E14),
                     radius = dotRadius,
                     center = Offset(curX, cy)
                 )
@@ -497,10 +470,10 @@ private fun TemperatureGradientSlider(
             }
         }
 
-        // Draggable circular thumb: black fill with crisp white border ring
-        val thumbRadiusDp = 14.dp
-        val minX = with(density) { 16.dp.toPx() }
-        val maxX = (trackSize.width - with(density) { 16.dp.toPx() }).coerceAtLeast(minX)
+        // Draggable circular thumb: solid black fill with crisp white border ring
+        val thumbRadiusDp = 16.dp // diameter = 32dp
+        val minX = with(density) { 18.dp.toPx() }
+        val maxX = (trackSize.width - with(density) { 18.dp.toPx() }).coerceAtLeast(minX)
         val thumbCenterX = minX + fraction * (maxX - minX)
         val thumbOffsetX = with(density) { (thumbCenterX - with(density) { thumbRadiusDp.toPx() }).toDp() }
 
@@ -508,11 +481,10 @@ private fun TemperatureGradientSlider(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset(x = thumbOffsetX)
-                .size(28.dp)
-                .shadow(3.dp, CircleShape)
+                .size(32.dp)
                 .clip(CircleShape)
                 .background(Color.Black)
-                .border(2.5.dp, Color.White, CircleShape)
+                .border(2.8.dp, Color.White, CircleShape)
         )
     }
 }
