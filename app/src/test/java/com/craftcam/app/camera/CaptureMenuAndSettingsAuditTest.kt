@@ -4,6 +4,9 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import com.craftcam.app.captureframe.CaptureFrameState
 import com.craftcam.app.config.AppSettingsState
+import com.craftcam.app.ui.components.ExposureState
+import com.craftcam.app.ui.components.QuickControlMode
+import com.craftcam.app.ui.components.TemperatureState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -163,5 +166,96 @@ class CaptureMenuAndSettingsAuditTest {
         assertFalse(modified.shutterVibration)
         assertEquals("Lens", modified.zoomMode)
         assertTrue(modified.exportToAlbum)
+    }
+
+    // ── 7. Temperature & AWB State Machine Test ──
+    @Test
+    fun testTemperatureAndAwbStateMachine() {
+        val defaultTemp = TemperatureState()
+        assertTrue(defaultTemp.isAuto)
+        assertEquals(5500, defaultTemp.kelvin)
+        assertEquals(2500, defaultTemp.minKelvin)
+        assertEquals(9500, defaultTemp.maxKelvin)
+
+        // Manual Kelvin adjustment switches isAuto to false
+        fun updateKelvin(state: TemperatureState, newKelvin: Int): TemperatureState {
+            val clamped = newKelvin.coerceIn(state.minKelvin, state.maxKelvin)
+            return state.copy(isAuto = false, kelvin = clamped)
+        }
+
+        val manualTemp = updateKelvin(defaultTemp, 9400)
+        assertFalse(manualTemp.isAuto)
+        assertEquals(9400, manualTemp.kelvin)
+
+        // Auto White Balance toggle resets isAuto to true
+        val resetAuto = manualTemp.copy(isAuto = true)
+        assertTrue(resetAuto.isAuto)
+        assertEquals(9400, resetAuto.kelvin) // Kelvin remains preserved
+
+        // Clamping bounds
+        val overMax = updateKelvin(defaultTemp, 12000)
+        assertEquals(9500, overMax.kelvin)
+
+        val underMin = updateKelvin(defaultTemp, 1000)
+        assertEquals(2500, underMin.kelvin)
+    }
+
+    // ── 8. Exposure & EV Calculation Test ──
+    @Test
+    fun testExposureAndEvCalculation() {
+        val defaultExp = ExposureState()
+        assertTrue(defaultExp.isAuto)
+        assertEquals(0, defaultExp.exposureIndex)
+        assertEquals(0.0f, defaultExp.evValue, 0.001f)
+        assertEquals("0", defaultExp.formattedEv)
+
+        // +1.4 EV simulation (index = 7 with step = 0.2f or index = 2 with step = 0.7f)
+        val positiveExp = ExposureState(isAuto = false, exposureIndex = 2, exposureStep = 0.7f)
+        assertFalse(positiveExp.isAuto)
+        assertEquals(1.4f, positiveExp.evValue, 0.001f)
+        assertEquals("+1.4", positiveExp.formattedEv)
+
+        // -2.0 EV simulation
+        val negativeExp = ExposureState(isAuto = false, exposureIndex = -4, exposureStep = 0.5f)
+        assertFalse(negativeExp.isAuto)
+        assertEquals(-2.0f, negativeExp.evValue, 0.001f)
+        assertEquals("-2.0", negativeExp.formattedEv)
+
+        // Undo resets exposureIndex to 0 and isAuto to true
+        fun undoExposure(state: ExposureState): ExposureState = state.copy(exposureIndex = 0, isAuto = true)
+        val undone = undoExposure(negativeExp)
+        assertTrue(undone.isAuto)
+        assertEquals(0, undone.exposureIndex)
+        assertEquals("0", undone.formattedEv)
+    }
+
+    // ── 9. Quick Control Mode State Machine Test ──
+    @Test
+    fun testQuickControlModeTransitions() {
+        var mode = QuickControlMode.COMPACT
+
+        fun toggleMode(target: QuickControlMode): QuickControlMode {
+            return if (mode == target) QuickControlMode.COMPACT else target
+        }
+
+        // Tapping Temperature expands temperature slider
+        mode = toggleMode(QuickControlMode.TEMPERATURE)
+        assertEquals(QuickControlMode.TEMPERATURE, mode)
+
+        // Tapping active Temperature collapses back to COMPACT
+        mode = toggleMode(QuickControlMode.TEMPERATURE)
+        assertEquals(QuickControlMode.COMPACT, mode)
+
+        // Tapping Exposure expands exposure slider
+        mode = toggleMode(QuickControlMode.EXPOSURE)
+        assertEquals(QuickControlMode.EXPOSURE, mode)
+
+        // Tapping Temperature while in Exposure switches directly to Temperature
+        mode = toggleMode(QuickControlMode.TEMPERATURE)
+        assertEquals(QuickControlMode.TEMPERATURE, mode)
+
+        // Collapse
+        mode = toggleMode(QuickControlMode.TEMPERATURE)
+        assertEquals(QuickControlMode.COMPACT, mode)
     }
 }

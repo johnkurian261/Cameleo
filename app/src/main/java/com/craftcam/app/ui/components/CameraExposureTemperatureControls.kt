@@ -3,6 +3,7 @@ package com.craftcam.app.ui.components
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -324,104 +326,95 @@ private fun ExpandedTemperaturePanel(
 ) {
     val view = LocalView.current
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(Color(0xF0181A20))
-            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(22.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+        // ── Top Header Row with [ A ], Centered Kelvin, and [ ⟲ ] ──
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // ── Top Header Row ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Auto White Balance circular [ A ] button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (state.isAuto) Color.White else Color(0x33FFFFFF))
+                    .clickable(onClick = onAutoToggle),
+                contentAlignment = Alignment.Center
             ) {
-                // Auto White Balance circular [ A ] button
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(if (state.isAuto) Color.White else Color(0x3D3A3D46))
-                        .clickable(onClick = onAutoToggle),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "A",
-                        color = if (state.isAuto) Color.Black else Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                // Centered Kelvin readout
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "${state.kelvin}K",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                    Text(
-                        text = if (state.isAuto) "AUTO WHITE BALANCE" else "MANUAL KELVIN",
-                        color = if (state.isAuto) Color(0xFF5AC8FA) else Color(0xFFFF9E3D),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                // Reset / Undo button
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color(0x3D3A3D46))
-                        .clickable {
-                            if (!state.isAuto || state.kelvin != 5500) {
-                                onReset()
-                            } else {
-                                onClose()
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (!state.isAuto || state.kelvin != 5500) {
-                            Icons.AutoMirrored.Filled.Undo
-                        } else {
-                            Icons.Default.Close
-                        },
-                        contentDescription = "Reset",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Text(
+                    text = "A",
+                    color = if (state.isAuto) Color.Black else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ── Temperature Gradient Slider ──
-            TemperatureGradientSlider(
-                kelvin = state.kelvin,
-                minKelvin = state.minKelvin,
-                maxKelvin = state.maxKelvin,
-                onKelvinChange = onKelvinChange
+            // Centered Kelvin readout (e.g. "5373K") matching reference
+            Text(
+                text = "${state.kelvin}K",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp,
+                textAlign = TextAlign.Center
             )
+
+            // Reset / Undo button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x33FFFFFF))
+                    .clickable {
+                        if (!state.isAuto || state.kelvin != 5500) {
+                            onReset()
+                        } else {
+                            onClose()
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (!state.isAuto || state.kelvin != 5500) {
+                        Icons.AutoMirrored.Filled.Undo
+                    } else {
+                        Icons.Default.Close
+                    },
+                    contentDescription = "Reset",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ── Authentic Dazz Cam Gradient Slider with Dotted Line & Black/White Thumb ──
+        TemperatureGradientSlider(
+            kelvin = state.kelvin,
+            minKelvin = state.minKelvin,
+            maxKelvin = state.maxKelvin,
+            onKelvinChange = onKelvinChange
+        )
     }
 }
 
 /**
- * Custom color temperature gradient slider:
- * cool blue/cyan (2500K) → neutral daylight (5500K) → warm yellow/orange (9500K).
+ * Authentic Dazz Cam color temperature gradient slider:
+ * - Wide rounded pill track (height 62dp, corner radius 20dp).
+ * - Authentic gradient: cool periwinkle blue (#556FF2) → lavender/mauve (#947FC3, #AA83AB) → warm golden orange (#F8955A).
+ * - Horizontal dotted center line through the track.
+ * - Solid black thumb with crisp white outline ring centered vertically on the dotted line.
+ * - Continuous 1K fine adjustment matching reference readout (e.g. 5373K).
  */
 @Composable
 private fun TemperatureGradientSlider(
@@ -439,13 +432,13 @@ private fun TemperatureGradientSlider(
     val gradientBrush = remember {
         Brush.horizontalGradient(
             colors = listOf(
-                Color(0xFF2670E8), // Cool deep blue (2500K)
-                Color(0xFF5AC8FA), // Cool cyan (3500K)
-                Color(0xFFAFE0FC), // Light sky blue (4500K)
-                Color(0xFFF7F8FA), // Neutral daylight (5500K)
-                Color(0xFFFFDF7D), // Pale warm yellow (6500K)
-                Color(0xFFFF9E3D), // Warm golden amber (8000K)
-                Color(0xFFFF5722)  // Deep warm orange (9500K)
+                Color(0xFF556FF2), // Cool periwinkle blue (2500K)
+                Color(0xFF6E76E1),
+                Color(0xFF947FC3), // Lavender transition
+                Color(0xFFAA83AB), // Neutral mauve
+                Color(0xFFCB8B8A), // Soft rose
+                Color(0xFFE39076), // Warm peach
+                Color(0xFFF8955A)  // Warm golden orange (9500K)
             )
         )
     }
@@ -453,19 +446,25 @@ private fun TemperatureGradientSlider(
     fun updateValueFromOffset(x: Float) {
         val width = trackSize.width.toFloat()
         if (width <= 0f) return
-        val newFraction = (x / width).coerceIn(0f, 1f)
+        val minXPx = with(density) { 16.dp.toPx() }
+        val maxXPx = (width - minXPx).coerceAtLeast(minXPx)
+        val newFraction = ((x - minXPx) / (maxXPx - minXPx)).coerceIn(0f, 1f)
         val rawK = minKelvin + newFraction * (maxKelvin - minKelvin)
-        val steppedK = ((rawK / 100f).roundToInt() * 100).coerceIn(minKelvin, maxKelvin)
-        if (steppedK != kelvin) {
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            onKelvinChange(steppedK)
+        val newKelvin = rawK.roundToInt().coerceIn(minKelvin, maxKelvin)
+        if (newKelvin != kelvin) {
+            if (newKelvin / 50 != kelvin / 50) {
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+            onKelvinChange(newKelvin)
         }
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(62.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(gradientBrush)
             .onSizeChanged { trackSize = it }
             .pointerInput(minKelvin, maxKelvin, kelvin) {
                 detectTapGestures { offset ->
@@ -480,43 +479,40 @@ private fun TemperatureGradientSlider(
             },
         contentAlignment = Alignment.CenterStart
     ) {
-        // Continuous color temperature track
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .clip(RoundedCornerShape(17.dp))
-                .background(gradientBrush)
-                .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(17.dp))
-        ) {
-            // Neutral daylight (5500K) tick mark
-            val neutralFrac = ((5500 - minKelvin).toFloat() / (maxKelvin - minKelvin).toFloat()).coerceIn(0f, 1f)
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(2.dp)
-                    .align(Alignment.CenterStart)
-                    .offset(x = with(density) { (trackSize.width * neutralFrac).toDp() - 1.dp })
-                    .background(Color(0x77000000))
-            )
+        // Horizontal dotted center line running through the track
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cy = size.height / 2f
+            val dotRadius = 1.3.dp.toPx()
+            val spacing = 5.5.dp.toPx()
+            val startX = 14.dp.toPx()
+            val endX = size.width - 14.dp.toPx()
+            var curX = startX
+            while (curX <= endX) {
+                drawCircle(
+                    color = Color(0xEE0B0C10),
+                    radius = dotRadius,
+                    center = Offset(curX, cy)
+                )
+                curX += spacing
+            }
         }
 
-        // Draggable Circular Thumb
-        val thumbRadiusDp = 15.dp
-        val thumbOffsetDp = with(density) {
-            val trackW = trackSize.width.toFloat()
-            val thumbPx = (fraction * trackW).coerceIn(0f, trackW)
-            thumbPx.toDp() - thumbRadiusDp
-        }
+        // Draggable circular thumb: black fill with crisp white border ring
+        val thumbRadiusDp = 14.dp
+        val minX = with(density) { 16.dp.toPx() }
+        val maxX = (trackSize.width - with(density) { 16.dp.toPx() }).coerceAtLeast(minX)
+        val thumbCenterX = minX + fraction * (maxX - minX)
+        val thumbOffsetX = with(density) { (thumbCenterX - with(density) { thumbRadiusDp.toPx() }).toDp() }
 
         Box(
             modifier = Modifier
-                .offset(x = thumbOffsetDp.coerceAtLeast(0.dp))
-                .size(30.dp)
-                .shadow(4.dp, CircleShape)
+                .align(Alignment.CenterStart)
+                .offset(x = thumbOffsetX)
+                .size(28.dp)
+                .shadow(3.dp, CircleShape)
                 .clip(CircleShape)
-                .background(Color.White)
-                .border(2.dp, Color(0x33000000), CircleShape)
+                .background(Color.Black)
+                .border(2.5.dp, Color.White, CircleShape)
         )
     }
 }
