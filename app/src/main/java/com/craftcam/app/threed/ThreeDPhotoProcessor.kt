@@ -224,7 +224,7 @@ class ThreeDPhotoProcessor(
             }
             dispBmp.recycle()
 
-            // 3. Viewpoints Strip (L1 | L2 | L3 | L4)
+            // 3. Viewpoints Strip (L1 | L2 | L3 | L4) & Geometry Diff
             if (rawFrames.size >= 4) {
                 val fw = rawFrames[0].width
                 val fh = rawFrames[0].height
@@ -236,7 +236,38 @@ class ThreeDPhotoProcessor(
                 File(debugDir, "D3D_VIEWPOINTS_DEBUG.png").outputStream().use {
                     stripBmp.compress(Bitmap.CompressFormat.PNG, 95, it)
                 }
+                File(debugDir, "D3D_GEOMETRY_VIEWPOINTS_DEBUG.png").outputStream().use {
+                    stripBmp.compress(Bitmap.CompressFormat.PNG, 95, it)
+                }
                 stripBmp.recycle()
+
+                // 4. Pure Geometric Difference Map (L1 vs L4)
+                val l1 = rawFrames[0]
+                val l4 = rawFrames[3]
+                val p1 = IntArray(fw * fh)
+                val p4 = IntArray(fw * fh)
+                val diffPixels = IntArray(fw * fh)
+                l1.getPixels(p1, 0, fw, 0, 0, fw, fh)
+                l4.getPixels(p4, 0, fw, 0, 0, fw, fh)
+                for (i in diffPixels.indices) {
+                    val r = kotlin.math.abs(((p1[i] shr 16) and 0xFF) - ((p4[i] shr 16) and 0xFF))
+                    val g = kotlin.math.abs(((p1[i] shr 8) and 0xFF) - ((p4[i] shr 8) and 0xFF))
+                    val b = kotlin.math.abs((p1[i] and 0xFF) - (p4[i] and 0xFF))
+                    val amplified = (kotlin.math.max(r, kotlin.math.max(g, b)) * 3).coerceIn(0, 255)
+                    diffPixels[i] = (0xFF shl 24) or (amplified shl 16) or (amplified shl 8) or amplified
+                }
+                val diffBmp = Bitmap.createBitmap(diffPixels, fw, fh, Bitmap.Config.ARGB_8888)
+                File(debugDir, "D3D_GEOMETRY_DIFF_L1_L4.png").outputStream().use {
+                    diffBmp.compress(Bitmap.CompressFormat.PNG, 95, it)
+                }
+                diffBmp.recycle()
+
+                val maxPx = fw * config.d3dParallaxStrength
+                val fgStep = (disparityMap.foregroundDisparity - disparityMap.pivot) * (maxPx * 0.667f)
+                val bgStep = (disparityMap.backgroundDisparity - disparityMap.pivot) * (maxPx * 0.667f)
+                Log.i(TAG, "=== D3D Depth-Region Motion Audit ===")
+                Log.i(TAG, "Foreground Step (L1->L2): +${fgStep}px, Background Step: ${bgStep}px, Subject Step: ~0.0px")
+                Log.i(TAG, "Net relative foreground <-> background separation per frame step: ${fgStep - bgStep}px")
             }
             Log.i(TAG, "Successfully exported D3D debug maps to: ${debugDir.absolutePath}")
         } catch (t: Throwable) {

@@ -119,12 +119,13 @@ class MonocularDepthEstimator : DepthEstimator {
             val row = y * targetW
             val yNorm = y.toFloat() / (targetH - 1).coerceAtLeast(1)
 
-            // Perspective prior: lower region (foreground floor/waist) is nearer; upper region recedes to background
-            val perspectivePrior = 0.35f + (1f - yNorm) * 0.45f // 0.35 at bottom, 0.80 at top
+            // Perspective prior: lower region (yNorm = 1.0) is near foreground; upper region (yNorm = 0.0) is far background
+            val perspectivePrior = (1.0f - yNorm) * 0.85f + 0.05f
 
             for (x in 0 until targetW) {
                 val idx = row + x
                 val xNorm = x.toFloat() / (targetW - 1).coerceAtLeast(1)
+                val sharp = sharpness[idx]
 
                 // Check distance to nearest face center
                 var minFaceDist = 1.0f
@@ -145,24 +146,23 @@ class MonocularDepthEstimator : DepthEstimator {
 
                 val depthVal = when {
                     insideFace -> {
-                        // Inside confirmed face: lock depth to in-focus anchor
-                        subjectAnchorDepth
+                        // In-focus focal subject plane
+                        (0.45f - sharp * 0.05f).coerceIn(0.15f, 0.70f)
                     }
                     targetFaces.isNotEmpty() -> {
-                        // Interpolate outward from face anchor based on distance and local sharpness
                         val proximityWeight = (1f - minFaceDist * 1.8f).coerceIn(0f, 1f)
-                        val sharpCues = 1f - sharpness[idx] // Sharp features are nearer
-                        val blended = proximityWeight * subjectAnchorDepth +
-                                      (1f - proximityWeight) * (perspectivePrior * 0.7f + sharpCues * 0.3f)
-                        blended.coerceIn(0.12f, 1.0f)
+                        val surrounding = perspectivePrior * 0.75f + (1f - sharp) * 0.25f
+                        val blended = proximityWeight * 0.45f + (1f - proximityWeight) * surrounding
+                        blended.coerceIn(0.05f, 1.0f)
                     }
                     else -> {
-                        // Center-weighted fallback when no faces are detected
                         val dx = (xNorm - 0.5f) * 1.4f
                         val dy = (yNorm - 0.5f)
                         val centerDist = sqrt(dx * dx + dy * dy).coerceIn(0f, 1f)
-                        val sharpCues = 1f - sharpness[idx]
-                        (0.25f + centerDist * 0.55f + sharpCues * 0.2f).coerceIn(0.15f, 1.0f)
+                        val centerSubjectWeight = (1.0f - centerDist * 1.5f).coerceIn(0f, 1f)
+                        val subjectPlane = 0.45f - sharp * 0.10f
+                        val surrounding = perspectivePrior * 0.80f + (1.0f - sharp) * 0.20f
+                        (centerSubjectWeight * subjectPlane + (1.0f - centerSubjectWeight) * surrounding).coerceIn(0.05f, 1.0f)
                     }
                 }
 

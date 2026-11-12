@@ -205,9 +205,9 @@ class ThreeDDepthEngine {
                 }
             }
             if (faceCount > 0) {
-                // Keep the face convergence pivot bounded within the balanced depth convergence band [0.40, 0.60]
-                // to prevent flattening the background or pushing the entire image into one-way translation.
-                val facePivot = (faceSum / faceCount).coerceIn(0.40f, 0.60f)
+                // Pin the convergence pivot directly to the detected primary face disparity
+                // so the face subject exhibits exactly zero jitter or displacement.
+                val facePivot = (faceSum / faceCount).coerceIn(0.25f, 0.75f)
                 Log.d(TAG, "Calculated dynamic face convergence pivot: $facePivot ($faceCount samples)")
                 return facePivot
             }
@@ -239,7 +239,7 @@ class ThreeDDepthEngine {
         }
 
         val pivot = if (weightTotal > 0f) {
-            (weightedSum / weightTotal).coerceIn(0.40f, 0.60f)
+            (weightedSum / weightTotal).coerceIn(0.35f, 0.75f)
         } else {
             0.50f
         }
