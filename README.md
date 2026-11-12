@@ -1,4 +1,4 @@
-# Cameleo — Vintage Analog Camera for Android
+# dazzz — Vintage Analog Camera for Android
 
 [![Build & Release](https://github.com/johnkurian261/Cameleo/actions/workflows/build_and_release.yml/badge.svg)](https://github.com/johnkurian261/Cameleo/actions/workflows/build_and_release.yml)
 [![Latest Release](https://img.shields.io/github/v/release/johnkurian261/Cameleo?color=FF8C1A&label=Download%20APK)](https://github.com/johnkurian261/Cameleo/releases/latest)
@@ -6,24 +6,24 @@
 
 > **⚠️ In Development** — This is a reverse-engineered Android port of [Dazz Cam](https://apps.apple.com/app/dazz-analog-filter-camera/id1459773543) (iOS), built through clean-room analysis of the app's observable behavior, UI structure, and asset inventory. No proprietary source code was copied. This project is for educational and personal use only.
 
-Cameleo is a premium vintage camera application for Android inspired by Dazz Cam — the beloved iOS analog filter camera. It recreates Dazz Cam's signature film presets, camera model collection, color grading pipeline, and UI experience natively on Android using Jetpack Compose and CameraX.
+dazzz is a premium vintage camera application for Android inspired by Dazz Cam — the beloved iOS analog filter camera. It recreates Dazz Cam's signature film presets, camera model collection, color grading pipeline, and UI experience natively on Android using Jetpack Compose and CameraX.
 
 ---
 
-## 📥 Download & Try Cameleo (Direct APK)
+## 📥 Download & Try dazzz (Direct APK)
 
-Anyone can download and install Cameleo directly on an Android device:
+Anyone can download and install dazzz directly on an Android device:
 
 | Release | Format | Link |
 |---|---|---|
-| **v2.0.0 (Latest Release)** | APK (Ready to install) | [**Download Cameleo.apk (v2.0.0)**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) |
+| **v2.0.0 (Latest Release)** | APK (Ready to install) | [**Download dazzz.apk (v2.0.0)**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) |
 | **All Releases & Release Notes** | Asset Catalog | [**GitHub Releases**](https://github.com/johnkurian261/Cameleo/releases) |
 
 ### 📲 Quick Installation Guide (Android Phone)
-1. **Download**: Tap [**Cameleo.apk**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) from Chrome or your phone's browser.
+1. **Download**: Tap [**dazzz.apk**](https://github.com/johnkurian261/Cameleo/releases/download/latest/Cameleo.apk) from Chrome or your phone's browser.
 2. **Enable Unknown Apps**: If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **"Allow from this source"**.
 3. **Install**: Return to the installer and tap **Install**.
-4. **Permissions**: Open **Cameleo** and grant Camera, Audio, and Storage permissions.
+4. **Permissions**: Open **dazzz** and grant Camera, Audio, and Storage permissions.
 5. **Shoot**: Explore vintage films (FXN R, CCD Digital, 135NE, GR D), high-fidelity **Zero** camera, authentic floating 3-dot control menu, and the classic tactile red shutter!
 
 ---

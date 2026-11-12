@@ -286,7 +286,7 @@ fun GalleryScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Shoot frames with Cameleo or tap the import button to develop your photos.",
+                            text = "Shoot frames with dazzz or tap the import button to develop your photos.",
                             color = TextMuted,
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center,

@@ -547,7 +547,7 @@ fun ViewfinderScreen(
                                         mirrorFrontCamera = (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) &&
                                                 AppSettingsStore.get(context).current.mirrorFrontCamera,
                                         onVideoSaved = { uri ->
-                                            Toast.makeText(context, "3D Wigglegram saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "3D Wigglegram saved to dazzz album", Toast.LENGTH_SHORT).show()
                                             val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
                                             val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
                                             if (prewarmed != null) {
@@ -569,7 +569,7 @@ fun ViewfinderScreen(
                                         mirrorFrontCamera = (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) &&
                                                 AppSettingsStore.get(context).current.mirrorFrontCamera,
                                         onPhotoSaved = { uri ->
-                                            Toast.makeText(context, "Saved to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Saved to dazzz album", Toast.LENGTH_SHORT).show()
                                             val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
                                             val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
                                             if (prewarmed != null) {

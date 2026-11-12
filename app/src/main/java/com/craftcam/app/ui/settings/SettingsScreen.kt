@@ -301,7 +301,7 @@ fun SettingsScreen(
                         title = "Write Review",
                         onClick = {
                             view.performCameleoHaptic(haptics)
-                            Toast.makeText(context, "Thank you for supporting Cameleo!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Thank you for supporting dazzz!", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -314,7 +314,7 @@ fun SettingsScreen(
                         title = "Privacy",
                         onClick = {
                             view.performCameleoHaptic(haptics)
-                            Toast.makeText(context, "Cameleo processes all photos 100% on-device. No images are uploaded to the cloud.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "dazzz processes all photos 100% on-device. No images are uploaded to the cloud.", Toast.LENGTH_LONG).show()
                         }
                     )
                     SettingsDivider()
@@ -322,7 +322,7 @@ fun SettingsScreen(
                         title = "Terms of Use",
                         onClick = {
                             view.performCameleoHaptic(haptics)
-                            Toast.makeText(context, "Cameleo Vintage Camera Terms of Use", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "dazzz Vintage Camera Terms of Use", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }

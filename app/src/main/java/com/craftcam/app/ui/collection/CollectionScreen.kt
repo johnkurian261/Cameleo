@@ -697,14 +697,14 @@ private fun SamplePhotosViewer(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "C",
+                                text = "D",
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
                         Text(
-                            text = "Cameleo",
+                            text = "dazzz",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
