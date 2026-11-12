@@ -10,14 +10,14 @@ data class ThreeDConfig(
     /** Number of distinct physical lens viewpoints (4 for Nishika N8000 / Nimslo 3D quad-lens). */
     val frameCount: Int = 4,
 
-    /** Configurable D3D parallax displacement parameter as a fraction of image width (0.012 = 1.2%). */
-    val d3dParallaxStrength: Float = 0.012f,
+    /** Configurable D3D parallax displacement parameter as a fraction of image width (0.032 = 3.2%). */
+    val d3dParallaxStrength: Float = 0.032f,
 
     /** Maximum horizontal disparity displacement as a fraction of image width. Defaults to [d3dParallaxStrength]. */
     val maxParallaxDisplacement: Float = d3dParallaxStrength,
 
     /** Default fallback normalized disparity of the convergence / in-focus subject plane. */
-    val pivotDisparity: Float = 0.45f,
+    val pivotDisparity: Float = 0.50f,
 
     /** Transverse chromatic / RGB channel misalignment in pixels (subtle optical aberration). */
     val rgbSeparationPx: Float = 0.5f,
@@ -44,6 +44,9 @@ data class ThreeDConfig(
     val lightLeakEnabled: Boolean = false,
 
     /** Light leak opacity / strength. */
-    val lightLeakIntensity: Float = 0.12f
+    val lightLeakIntensity: Float = 0.12f,
+
+    /** Whether to export debug depth, disparity, and viewpoint maps for verification. */
+    val exportDebugMaps: Boolean = true
 )
 

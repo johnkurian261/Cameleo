@@ -19,7 +19,16 @@ data class DisparityMap(
     val width: Int,
     val height: Int,
     val values: FloatArray,
-    val pivot: Float = 0.45f
+    val pivot: Float = 0.50f,
+    val rawDepthValues: FloatArray? = null,
+    val depthMin: Float = 0f,
+    val depthMax: Float = 1f,
+    val depthMean: Float = 0.5f,
+    val depthStdDev: Float = 0.2f,
+    val disparityMean: Float = 0.5f,
+    val disparityStdDev: Float = 0.2f,
+    val foregroundDisparity: Float = 0.85f,
+    val backgroundDisparity: Float = 0.15f
 ) {
     init {
         require(values.size == width * height) {
@@ -109,7 +118,58 @@ class ThreeDDepthEngine {
             }
 
             val pivot = calculatePivot(w, h, disparityValues, faces)
-            return DisparityMap(w, h, disparityValues, pivot)
+
+            // Calculate comprehensive depth pipeline audit metrics
+            var sumDepth = 0.0
+            var sumSqDepth = 0.0
+            var depthMin = 1.0f
+            var depthMax = 0.0f
+            for (i in 0 until total) {
+                val v = rawDepthMap.values[i]
+                if (v < depthMin) depthMin = v
+                if (v > depthMax) depthMax = v
+                sumDepth += v
+                sumSqDepth += v * v
+            }
+            val depthMean = (sumDepth / total).toFloat()
+            val depthVariance = (sumSqDepth / total) - (depthMean.toDouble() * depthMean.toDouble())
+            val depthStdDev = kotlin.math.sqrt(depthVariance.coerceAtLeast(0.0)).toFloat()
+
+            var sumDisp = 0.0
+            var sumSqDisp = 0.0
+            for (i in 0 until total) {
+                val v = disparityValues[i]
+                sumDisp += v
+                sumSqDisp += v * v
+            }
+            val dispMean = (sumDisp / total).toFloat()
+            val dispVariance = (sumSqDisp / total) - (dispMean.toDouble() * dispMean.toDouble())
+            val dispStdDev = kotlin.math.sqrt(dispVariance.coerceAtLeast(0.0)).toFloat()
+
+            val sortedDisp = disparityValues.clone().apply { sort() }
+            val foregroundDisparity = sortedDisp[(total * 0.90f).toInt().coerceIn(0, total - 1)]
+            val backgroundDisparity = sortedDisp[(total * 0.10f).toInt().coerceIn(0, total - 1)]
+
+            Log.i(TAG, "=== D3D Depth Pipeline Audit ===")
+            Log.i(TAG, "depthMin=$depthMin, depthMax=$depthMax, depthMean=$depthMean, depthStdDev=$depthStdDev")
+            Log.i(TAG, "disparityMin=0.0, disparityMax=1.0, disparityMean=$dispMean, disparityStdDev=$dispStdDev")
+            Log.i(TAG, "foregroundDisparity(p90)=$foregroundDisparity, backgroundDisparity(p10)=$backgroundDisparity, pivot=$pivot")
+
+            return DisparityMap(
+                width = w,
+                height = h,
+                values = disparityValues,
+                pivot = pivot,
+                rawDepthValues = rawDepthMap.values,
+                depthMin = depthMin,
+                depthMax = depthMax,
+                depthMean = depthMean,
+                depthStdDev = depthStdDev,
+                disparityMean = dispMean,
+                disparityStdDev = dispStdDev,
+                foregroundDisparity = foregroundDisparity,
+                backgroundDisparity = backgroundDisparity
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "Failed monocular depth estimation, falling back to perspective prior", t)
             return createPerspectiveFallback(320, 240)
@@ -145,7 +205,9 @@ class ThreeDDepthEngine {
                 }
             }
             if (faceCount > 0) {
-                val facePivot = (faceSum / faceCount).coerceIn(0.15f, 0.85f)
+                // Keep the face convergence pivot bounded within the balanced depth convergence band [0.40, 0.60]
+                // to prevent flattening the background or pushing the entire image into one-way translation.
+                val facePivot = (faceSum / faceCount).coerceIn(0.40f, 0.60f)
                 Log.d(TAG, "Calculated dynamic face convergence pivot: $facePivot ($faceCount samples)")
                 return facePivot
             }
@@ -177,9 +239,9 @@ class ThreeDDepthEngine {
         }
 
         val pivot = if (weightTotal > 0f) {
-            (weightedSum / weightTotal).coerceIn(0.15f, 0.85f)
+            (weightedSum / weightTotal).coerceIn(0.40f, 0.60f)
         } else {
-            0.45f
+            0.50f
         }
         Log.d(TAG, "Calculated dynamic center convergence pivot: $pivot")
         return pivot

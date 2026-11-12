@@ -77,6 +77,10 @@ class ThreeDPhotoProcessor(
             val retroRenderer = RetroFrameRenderer(context, config)
             val styledFrames = retroRenderer.processFrames(rawFrames)
 
+            if (config.exportDebugMaps) {
+                exportDebugMaps(context, disparityMap, rawFrames)
+            }
+
             // Free unstyled raw frames
             for (f in rawFrames) {
                 if (f != workingBitmap && !f.isRecycled) {
@@ -182,6 +186,61 @@ class ThreeDPhotoProcessor(
                 context.contentResolver.delete(uri, null, null)
             } catch (_: Exception) {}
             return null
+        }
+    }
+
+    private fun exportDebugMaps(
+        context: Context,
+        disparityMap: DisparityMap,
+        rawFrames: List<Bitmap>
+    ) {
+        try {
+            val debugDir = context.getExternalFilesDir(null) ?: context.cacheDir
+
+            // 1. Raw Depth Map (black = near, white = far)
+            val dw = disparityMap.width
+            val dh = disparityMap.height
+            val depthPixels = IntArray(dw * dh)
+            val depthSrc = disparityMap.rawDepthValues ?: FloatArray(dw * dh) { 1f - disparityMap.values[it] }
+            for (i in depthPixels.indices) {
+                val b = (depthSrc[i].coerceIn(0f, 1f) * 255f).toInt()
+                depthPixels[i] = (0xFF shl 24) or (b shl 16) or (b shl 8) or b
+            }
+            val depthBmp = Bitmap.createBitmap(depthPixels, dw, dh, Bitmap.Config.ARGB_8888)
+            File(debugDir, "D3D_DEPTH_DEBUG.png").outputStream().use {
+                depthBmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            depthBmp.recycle()
+
+            // 2. Disparity Map (black = min displacement, white = max displacement)
+            val dispPixels = IntArray(dw * dh)
+            for (i in dispPixels.indices) {
+                val b = (disparityMap.values[i].coerceIn(0f, 1f) * 255f).toInt()
+                dispPixels[i] = (0xFF shl 24) or (b shl 16) or (b shl 8) or b
+            }
+            val dispBmp = Bitmap.createBitmap(dispPixels, dw, dh, Bitmap.Config.ARGB_8888)
+            File(debugDir, "D3D_DISPARITY_DEBUG.png").outputStream().use {
+                dispBmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            dispBmp.recycle()
+
+            // 3. Viewpoints Strip (L1 | L2 | L3 | L4)
+            if (rawFrames.size >= 4) {
+                val fw = rawFrames[0].width
+                val fh = rawFrames[0].height
+                val stripBmp = Bitmap.createBitmap(fw * 4, fh, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(stripBmp)
+                for (idx in 0 until 4) {
+                    canvas.drawBitmap(rawFrames[idx], idx * fw.toFloat(), 0f, null)
+                }
+                File(debugDir, "D3D_VIEWPOINTS_DEBUG.png").outputStream().use {
+                    stripBmp.compress(Bitmap.CompressFormat.PNG, 95, it)
+                }
+                stripBmp.recycle()
+            }
+            Log.i(TAG, "Successfully exported D3D debug maps to: ${debugDir.absolutePath}")
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed exporting D3D debug maps", t)
         }
     }
 }

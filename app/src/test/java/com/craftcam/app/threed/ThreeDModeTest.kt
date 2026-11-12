@@ -19,25 +19,25 @@ class ThreeDModeTest {
         assertEquals(4, config.frameCount)
         assertEquals(10, config.fps)
         assertEquals(4, config.loopCount)
-        assertEquals(0.012f, config.maxParallaxDisplacement, 0.001f)
-        assertEquals(0.012f, config.d3dParallaxStrength, 0.001f)
-        assertEquals(0.45f, config.pivotDisparity, 0.001f)
+        assertEquals(0.032f, config.maxParallaxDisplacement, 0.001f)
+        assertEquals(0.032f, config.d3dParallaxStrength, 0.001f)
+        assertEquals(0.50f, config.pivotDisparity, 0.001f)
         assertFalse(config.lightLeakEnabled)
         assertTrue(config.grainIntensity > 0f)
         assertTrue(config.rgbSeparationPx > 0f)
+        assertTrue(config.exportDebugMaps)
     }
 
     @Test
     fun testD3DAnimationConfigurationAndBounds() {
-        // Test subtle conservative displacement bounds
+        // Test calibrated stereo displacement bounds
         val defaultCfg = ThreeDConfig()
-        assertTrue("Parallax displacement must be subtle (<= 1.5% width)", defaultCfg.d3dParallaxStrength <= 0.015f)
-        assertTrue("Parallax displacement must be > 0.4% width", defaultCfg.d3dParallaxStrength >= 0.004f)
+        assertTrue("Parallax displacement must be calibrated (between 2% and 5% width)", defaultCfg.d3dParallaxStrength in 0.02f..0.05f)
 
         // Configurable d3dParallaxStrength test
-        val customCfg = ThreeDConfig(d3dParallaxStrength = 0.008f)
-        assertEquals(0.008f, customCfg.d3dParallaxStrength, 0.0001f)
-        assertEquals(0.008f, customCfg.maxParallaxDisplacement, 0.0001f)
+        val customCfg = ThreeDConfig(d3dParallaxStrength = 0.028f)
+        assertEquals(0.028f, customCfg.d3dParallaxStrength, 0.0001f)
+        assertEquals(0.028f, customCfg.maxParallaxDisplacement, 0.0001f)
     }
 
     @Test

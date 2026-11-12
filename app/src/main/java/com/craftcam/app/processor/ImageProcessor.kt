@@ -328,8 +328,8 @@ object ImageProcessor {
                 applyGrain = false
             )
 
-            // Feed to 3D Wigglegram pipeline with calibrated subtle parallax strength
-            val parallaxStrength = (0.012f + tuning.d3dStrengthOffset * 0.008f).coerceIn(0.004f, 0.024f)
+            // Feed to 3D Wigglegram pipeline with calibrated stereoscopic parallax strength
+            val parallaxStrength = (0.032f + tuning.d3dStrengthOffset * 0.015f).coerceIn(0.018f, 0.055f)
             val threeDConfig = com.craftcam.app.threed.ThreeDConfig(
                 d3dParallaxStrength = parallaxStrength,
                 maxParallaxDisplacement = parallaxStrength
