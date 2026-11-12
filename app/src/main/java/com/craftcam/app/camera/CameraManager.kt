@@ -1192,18 +1192,69 @@ class CameraManager(private val context: Context) {
     fun setExposureIndex(index: Int) {
         val clamped = index.coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
         val evVal = clamped * _uiState.value.exposureStep
+        _uiState.update {
+            it.copy(
+                exposureIndex = clamped,
+                tuning = it.tuning.copy(exposureCompensation = evVal)
+            )
+        }
         if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
             updateNaturalProfile { it.copy(exposureBias = evVal) }
         } else if (_uiState.value.engineMode == CameraEngineMode.PRO) {
             setProEv(evVal)
         } else {
-            _uiState.update {
-                it.copy(
-                    exposureIndex = clamped,
-                    tuning = it.tuning.copy(exposureCompensation = evVal)
-                )
-            }
             camera?.cameraControl?.setExposureCompensationIndex(clamped)
+        }
+    }
+
+    fun setKelvin(kelvin: Int) {
+        val clamped = kelvin.coerceIn(_uiState.value.minKelvin, _uiState.value.maxKelvin)
+        val offset = if (clamped <= 5500) {
+            ((clamped - 5500f) / (5500f - 2500f) * 0.5f).coerceIn(-0.5f, 0.0f)
+        } else {
+            ((clamped - 5500f) / (9500f - 5500f) * 0.5f).coerceIn(0.0f, 0.5f)
+        }
+        _uiState.update {
+            it.copy(
+                kelvin = clamped,
+                isAwbAuto = false,
+                tuning = it.tuning.copy(temperatureOffset = offset)
+            )
+        }
+        glRenderer?.updateTuning(_uiState.value.tuning)
+        applyCamera2Wb(isAuto = false, kelvin = clamped)
+    }
+
+    fun setAutoWhiteBalance() {
+        _uiState.update {
+            it.copy(
+                kelvin = 5500,
+                isAwbAuto = true,
+                tuning = it.tuning.copy(temperatureOffset = 0f)
+            )
+        }
+        glRenderer?.updateTuning(_uiState.value.tuning)
+        applyCamera2Wb(isAuto = true, kelvin = 5500)
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun applyCamera2Wb(isAuto: Boolean, kelvin: Int) {
+        val cam = camera ?: return
+        try {
+            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+            val builder = CaptureRequestOptions.Builder()
+            val caps = _uiState.value.hardwareCapabilities
+            if (!isAuto && caps?.supportsManualWb == true) {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+                val gains = kelvinToRggbGains(kelvin, _uiState.value.tuning.tintOffset)
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_GAINS, gains)
+            } else {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+            }
+            camera2Control.setCaptureRequestOptions(builder.build())
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to apply Camera2 AWB options", t)
         }
     }
 

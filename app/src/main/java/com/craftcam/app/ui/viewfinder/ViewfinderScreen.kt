@@ -12,6 +12,10 @@ import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import com.craftcam.app.R
 import com.craftcam.app.config.AppSettingsStore
+import com.craftcam.app.ui.components.CameraExposureTemperatureControls
+import com.craftcam.app.ui.components.QuickControlMode
+import com.craftcam.app.ui.components.TemperatureState
+import com.craftcam.app.ui.components.ExposureState
 import com.craftcam.app.ui.gallery.GalleryCache
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -113,7 +117,7 @@ fun ViewfinderScreen(
     var showTuningSheet by remember { mutableStateOf(false) }
     var showNaturalTuningSheet by remember { mutableStateOf(false) }
     var showLensSheet by remember { mutableStateOf(false) }
-    var showExposureSlider by remember { mutableStateOf(false) }
+    var activeQuickControlMode by remember { mutableStateOf(QuickControlMode.COMPACT) }
     var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
 
@@ -383,39 +387,51 @@ fun ViewfinderScreen(
                     .padding(bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Quick Brightness / Exposure Slider (Dazz-style ☀️ slider)
-                AnimatedVisibility(
-                    visible = showExposureSlider,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    QuickExposureSlider(
+                // ── Expanded Temperature & Brightness Controls + Compact Pill ───────
+                CameraExposureTemperatureControls(
+                    modifier = Modifier.fillMaxWidth(),
+                    temperatureState = TemperatureState(
+                        isAuto = uiState.isAwbAuto,
+                        kelvin = uiState.kelvin,
+                        minKelvin = uiState.minKelvin,
+                        maxKelvin = uiState.maxKelvin,
+                        tint = uiState.tuning.tintOffset
+                    ),
+                    exposureState = ExposureState(
+                        isAuto = uiState.exposureIndex == 0,
                         exposureIndex = uiState.exposureIndex,
                         minExposureIndex = uiState.minExposureIndex,
                         maxExposureIndex = uiState.maxExposureIndex,
-                        exposureStep = uiState.exposureStep,
-                        onExposureChange = { newIdx ->
-                            cameraManager.setExposureIndex(newIdx)
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        },
-                        onReset = {
-                            cameraManager.setExposureIndex(0)
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        },
-                        onClose = { showExposureSlider = false }
-                    )
-                }
+                        exposureStep = uiState.exposureStep
+                    ),
+                    activeMode = activeQuickControlMode,
+                    onModeChange = { activeQuickControlMode = it },
+                    onTemperatureChange = { newKelvin ->
+                        cameraManager.setKelvin(newKelvin)
+                    },
+                    onTemperatureAuto = {
+                        cameraManager.setAutoWhiteBalance()
+                    },
+                    onExposureChange = { newIdx ->
+                        cameraManager.setExposureIndex(newIdx)
+                    },
+                    onExposureAuto = {
+                        cameraManager.setExposureIndex(0)
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Tactile Quick Controls Bar directly above the capture button
                 CameraInfoPills(
                     shootingState = uiState.shootingState,
                     exposureIndex = uiState.exposureIndex,
                     exposureStep = uiState.exposureStep,
-                    isExposureSliderOpen = showExposureSlider,
+                    isExposureSliderOpen = activeQuickControlMode == QuickControlMode.EXPOSURE,
                     flashMode = uiState.flashMode,
                     timerSeconds = uiState.timerSeconds,
                     showGrid = uiState.showGrid,
-                    isTuned = isTuned,
+                    isTuned = !uiState.isAwbAuto || uiState.tuning.temperatureOffset != 0f || activeQuickControlMode == QuickControlMode.TEMPERATURE,
                     engineMode = uiState.engineMode,
                     onFlashCycle = {
                         val nextMode = when (uiState.flashMode) {
@@ -426,16 +442,23 @@ fun ViewfinderScreen(
                         cameraManager.setFlashMode(nextMode)
                     },
                     onToggleExposure = {
-                        showExposureSlider = !showExposureSlider
-                        if (showExposureSlider) {
+                        activeQuickControlMode = if (activeQuickControlMode == QuickControlMode.EXPOSURE) {
+                            QuickControlMode.COMPACT
+                        } else {
+                            QuickControlMode.EXPOSURE
+                        }
+                        if (activeQuickControlMode != QuickControlMode.COMPACT) {
                             showLensSheet = false
                         }
                     },
                     onOpenTuning = {
-                        when (uiState.engineMode) {
-                            CameraEngineMode.PRO -> cameraManager.setProActiveTab(ProControlTab.TOOLS)
-                            CameraEngineMode.NATURAL -> showNaturalTuningSheet = true
-                            CameraEngineMode.FILM -> showTuningSheet = true
+                        activeQuickControlMode = if (activeQuickControlMode == QuickControlMode.TEMPERATURE) {
+                            QuickControlMode.COMPACT
+                        } else {
+                            QuickControlMode.TEMPERATURE
+                        }
+                        if (activeQuickControlMode != QuickControlMode.COMPACT) {
+                            showLensSheet = false
                         }
                     },
                     onTimerCycle = {
@@ -452,7 +475,7 @@ fun ViewfinderScreen(
                     onOpenLensSheet = {
                         showLensSheet = !showLensSheet
                         if (showLensSheet) {
-                            showExposureSlider = false
+                            activeQuickControlMode = QuickControlMode.COMPACT
                         }
                     }
                 )
