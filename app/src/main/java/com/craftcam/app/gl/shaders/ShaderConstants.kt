@@ -487,10 +487,30 @@ void main() {
             color = clamp((color - pivot) * uContrast + pivot, 0.0, 1.0);
         }
 
-        // 5. Preset & User Saturation
+        // 4b. Authentic Midtone Clarity (from DAZZ Camera Engine)
+        if (abs(uClarityStrength) > 0.005) {
+            float boost = 1.0 + uClarityStrength * 0.18;
+            float offset = -uClarityStrength * 0.18 * 0.5;
+            color = clamp(color * boost + offset, 0.0, 1.0);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        // 5. Preset & User Saturation with Smart Vibrance Protection
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         if (abs(uSaturation - 1.0) > 0.01) {
-            color = mix(vec3(luma), color, uSaturation);
+            const float lr = 0.2126;
+            const float lg = 0.7152;
+            const float lb = 0.0722;
+            float sat = uSaturation;
+            float sr = (1.0 - sat) * lr;
+            float sg = (1.0 - sat) * lg;
+            float sb = (1.0 - sat) * lb;
+            vec3 vibColor = clamp(vec3(
+                color.r * (sr + sat) + color.g * sg + color.b * sb,
+                color.r * sr + color.g * (sg + sat) + color.b * sb,
+                color.r * sr + color.g * sg + color.b * (sb + sat)
+            ), 0.0, 1.0);
+            color = mix(mix(vec3(luma), color, uSaturation), vibColor, clamp(uSkinProtection, 0.0, 1.0));
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
 
@@ -534,32 +554,15 @@ void main() {
         }
     }
 
-    // 10. Concentric Dual-Radius Film Halation (optimized 4-tap diamond sampling for preview)
+    // 10. Concentric Dual-Radius Film Halation (Zero-Stall Analytical Preview Model for smooth 60fps)
     if (uHalationEnabled && uHalationIntensity > 0.01 && uDebugStageHalation) {
         float kThresh = uHalationThreshold;
-        if (luma > kThresh - 0.04) {
-            vec2 hStep = (10.0 / uViewportSize);
-            vec2 diag = hStep * 0.7071;
-
-            vec4 tTL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tTR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x, -diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tBL = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(-diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-            vec4 tBR = texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2( diag.x,  diag.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy);
-
-            float lTL = dot(tTL.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lTR = dot(tTR.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lBL = dot(tBL.rgb, vec3(0.2126, 0.7152, 0.0722));
-            float lBR = dot(tBR.rgb, vec3(0.2126, 0.7152, 0.0722));
-
-            float hSum = max(0.0, lTL - kThresh) + max(0.0, lTR - kThresh) + max(0.0, lBL - kThresh) + max(0.0, lBR - kThresh);
-            float spread = (hSum * 0.25) / max(0.01, 1.0 - kThresh);
-            if (spread > 0.001) {
-                // Highlight-core preservation: maintain neutral white in specular cores, concentrate red-orange fringe at boundaries
-                float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
-                vec3 haloBase = mix(uHalationColorTint, vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
-                vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.50);
-                color += haloColor;
-            }
+        if (luma > kThresh) {
+            float spread = smoothstep(kThresh, 1.0, luma);
+            float coreLuma = clamp((luma - kThresh) / max(0.01, 1.0 - kThresh), 0.0, 1.0);
+            vec3 haloBase = mix(uHalationColorTint, vec3(0.40, 0.38, 0.35), coreLuma * 0.85);
+            vec3 haloColor = haloBase * (spread * uHalationIntensity * 0.40);
+            color += haloColor;
         }
     }
 
@@ -1127,10 +1130,30 @@ void main() {
             color = clamp((color - pivot) * uContrast + pivot, 0.0, 1.0);
         }
 
-        // 5. Saturation
+        // 4b. Authentic Midtone Clarity (from DAZZ Camera Engine)
+        if (abs(uClarityStrength) > 0.005) {
+            float boost = 1.0 + uClarityStrength * 0.18;
+            float offset = -uClarityStrength * 0.18 * 0.5;
+            color = clamp(color * boost + offset, 0.0, 1.0);
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        // 5. Saturation with Smart Vibrance Protection
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         if (abs(uSaturation - 1.0) > 0.01) {
-            color = mix(vec3(luma), color, uSaturation);
+            const float lr = 0.2126;
+            const float lg = 0.7152;
+            const float lb = 0.0722;
+            float sat = uSaturation;
+            float sr = (1.0 - sat) * lr;
+            float sg = (1.0 - sat) * lg;
+            float sb = (1.0 - sat) * lb;
+            vec3 vibColor = clamp(vec3(
+                color.r * (sr + sat) + color.g * sg + color.b * sb,
+                color.r * sr + color.g * (sg + sat) + color.b * sb,
+                color.r * sr + color.g * sg + color.b * (sb + sat)
+            ), 0.0, 1.0);
+            color = mix(mix(vec3(luma), color, uSaturation), vibColor, clamp(uSkinProtection, 0.0, 1.0));
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
 

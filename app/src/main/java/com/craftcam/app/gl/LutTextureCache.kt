@@ -56,6 +56,21 @@ object LutTextureCache {
         val dim: Int = 64
     )
 
+    private val preparedVoxels = java.util.concurrent.ConcurrentHashMap<String, PreparedVoxelData>()
+
+    fun getPreparedVoxel(assetPath: String): PreparedVoxelData? = preparedVoxels.remove(assetPath)
+
+    /**
+     * Asynchronously preloads and unrolls voxel data for a LUT asset on a background thread.
+     */
+    fun preloadVoxelDataAsync(context: Context, assetPath: String) {
+        if (cache.containsKey(assetPath) || preparedVoxels.containsKey(assetPath) || failedPaths.contains(assetPath)) return
+        val data = prepareVoxelDataAsync(context, assetPath)
+        if (data != null) {
+            preparedVoxels[assetPath] = data
+        }
+    }
+
     /**
      * Asynchronously decodes and unrolls 512x512 Hald CLUT into a direct voxel buffer.
      * Designed to run on Dispatchers.IO so the GL render thread is NEVER blocked during filter changes.

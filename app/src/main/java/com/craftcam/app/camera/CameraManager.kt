@@ -534,6 +534,13 @@ class CameraManager(private val context: Context) {
             currentPreset = preset
             glRenderer?.updatePreset(preset)
 
+            val isFisheyePreset = preset.id == "analog_fisheye_f" ||
+                    preset.name.contains("Fisheye", ignoreCase = true) ||
+                    preset.lens.barrelDistortion >= 0.8f
+            if (isFisheyePreset) {
+                setZoomRatio(1.0f, triggerOverlay = false)
+            }
+
             val isZero = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
             val newEngineMode = if (isZero) {
                 naturalExposureController.reset()
@@ -616,6 +623,9 @@ class CameraManager(private val context: Context) {
         val lensProfile = LensProfile.forType(lensType)
         if (lensType == LensType.COLOR_FLASH && _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
             setFlashMode(ImageCapture.FLASH_MODE_ON)
+        }
+        if (lensType == LensType.FISHEYE_F || lensType == LensType.FISHEYE_W) {
+            setZoomRatio(1.0f, triggerOverlay = false)
         }
         _uiState.update { state ->
             state.copy(
@@ -1012,7 +1022,7 @@ class CameraManager(private val context: Context) {
 
             // Update Zoom and Exposure capabilities
             camera?.cameraInfo?.let { info ->
-                info.zoomState.value?.let { zs ->
+                val updateZoomBounds = { zs: androidx.camera.core.ZoomState ->
                     val minZ = zs.minZoomRatio
                     val maxZ = zs.maxZoomRatio.coerceAtMost(10.0f)
                     val targetZoom = _uiState.value.selectedLens?.equivalentZoom ?: _uiState.value.zoomRatio
@@ -1035,6 +1045,27 @@ class CameraManager(private val context: Context) {
                         )
                     }
                     camera?.cameraControl?.setZoomRatio(clamped)
+                }
+
+                info.zoomState.value?.let { zs -> updateZoomBounds(zs) }
+
+                ContextCompat.getMainExecutor(context).execute {
+                    info.zoomState.observe(lifecycleOwner) { zs ->
+                        if (zs != null) {
+                            val minZ = zs.minZoomRatio
+                            val maxZ = zs.maxZoomRatio.coerceAtMost(10.0f)
+                            _uiState.update { state ->
+                                state.copy(
+                                    minZoom = minZ,
+                                    maxZoom = maxZ,
+                                    zoomState = state.zoomState.copy(
+                                        minZoomRatio = minZ,
+                                        maxZoomRatio = maxZ
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
                 info.exposureState.let { es ->
                     val step = es.exposureCompensationStep.toFloat()
@@ -1294,13 +1325,24 @@ class CameraManager(private val context: Context) {
         }
     }
 
+    fun isFisheyeActive(): Boolean {
+        val selectedLensType = _uiState.value.shootingState.selectedLens.type
+        val isFisheyeLens = selectedLensType == LensType.FISHEYE_F || selectedLensType == LensType.FISHEYE_W
+        val isFisheyePreset = currentPreset.id == "analog_fisheye_f" ||
+                currentPreset.name.contains("Fisheye", ignoreCase = true) ||
+                currentPreset.lens.barrelDistortion >= 0.8f
+        return isFisheyeLens || isFisheyePreset
+    }
+
     fun onPinchZoom(scaleFactor: Float) {
+        if (isFisheyeActive()) return
         val currentZoom = _uiState.value.zoomRatio
         val target = currentZoom * scaleFactor
         setZoomRatio(target, triggerOverlay = true)
     }
 
     fun stepZoom(zoomIn: Boolean, stepPercent: Float = 0.08f) {
+        if (isFisheyeActive()) return
         val current = _uiState.value.zoomRatio
         val step = (current * stepPercent).coerceIn(0.08f, 0.40f)
         val target = if (zoomIn) current + step else current - step
@@ -1329,6 +1371,7 @@ class CameraManager(private val context: Context) {
     }
 
     fun resizeCaptureFrame(scaleMultiplier: Float, previewAspect: Float) {
+        if (isFisheyeActive()) return
         _uiState.update { state ->
             state.copy(
                 captureFrameState = state.captureFrameState.resizeBy(scaleMultiplier, previewAspect)
@@ -1467,8 +1510,9 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        // Freeze immutable composition frame snapshot at shutter trigger instant (null if frame overlay disabled)
-        val frameSnapshot = if (_uiState.value.tuning.frameBorderEnabled) createCaptureFrameSnapshot(aspectRatio) else null
+        // Freeze immutable composition frame snapshot at shutter trigger instant (for Frame zoom mode)
+        val isFrameZoom = com.craftcam.app.config.AppSettingsStore.get(context).current.zoomMode == "Frame"
+        val frameSnapshot = if (isFrameZoom) createCaptureFrameSnapshot(aspectRatio) else null
 
         // Branch into multi-frame computational photography pipeline when in NATURAL mode and forceMultiFrameHdr is explicitly active
         if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
@@ -1561,7 +1605,8 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        val frameSnapshot = if (_uiState.value.tuning.frameBorderEnabled) createCaptureFrameSnapshot(aspectRatio) else null
+        val isFrameZoom = com.craftcam.app.config.AppSettingsStore.get(context).current.zoomMode == "Frame"
+        val frameSnapshot = if (isFrameZoom) createCaptureFrameSnapshot(aspectRatio) else null
 
         _uiState.update { it.copy(isCapturing = true, threeDProgressMessage = "Capturing 3D...") }
         startCaptureWatchdog(timeoutMs = 15000L)

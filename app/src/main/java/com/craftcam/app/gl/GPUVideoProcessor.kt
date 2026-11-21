@@ -531,10 +531,14 @@ class GPUVideoProcessor(
             if (uPreLinearizationEnabledLoc != -1) GLES30.glUniform1i(uPreLinearizationEnabledLoc, if (tuning.preLinearizationEnabled) 1 else 0)
             if (uPreLinearizationStrengthLoc != -1) GLES30.glUniform1f(uPreLinearizationStrengthLoc, tuning.preLinearizationStrength)
             if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, intensity)
-            if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
-            if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
-            if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, 0f)
-            if (uShoulderClipLoc != -1) GLES30.glUniform1f(uShoulderClipLoc, 1f)
+            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+            if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
+            if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
+            if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, unifiedProfile.filmProfile.toeLift * intensity)
+            if (uShoulderClipLoc != -1) {
+                val clip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity
+                GLES30.glUniform1f(uShoulderClipLoc, clip)
+            }
 
             if (uLensTypeLoc != -1) GLES30.glUniform1i(uLensTypeLoc, 0)
             if (uLensDistortionLoc != -1) GLES30.glUniform1f(uLensDistortionLoc, 0f)

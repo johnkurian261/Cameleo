@@ -1,6 +1,17 @@
 package com.craftcam.app.threed
 
 /**
+ * Depth estimation backend selection for CAMELEO D3D.
+ */
+enum class DepthBackend {
+    /** Next-generation AI monocular depth estimation using on-device Depth Anything V2 Small. */
+    DEPTH_ANYTHING_V2,
+
+    /** Legacy heuristic defocus-from-sharpness (Sobel + perspective prior) depth backend. */
+    CURRENT
+}
+
+/**
  * Configuration parameters for the CAMELEO 3D Stereoscopic Wigglegram pipeline.
  *
  * Inspired by vintage multi-lens stereoscopic film cameras (e.g. Nimslo 3D, Nishika N8000)
@@ -10,14 +21,20 @@ data class ThreeDConfig(
     /** Number of distinct physical lens viewpoints (4 for Nishika N8000 / Nimslo 3D quad-lens). */
     val frameCount: Int = 4,
 
-    /** Configurable D3D parallax displacement parameter as a fraction of image width (0.036 = 3.6%). */
-    val d3dParallaxStrength: Float = 0.036f,
+    /** Active depth estimation backend. Defaults to [DepthBackend.DEPTH_ANYTHING_V2] with automatic fallback. */
+    val depthBackend: DepthBackend = DepthBackend.DEPTH_ANYTHING_V2,
+
+    /** Configurable D3D parallax displacement parameter as a fraction of image width (0.032 = 3.2%). */
+    val d3dParallaxStrength: Float = 0.032f,
 
     /** Maximum horizontal disparity displacement as a fraction of image width. Defaults to [d3dParallaxStrength]. */
     val maxParallaxDisplacement: Float = d3dParallaxStrength,
 
     /** Default fallback normalized disparity of the convergence / in-focus subject plane. */
     val pivotDisparity: Float = 0.50f,
+
+    /** Whether to export individual debug depth passes (01_original, 02_raw_depth, 03_normalized_depth, 04_refined_depth). */
+    val d3dDebugDepth: Boolean = false,
 
     /** Transverse chromatic / RGB channel misalignment in pixels (subtle optical aberration). */
     val rgbSeparationPx: Float = 0.5f,

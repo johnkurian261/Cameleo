@@ -88,48 +88,9 @@ fun CaptureFrameOverlay(
 
         val cornerRadiusPx = with(density) { 16.dp.toPx() }
 
-        val currentOnResize by rememberUpdatedState(onResize)
-
-        // 1. Interactive Pointer Input Layer (Multi-Touch Pinch to Zoom In/Out)
+        // 1. Framing Canvas Container
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        var lastPinchDistance = 0f
-                        var accumulatedDelta = 0f
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val pressedPointers = event.changes.filter { it.pressed }
-
-                            if (pressedPointers.size >= 2) {
-                                // MULTI-TOUCH PINCH TO RESIZE
-                                val p1 = pressedPointers[0].position
-                                val p2 = pressedPointers[1].position
-                                val currentDistance = (p1 - p2).getDistance()
-
-                                if (lastPinchDistance > 0f && currentDistance > 0f) {
-                                    val ratio = currentDistance / lastPinchDistance
-                                    if (abs(ratio - 1.0f) > 0.001f) {
-                                        // Silky-smooth exponential low-pass filter (avoids touch digitizer sub-pixel jitter)
-                                        val delta = (ratio - 1.0f) * 0.70f
-                                        accumulatedDelta = accumulatedDelta * 0.35f + delta * 0.65f
-                                        val smoothedMultiplier = 1.0f + accumulatedDelta.coerceIn(-0.08f, 0.08f)
-                                        currentOnResize(smoothedMultiplier)
-                                    }
-                                }
-                                lastPinchDistance = currentDistance
-                                pressedPointers.forEach { it.consume() }
-                            }
-
-                            if (pressedPointers.isEmpty()) {
-                                break
-                            }
-                        }
-                    }
-                }
+            modifier = Modifier.fillMaxSize()
         ) {
             // 2. Canvas with Subtle Outside Dimming & Cutout Window
             Canvas(modifier = Modifier.fillMaxSize()) {

@@ -28,6 +28,20 @@ object BorderRenderer {
     }
 
     /**
+     * Clears all cached border bitmaps to reclaim memory.
+     */
+    fun clearCache() {
+        synchronized(borderCache) {
+            for (bmp in borderCache.values) {
+                try {
+                    if (!bmp.isRecycled) bmp.recycle()
+                } catch (_: Throwable) {}
+            }
+            borderCache.clear()
+        }
+    }
+
+    /**
      * Draws an asset bitmap covering the specified destination rectangle [dstLeft, dstTop, dstRight, dstBottom].
      * If the orientation of the asset (portrait vs landscape) does not match the destination rect,
      * it automatically applies an exact 90-degree corner mapping so the frame fits naturally without distortion.

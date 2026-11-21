@@ -267,9 +267,9 @@ fun SettingsScreen(
                             view.performCameleoHaptic(haptics)
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "Experience authentic vintage 35mm film and CCD cameras with Cameleo: https://github.com/craftcam/cameleo")
+                                putExtra(Intent.EXTRA_TEXT, "Experience authentic vintage 35mm film and CCD cameras with dazzz: https://github.com/johnkurian261/Cameleo")
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Cameleo"))
+                            context.startActivity(Intent.createChooser(shareIntent, "Share dazzz"))
                         }
                     )
                     SettingsDivider()

@@ -94,6 +94,7 @@ fun ViewfinderScreen(
     val scope = rememberCoroutineScope()
 
     val uiState by cameraManager.uiState.collectAsState()
+    val appSettings by AppSettingsStore.get(context).state.collectAsState()
 
     LaunchedEffect(selectedPreset) {
         cameraManager.setPreset(selectedPreset)
@@ -278,7 +279,13 @@ fun ViewfinderScreen(
                         }
                     )
 
-                    // Tap-To-Focus, Exposure Drag & Grid Overlay
+                    val isFisheye = selectedPreset.id == "analog_fisheye_f" ||
+                            selectedPreset.name.contains("Fisheye", ignoreCase = true) ||
+                            selectedPreset.lens.barrelDistortion >= 0.8f ||
+                            uiState.shootingState.selectedLens.type == LensType.FISHEYE_F ||
+                            uiState.shootingState.selectedLens.type == LensType.FISHEYE_W
+
+                    // Tap-To-Focus, Exposure Drag, Grid & Pinch Zoom Gesture Overlay
                     ViewfinderOverlay(
                         modifier = Modifier.fillMaxSize(),
                         preset = selectedPreset,
@@ -296,22 +303,37 @@ fun ViewfinderScreen(
                         onExposureChange = { newIdx ->
                             cameraManager.setExposureIndex(newIdx)
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        },
+                        onPinchZoom = { scale ->
+                            if (!isFisheye) {
+                                val previewAspect = 1f / uiState.aspectRatio.ratio
+                                if (appSettings.zoomMode == "Lens") {
+                                    cameraManager.onPinchZoom(scale)
+                                } else {
+                                    cameraManager.resizeCaptureFrame(1f / scale, previewAspect)
+                                }
+                            }
                         }
                     )
 
-                    // Centered, Resizable Camera Framing Composition Window (displayed when frame border is enabled)
-                    if (uiState.tuning.frameBorderEnabled) {
+                    // Dazz-Style Interactive Zoom Overlay for Lens Zoom Mode (bypassed on fisheye lenses)
+                    if (appSettings.zoomMode == "Lens" && !isFisheye) {
+                        com.craftcam.app.ui.zoom.DazzZoomOverlay(
+                            modifier = Modifier.fillMaxSize(),
+                            zoomState = uiState.zoomState,
+                            aspectRatio = uiState.aspectRatio
+                        )
+                    }
+
+                    // Centered, Resizable Camera Framing Composition Window (displayed when in Frame Zoom Mode, bypassed on fisheye)
+                    if (appSettings.zoomMode == "Frame" && !isFisheye) {
                         CaptureFrameOverlay(
                             modifier = Modifier.fillMaxSize(),
                             state = uiState.captureFrameState,
                             aspectRatio = uiState.aspectRatio,
                             onResize = { scale ->
                                 val previewAspect = 1f / uiState.aspectRatio.ratio
-                                if (AppSettingsStore.get(context).current.zoomMode == "Lens") {
-                                    cameraManager.onPinchZoom(scale)
-                                } else {
-                                    cameraManager.resizeCaptureFrame(scale, previewAspect)
-                                }
+                                cameraManager.resizeCaptureFrame(scale, previewAspect)
                             }
                         )
                     }
@@ -324,34 +346,18 @@ fun ViewfinderScreen(
                                 .background(Color(0x99000000)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
+                            Box(
                                 modifier = Modifier
+                                    .size(64.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(Color(0xCC1A1C22))
-                                    .border(1.dp, Color(0x5500E5FF), RoundedCornerShape(16.dp))
-                                    .padding(horizontal = 24.dp, vertical = 20.dp)
+                                    .border(1.dp, Color(0x5500E5FF), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(36.dp),
                                     color = Color(0xFF00E5FF),
                                     strokeWidth = 3.dp
-                                )
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = uiState.threeDProgressMessage ?: "DEVELOPING 3D...",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 1.2.sp
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Multi-Lens Parallax Fusion",
-                                    color = Color(0xAAFFFFFF),
-                                    fontSize = 10.sp,
-                                    letterSpacing = 0.8.sp
                                 )
                             }
                         }

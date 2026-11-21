@@ -412,7 +412,7 @@ private fun TemperatureGradientSlider(
     fun updateValueFromOffset(x: Float) {
         val width = trackSize.width.toFloat()
         if (width <= 0f) return
-        val minXPx = with(density) { 18.dp.toPx() }
+        val minXPx = with(density) { 14.dp.toPx() }
         val maxXPx = (width - minXPx).coerceAtLeast(minXPx)
         val newFraction = ((x - minXPx) / (maxXPx - minXPx)).coerceIn(0f, 1f)
         val rawK = minKelvin + newFraction * (maxKelvin - minKelvin)
@@ -427,10 +427,10 @@ private fun TemperatureGradientSlider(
 
     Box(
         modifier = Modifier
-            .fillMaxWidth(0.86f)
-            .widthIn(max = 310.dp)
-            .height(74.dp)
-            .clip(RoundedCornerShape(22.dp))
+            .fillMaxWidth(0.78f)
+            .widthIn(max = 260.dp)
+            .height(44.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(gradientBrush)
             .onSizeChanged { trackSize = it }
             .pointerInput(minKelvin, maxKelvin, kelvin) {
@@ -455,10 +455,10 @@ private fun TemperatureGradientSlider(
         // Horizontal dotted center line running through the track
         Canvas(modifier = Modifier.fillMaxSize()) {
             val cy = size.height / 2f
-            val dotRadius = 1.35.dp.toPx()
-            val spacing = 5.2.dp.toPx()
-            val startX = 14.dp.toPx()
-            val endX = size.width - 14.dp.toPx()
+            val dotRadius = 1.1.dp.toPx()
+            val spacing = 4.6.dp.toPx()
+            val startX = 12.dp.toPx()
+            val endX = size.width - 12.dp.toPx()
             var curX = startX
             while (curX <= endX) {
                 drawCircle(
@@ -471,9 +471,9 @@ private fun TemperatureGradientSlider(
         }
 
         // Draggable circular thumb: solid black fill with crisp white border ring
-        val thumbRadiusDp = 16.dp // diameter = 32dp
-        val minX = with(density) { 18.dp.toPx() }
-        val maxX = (trackSize.width - with(density) { 18.dp.toPx() }).coerceAtLeast(minX)
+        val thumbRadiusDp = 12.dp // diameter = 24dp
+        val minX = with(density) { 14.dp.toPx() }
+        val maxX = (trackSize.width - with(density) { 14.dp.toPx() }).coerceAtLeast(minX)
         val thumbCenterX = minX + fraction * (maxX - minX)
         val thumbOffsetX = with(density) { (thumbCenterX - with(density) { thumbRadiusDp.toPx() }).toDp() }
 
@@ -481,10 +481,10 @@ private fun TemperatureGradientSlider(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset(x = thumbOffsetX)
-                .size(32.dp)
+                .size(24.dp)
                 .clip(CircleShape)
                 .background(Color.Black)
-                .border(2.8.dp, Color.White, CircleShape)
+                .border(2.2.dp, Color.White, CircleShape)
         )
     }
 }

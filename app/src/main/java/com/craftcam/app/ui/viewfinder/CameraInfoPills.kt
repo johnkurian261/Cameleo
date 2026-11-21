@@ -92,11 +92,12 @@ fun CameraInfoPills(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 1. Flash Toggle Button (⚡) - Authentic Dazz icon
+        // 1. Flash Toggle Button (⚡) - Authentic Dazz icon (normalized optical size)
         QuickDrawableButton(
             iconRes = if (isFlashActive) R.drawable.ic_dazz_flash_on else R.drawable.ic_dazz_flash_off,
             contentDescription = "Flash",
             isActive = isFlashActive,
+            iconSize = 46.dp,
             onClick = onFlashCycle
         )
 
@@ -105,6 +106,7 @@ fun CameraInfoPills(
             iconRes = R.drawable.ic_dazz_ev,
             contentDescription = "Brightness / Exposure",
             isActive = hasEvOffset || isExposureSliderOpen,
+            iconSize = 32.dp,
             subscript = evBadgeText,
             onClick = onToggleExposure
         )
@@ -114,6 +116,7 @@ fun CameraInfoPills(
             icon = Icons.Default.DeviceThermostat,
             contentDescription = "Temperature / Tuning",
             isActive = isTuned,
+            iconSize = 24.dp,
             onClick = onOpenTuning
         )
 
@@ -122,6 +125,7 @@ fun CameraInfoPills(
             iconRes = R.drawable.ic_dazz_timer,
             contentDescription = "Timer",
             isActive = timerSeconds > 0,
+            iconSize = 22.dp,
             subscript = if (timerSeconds > 0) "${timerSeconds}s" else null,
             onClick = onTimerCycle
         )
@@ -131,12 +135,14 @@ fun CameraInfoPills(
             iconRes = if (showGrid) R.drawable.ic_dazz_grid_on else R.drawable.ic_dazz_grid_off,
             contentDescription = "Grid",
             isActive = showGrid,
+            iconSize = 33.dp,
             onClick = onToggleGrid
         )
 
         // 6. Optical Lens Accessory Button (if camera supports multiple lenses)
         if (shootingState.cameraProfile.supportedLenses.size > 1) {
             val selectedLens = shootingState.selectedLens
+            val lensIconSize = if (selectedLens.type == LensType.NORMAL) 42.dp else 25.dp
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -152,7 +158,7 @@ fun CameraInfoPills(
                 Image(
                     painter = painterResource(id = selectedLens.type.iconRes),
                     contentDescription = selectedLens.name,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier.size(lensIconSize),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -165,6 +171,7 @@ private fun QuickIconButton(
     icon: ImageVector,
     contentDescription: String,
     isActive: Boolean = false,
+    iconSize: androidx.compose.ui.unit.Dp = 24.dp,
     subscript: String? = null,
     onClick: () -> Unit
 ) {
@@ -188,7 +195,7 @@ private fun QuickIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(30.dp)
+            modifier = Modifier.size(iconSize)
         )
         if (subscript != null) {
             Text(
@@ -210,6 +217,7 @@ private fun QuickDrawableButton(
     @DrawableRes iconRes: Int,
     contentDescription: String,
     isActive: Boolean = false,
+    iconSize: androidx.compose.ui.unit.Dp = 30.dp,
     subscript: String? = null,
     onClick: () -> Unit
 ) {
@@ -232,7 +240,7 @@ private fun QuickDrawableButton(
         Image(
             painter = painterResource(id = iconRes),
             contentDescription = contentDescription,
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(iconSize),
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.tint(tint)
         )

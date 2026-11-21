@@ -63,6 +63,11 @@ class ZoomModel(private val context: Context) {
                     maxZ = maxDigital.coerceAtLeast(1.0f)
                 }
             }
+            if (maxZ <= 1.0f) {
+                chars.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)?.let { maxDigital ->
+                    maxZ = maxDigital.coerceAtLeast(1.0f)
+                }
+            }
 
             CameraZoomProfile(
                 cameraId = cameraId,

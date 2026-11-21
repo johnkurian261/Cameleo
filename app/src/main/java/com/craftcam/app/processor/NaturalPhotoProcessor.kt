@@ -151,77 +151,100 @@ object NaturalPhotoProcessor {
         shadowLumaStrength: Float
     ) {
         val total = width * height
-        val yArray = FloatArray(total)
-        val cbArray = FloatArray(total)
-        val crArray = FloatArray(total)
+        val packed = IntArrayPool.acquire(total)
+        try {
+            // 1. Convert RGB to packed YCbCr (zero heap allocation via IntArrayPool)
+            for (i in 0 until total) {
+                val p = pixels[i]
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
 
-        // 1. Convert RGB to YCbCr
-        for (i in 0 until total) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
+                val yVal = (0.299f * r + 0.587f * g + 0.114f * b).roundToInt().coerceIn(0, 255)
+                val cbVal = (-0.168736f * r - 0.331264f * g + 0.500000f * b + 128f).roundToInt().coerceIn(0, 255)
+                val crVal = (0.500000f * r - 0.418688f * g - 0.081312f * b + 128f).roundToInt().coerceIn(0, 255)
+                packed[i] = (yVal shl 16) or (cbVal shl 8) or crVal
+            }
 
-            yArray[i] = 0.299f * r + 0.587f * g + 0.114f * b
-            cbArray[i] = -0.168736f * r - 0.331264f * g + 0.500000f * b + 128f
-            crArray[i] = 0.500000f * r - 0.418688f * g - 0.081312f * b + 128f
-        }
+            val blend = chromaStrength.coerceIn(0.1f, 0.85f)
+            val shadowBlend = shadowLumaStrength.coerceIn(0.0f, 0.5f)
 
-        val blend = chromaStrength.coerceIn(0.1f, 0.85f)
-        val shadowBlend = shadowLumaStrength.coerceIn(0.0f, 0.5f)
+            // 2. Bilateral edge-gated 5-point cross filter on Cb/Cr and shadow Y
+            for (y in 1 until height - 1) {
+                val row = y * width
+                for (x in 1 until width - 1) {
+                    val idx = row + x
+                    val pC = packed[idx]
+                    val yC = (pC shr 16) and 0xFF
 
-        // 2. Bilateral edge-gated 5-point cross filter on Cb/Cr and shadow Y
-        for (y in 1 until height - 1) {
-            val row = y * width
-            for (x in 1 until width - 1) {
-                val idx = row + x
-                val yC = yArray[idx]
+                    // Chroma noise is strongest in shadows and midtones (Y < 220)
+                    if (yC < 220) {
+                        val cbC = (pC shr 8) and 0xFF
+                        val crC = pC and 0xFF
 
-                // Chroma noise is strongest in shadows and midtones (Y < 220)
-                if (yC < 220f) {
-                    val cbC = cbArray[idx]
-                    val crC = crArray[idx]
+                        val pLeft = packed[idx - 1]
+                        val pRight = packed[idx + 1]
+                        val pUp = packed[idx - width]
+                        val pDown = packed[idx + width]
 
-                    // Compute edge weights based on luminance gradient to prevent color bleeding across edges
-                    val dyLeft = abs(yC - yArray[idx - 1])
-                    val dyRight = abs(yC - yArray[idx + 1])
-                    val dyUp = abs(yC - yArray[idx - width])
-                    val dyDown = abs(yC - yArray[idx + width])
+                        val yLeft = (pLeft shr 16) and 0xFF
+                        val yRight = (pRight shr 16) and 0xFF
+                        val yUp = (pUp shr 16) and 0xFF
+                        val yDown = (pDown shr 16) and 0xFF
 
-                    // Weight drops as luminance edge gets sharper (edge gating)
-                    val wLeft = max(0.05f, 1.0f - dyLeft / 36.0f)
-                    val wRight = max(0.05f, 1.0f - dyRight / 36.0f)
-                    val wUp = max(0.05f, 1.0f - dyUp / 36.0f)
-                    val wDown = max(0.05f, 1.0f - dyDown / 36.0f)
-                    val wCenter = 2.0f
+                        // Compute edge weights based on luminance gradient to prevent color bleeding across edges
+                        val dyLeft = abs(yC - yLeft)
+                        val dyRight = abs(yC - yRight)
+                        val dyUp = abs(yC - yUp)
+                        val dyDown = abs(yC - yDown)
 
-                    val totalWeight = wCenter + wLeft + wRight + wUp + wDown
-                    val invWeight = 1.0f / totalWeight
+                        // Weight drops as luminance edge gets sharper (edge gating)
+                        val wLeft = max(0.05f, 1.0f - dyLeft / 36.0f)
+                        val wRight = max(0.05f, 1.0f - dyRight / 36.0f)
+                        val wUp = max(0.05f, 1.0f - dyUp / 36.0f)
+                        val wDown = max(0.05f, 1.0f - dyDown / 36.0f)
+                        val wCenter = 2.0f
 
-                    val cbFilt = (cbC * wCenter + cbArray[idx - 1] * wLeft + cbArray[idx + 1] * wRight +
-                            cbArray[idx - width] * wUp + cbArray[idx + width] * wDown) * invWeight
-                    val crFilt = (crC * wCenter + crArray[idx - 1] * wLeft + crArray[idx + 1] * wRight +
-                            crArray[idx - width] * wUp + crArray[idx + width] * wDown) * invWeight
+                        val totalWeight = wCenter + wLeft + wRight + wUp + wDown
+                        val invWeight = 1.0f / totalWeight
 
-                    val newCb = cbC * (1f - blend) + cbFilt * blend
-                    val newCr = crC * (1f - blend) + crFilt * blend
+                        val cbLeft = (pLeft shr 8) and 0xFF
+                        val cbRight = (pRight shr 8) and 0xFF
+                        val cbUp = (pUp shr 8) and 0xFF
+                        val cbDown = (pDown shr 8) and 0xFF
 
-                    // Shadow luminance smoothing: gentle bilateral noise reduction in deep shadows (Y < 64)
-                    var newY = yC
-                    if (yC < 64f && shadowBlend > 0.05f) {
-                        val yAvg = (yArray[idx - 1] * wLeft + yArray[idx + 1] * wRight +
-                                yArray[idx - width] * wUp + yArray[idx + width] * wDown) / (wLeft + wRight + wUp + wDown)
-                        newY = yC * (1f - shadowBlend) + yAvg * shadowBlend
+                        val crLeft = pLeft and 0xFF
+                        val crRight = pRight and 0xFF
+                        val crUp = pUp and 0xFF
+                        val crDown = pDown and 0xFF
+
+                        val cbFilt = (cbC * wCenter + cbLeft * wLeft + cbRight * wRight +
+                                cbUp * wUp + cbDown * wDown) * invWeight
+                        val crFilt = (crC * wCenter + crLeft * wLeft + crRight * wRight +
+                                crUp * wUp + crDown * wDown) * invWeight
+
+                        val newCb = cbC * (1f - blend) + cbFilt * blend
+                        val newCr = crC * (1f - blend) + crFilt * blend
+
+                        // Shadow luminance smoothing: gentle bilateral noise reduction in deep shadows (Y < 64)
+                        var newY = yC.toFloat()
+                        if (yC < 64 && shadowBlend > 0.05f) {
+                            val yAvg = (yLeft * wLeft + yRight * wRight +
+                                    yUp * wUp + yDown * wDown) / (wLeft + wRight + wUp + wDown)
+                            newY = yC * (1f - shadowBlend) + yAvg * shadowBlend
+                        }
+
+                        // Convert YCbCr back to RGB
+                        val rNew = (newY + 1.402f * (newCr - 128f)).roundToInt().coerceIn(0, 255)
+                        val gNew = (newY - 0.344136f * (newCb - 128f) - 0.714136f * (newCr - 128f)).roundToInt().coerceIn(0, 255)
+                        val bNew = (newY + 1.772f * (newCb - 128f)).roundToInt().coerceIn(0, 255)
+
+                        pixels[idx] = (0xFF shl 24) or (rNew shl 16) or (gNew shl 8) or bNew
                     }
-
-                    // Convert YCbCr back to RGB
-                    val rNew = (newY + 1.402f * (newCr - 128f)).roundToInt().coerceIn(0, 255)
-                    val gNew = (newY - 0.344136f * (newCb - 128f) - 0.714136f * (newCr - 128f)).roundToInt().coerceIn(0, 255)
-                    val bNew = (newY + 1.772f * (newCb - 128f)).roundToInt().coerceIn(0, 255)
-
-                    pixels[idx] = (0xFF shl 24) or (rNew shl 16) or (gNew shl 8) or bNew
                 }
             }
+        } finally {
+            IntArrayPool.release(packed)
         }
     }
 

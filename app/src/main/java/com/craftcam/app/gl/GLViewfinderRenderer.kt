@@ -498,12 +498,15 @@ class GLViewfinderRenderer(
             activeSecLutTexId = cachedSecLut?.textureId ?: 0
             resolveGrainTexture(preset, unifiedProfile)
             requestRenderSafe()
+            preloadNeighborLuts(preset)
         } else {
             // Asynchronous swap: keep rendering previous preset smoothly, prepare new textures in background
             renderScope.launch(Dispatchers.IO) {
-                val preparedPrimary = if (cachedLut == null) LutTextureCache.prepareVoxelDataAsync(context, lutAsset) else null
+                val preLoaded = LutTextureCache.getPreparedVoxel(lutAsset)
+                val preparedPrimary = if (cachedLut == null) preLoaded ?: LutTextureCache.prepareVoxelDataAsync(context, lutAsset) else null
+                val preLoadedSec = if (!secLutAsset.isNullOrEmpty() && cachedSecLut == null) LutTextureCache.getPreparedVoxel(secLutAsset) else null
                 val preparedSec = if (!secLutAsset.isNullOrEmpty() && cachedSecLut == null) {
-                    LutTextureCache.prepareVoxelDataAsync(context, secLutAsset)
+                    preLoadedSec ?: LutTextureCache.prepareVoxelDataAsync(context, secLutAsset)
                 } else null
 
                 glSurfaceView.queueEvent {
@@ -525,8 +528,22 @@ class GLViewfinderRenderer(
                         activeSecLutTexId = secTex?.textureId ?: 0
                         resolveGrainTexture(preset, unifiedProfile)
                         requestRenderSafe()
+                        preloadNeighborLuts(preset)
                     }
                 }
+            }
+        }
+    }
+
+    private fun preloadNeighborLuts(preset: CameraPreset) {
+        renderScope.launch(Dispatchers.IO) {
+            val profiles = com.craftcam.app.camera.profile.CameraProfileCatalog.allProfiles
+            val curIdx = profiles.indexOfFirst { it.presetId == preset.id || it.id == preset.id }
+            if (curIdx >= 0 && profiles.size > 1) {
+                val prevAsset = profiles[(curIdx - 1 + profiles.size) % profiles.size].filmProfile.lutAssetPath
+                val nextAsset = profiles[(curIdx + 1) % profiles.size].filmProfile.lutAssetPath
+                if (!prevAsset.isNullOrEmpty()) LutTextureCache.preloadVoxelDataAsync(context, prevAsset)
+                if (!nextAsset.isNullOrEmpty()) LutTextureCache.preloadVoxelDataAsync(context, nextAsset)
             }
         }
     }

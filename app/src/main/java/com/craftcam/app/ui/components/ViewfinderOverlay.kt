@@ -62,6 +62,10 @@ fun ViewfinderOverlay(
         }
     }
 
+    val currentOnTapFocus by rememberUpdatedState(onTapFocus)
+    val currentOnExposureChange by rememberUpdatedState(onExposureChange)
+    val currentOnPinchZoom by rememberUpdatedState(onPinchZoom)
+
     val density = LocalDensity.current
     val moveThresholdPx = with(density) { 60.dp.toPx() }
     val pixelsPerStep = with(density) { 16.dp.toPx() }
@@ -86,12 +90,23 @@ fun ViewfinderOverlay(
                         val pressedPointers = event.changes.filter { it.pressed }
 
                         if (pressedPointers.size >= 2) {
-                            // Multi-touch pinch is smoothly and authoritatively handled by CaptureFrameOverlay
+                            // Multi-touch pinch zoom
                             isPinch = true
                             isDrag = false
                             focusPoint = null
-                            lastPinchSpan = 0f
+                            val p1 = pressedPointers[0].position
+                            val p2 = pressedPointers[1].position
+                            val currentDistance = (p1 - p2).getDistance()
+                            if (lastPinchSpan > 0f && currentDistance > 0f) {
+                                val spanRatio = currentDistance / lastPinchSpan
+                                if (abs(spanRatio - 1.0f) > 0.001f) {
+                                    currentOnPinchZoom(spanRatio)
+                                }
+                            }
+                            lastPinchSpan = currentDistance
+                            pressedPointers.forEach { it.consume() }
                         } else if (pressedPointers.size == 1 && !isPinch) {
+                            lastPinchSpan = 0f
                             val change = pressedPointers[0]
                             val dy = change.position.y - startPos.y
                             val dx = change.position.x - startPos.x
@@ -112,19 +127,20 @@ fun ViewfinderOverlay(
                                     totalDragY -= stepsDelta * pixelsPerStep
                                     val targetIndex = (exposureIndex + stepsDelta).coerceIn(minExposureIndex, maxExposureIndex)
                                     if (targetIndex != exposureIndex) {
-                                        onExposureChange(targetIndex)
+                                        currentOnExposureChange(targetIndex)
                                     }
                                 }
                             }
                         }
 
                         if (pressedPointers.isEmpty()) {
+                            lastPinchSpan = 0f
                             if (!isDrag && !isPinch) {
                                 val duration = System.currentTimeMillis() - downTime
                                 if (duration < 450) {
                                     if (focusPoint == null || (startPos - focusPoint!!).getDistance() > moveThresholdPx) {
                                         focusPoint = startPos
-                                        onTapFocus(startPos.x, startPos.y)
+                                        currentOnTapFocus(startPos.x, startPos.y)
                                         scope.launch {
                                             focusScale.snapTo(1.35f)
                                             focusAlpha.snapTo(1.0f)

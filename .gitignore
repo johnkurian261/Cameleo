@@ -89,3 +89,24 @@ CAMELEO_Research/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# ===== Scratch scripts & temporary captures =====
+scratch_*
+*.zip
+*.xml
+diagnostics/
+iconpack/
+lens_icons/
+tools/
+*_crop.png
+*_screen*.png
+live_*.png
+preview.png
+ref_*.png
+side_by_side_*.png
+temp_*.png
+chameleon_styles_preview.png
+screen_*.png
+crop_live_temp.png
+lens_preview.png
+

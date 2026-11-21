@@ -9,6 +9,22 @@ import java.util.*
 
 object DateStampRenderer {
 
+    @Volatile
+    private var cachedTypeface: Typeface? = null
+
+    private fun getTypeface(context: Context?): Typeface {
+        cachedTypeface?.let { return it }
+        val tf = context?.let {
+            try {
+                Typeface.createFromAsset(it.assets, "fonts/VCR_OSD_MONO.ttf")
+            } catch (_: Exception) {
+                null
+            }
+        } ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        cachedTypeface = tf
+        return tf
+    }
+
     fun applyDateStamp(
         bitmap: Bitmap,
         config: DateStampConfig,
@@ -62,13 +78,7 @@ object DateStampRenderer {
         val marginX = width * 0.05f
         val marginY = height * 0.05f
 
-        val vcrTypeface = context?.let {
-            try {
-                Typeface.createFromAsset(it.assets, "fonts/VCR_OSD_MONO.ttf")
-            } catch (e: Exception) {
-                null
-            }
-        } ?: Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        val vcrTypeface = getTypeface(context)
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.textSize = textSize

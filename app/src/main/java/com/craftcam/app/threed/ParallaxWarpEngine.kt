@@ -125,7 +125,9 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
 
             for (x in 0 until width) {
                 val d = dispGrid[rowOffset + x]
-                val dx = (d - pivot) * deltaX
+                // Perspective-projective disparity: d(Z) = deltaX * (d - pivot) / (1 + 0.35 * (1 - d))
+                // Accelerates foreground pop while smoothly dampening background shifts
+                val dx = deltaX * (d - pivot) / (1.0f + 0.35f * (1.0f - d))
                 val xt = x + dx
                 val xt0 = floor(xt).toInt()
                 val xt1 = xt0 + 1
@@ -174,7 +176,8 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
             // 3. Sub-Pixel Backward Warping with Bilinear Interpolation
             for (xt in 0 until width) {
                 val dt = tgtDisparity[xt]
-                val xs = (xt - (dt - pivot) * deltaX).coerceIn(0f, (width - 1).toFloat())
+                val dx = deltaX * (dt - pivot) / (1.0f + 0.35f * (1.0f - dt))
+                val xs = (xt - dx).coerceIn(0f, (width - 1).toFloat())
 
                 val xs0 = floor(xs).toInt()
                 val xs1 = (xs0 + 1).coerceAtMost(width - 1)

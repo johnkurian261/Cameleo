@@ -68,6 +68,7 @@ class ThreeDPhotoProcessor(
 
         try {
             onProgress?.invoke("Analyzing Depth Geometry...")
+            val depthEngine = ThreeDDepthEngine(context, config)
             val disparityMap = depthEngine.computeDisparity(workingBitmap, faces)
 
             onProgress?.invoke("Synthesizing Stereoscopic Viewpoints...")

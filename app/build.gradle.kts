@@ -80,6 +80,10 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // ONNX Runtime Mobile for on-device AI depth estimation (Depth Anything V2)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.18.0")
+
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
