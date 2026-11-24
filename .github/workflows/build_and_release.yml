@@ -52,15 +52,15 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master'
         with:
           tag_name: latest
-          name: "dazzz v2.1.0 — Vintage Analog Camera for Android"
+          name: "dazzz v2.2.0 — Depth Anything V2 AI Depth, Film Response Science & Video Playback"
           body: |
-            ## 📸 dazzz v2.1.0
+            ## 📸 dazzz v2.2.0
 
-            Premium vintage analog camera for Android — 64 camera presets, 48 film LUTs, real-time GPU color grading, D3D wigglegram, and authentic tactile UI.
+            Premium vintage analog camera for Android — 64 camera presets, 48 film LUTs, real-time GPU color grading, on-device AI Depth Anything V2 stereoscopic wigglegrams, and in-app video playback.
 
             ### ⬇️ Download
 
-            **[dazzz.apk](https://github.com/johnkurian261/Cameleo/releases/download/latest/dazzz.apk)** (~35 MB)
+            **[dazzz.apk](https://github.com/johnkurian261/Cameleo/releases/download/latest/dazzz.apk)** (~62 MB)
 
             ### 📲 Install
 
@@ -70,14 +70,14 @@ jobs:
             4. Grant Camera & Storage permissions
             5. Shoot with vintage film presets!
 
-            ### ✨ What's New in v2.1.0
+            ### ✨ What's New in v2.2.0
 
-            - **Authentic Temperature Slider** — Pixel-matched Dazz Cam color temperature control with 11-stop gradient pill, dotted center line, and black/white ring thumb
-            - **D3D Wigglegram Camera** — Multi-frame depth parallax with pinhole camera model, back-to-front compositing, and H.264 MP4 output
-            - **Calibrated Depth Engine** — Face-anchored convergence pivot with depth stratification for convincing stereoscopic pop
-            - **64 Camera Presets** across Analog Film, CCD Digital, Disposable, Instant, Specialty, and Camcorder categories
-            - **Real-Time GPU Pipeline** — OpenGL ES 3.0 uber-fragment shader at 60 FPS
-            - **59 Unit Tests** passing across all modules
+            - **Depth Anything V2 Small AI Engine** — On-device neural monocular depth estimation via ONNX Runtime Mobile for realistic stereoscopic 3D wigglegrams.
+            - **Calibrated Film Response Curves** — Spectral tone curves for Kodak Portra, Fuji Pro 400H, Kodak Tri-X 400, and Ilford HP5 with highlight rolloff and shadow toe modeling.
+            - **Gallery In-App Video Playback** — Native looping MP4 video player with smooth playback for 3D wigglegrams directly in the collection screen.
+            - **Dynamic Subject Convergence & Parallax Warp** — Perspective-projective disparity mapping, face-anchored convergence pivot (0.0px subject drift), and occlusion gap inpainting.
+            - **Device Calibration & Color Science** — Real-time device display profile matching and perceptual gamut mapping.
+            - **71 Unit Tests Passing** across all modules with zero failures.
 
           draft: false
           prerelease: false

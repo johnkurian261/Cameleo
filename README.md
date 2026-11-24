@@ -14,7 +14,8 @@
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose">
   <img src="https://img.shields.io/badge/Engine-OpenGL%20ES%203.0-008080?logo=opengl&logoColor=white" alt="OpenGL ES 3.0">
-  <img src="https://img.shields.io/badge/Tests-66%20Passing-brightgreen?logo=gradle&logoColor=white" alt="Tests">
+  <img src="https://img.shields.io/badge/AI%20Depth-Depth%20Anything%20V2-FF6F00?logo=onnx&logoColor=white" alt="Depth Anything V2">
+  <img src="https://img.shields.io/badge/Tests-71%20Passing-brightgreen?logo=gradle&logoColor=white" alt="Tests">
 </p>
 
 <p align="center">
@@ -142,10 +143,10 @@ Camera Sensor (CameraX) ──► EGLImage OES ──► OpenGL ES 3.0 Uber Shad
 ### 🕶️ D3D Stereoscopic 3D Wigglegram
 
 Create captivating vintage 3D wigglegrams from a single tap:
-- **Monocular Depth Engine:** Computes per-pixel depth gradients and focal geometry.
-- **Stereoscopic 4-Viewpoint Parallax:** Projects virtual multi-lens optical baselines with back-to-front bucket compositing.
-- **Ping-Pong Motion Animation:** Seamless `L1 → L2 → L3 → L4 → L3 → L2` oscillation at 10 FPS.
-- **Instant Video Export:** Encodes directly into high-bitrate **H.264 MP4** with vintage emulsion grain, light leaks, and analog borders.
+- **Depth Anything V2 Small AI Engine:** On-device neural monocular depth estimation via **ONNX Runtime Mobile**, delivering physical depth stratification and edge-preserved boundaries using guided cross-bilateral filtering.
+- **Stereoscopic 4-Viewpoint Parallax:** Projects virtual quad-lens optical baselines with perspective-projective disparity mapping, dynamic face-anchored convergence pivot (0.0px subject drift), and occlusion gap inpainting.
+- **Ping-Pong Motion Animation:** Seamless `L1 → L2 → L3 → L4 → L3 → L2` oscillation at 10 FPS with leaf-shutter exposure variance and mechanical film gate jitter.
+- **In-App Video Playback & Instant MP4 Export:** Native in-app looping MP4 video player in the collection gallery, backed by MediaCodec hardware encoding with vintage 35mm scanned grain and light leaks.
 
 ---
 
@@ -213,7 +214,7 @@ app/build/outputs/apk/debug/app-debug.apk
 ## 🏗️ Architecture & Tech Stack
 
 ```
-110+ Kotlin Source Files · 32,000+ Lines of Clean Architecture Code · 66 Unit Tests
+115+ Kotlin Source Files · 34,000+ Lines of Clean Architecture Code · 71 Unit Tests
 ```
 
 | Component | Technology | Description |
@@ -221,9 +222,10 @@ app/build/outputs/apk/debug/app-debug.apk
 | **UI Layer** | Jetpack Compose + Material 3 | Declarative, smooth 120Hz gesture-driven tactile camera interface |
 | **Camera Framework** | CameraX + Camera2 Interop | Full-sensor resolution captures, zero-lag streaming & focus control |
 | **GPU Rendering** | OpenGL ES 3.0 / EGL | Custom GLSL Uber-Fragment shaders for 60 FPS live grading |
-| **Color Science** | 3D LUTs + Analytical Curves | 3D volumetric color LUTs, active midtone clarity, smart vibrance |
-| **3D Engine** | Depth Estimation & Parallax Warp | Monocular depth modeling & stereoscopic multi-angle animation |
-| **Video Processing** | MediaCodec + EGL | Hardware-accelerated H.264 video encoding at 1080p/4K |
+| **Color Science** | 3D LUTs + Spectral Response Curves | 3D volumetric color LUTs, Portra/Fuji/Tri-X tone curves, device calibration |
+| **AI Depth Engine** | ONNX Runtime Mobile + Depth Anything V2 | On-device neural monocular depth estimation with edge-preserving filtering |
+| **3D Parallax Warp** | Sub-Pixel Inverse Warping | Perspective-projective disparity, face-anchored convergence, occlusion inpainting |
+| **Video Processing** | MediaCodec + EGL + ExoPlayer | Hardware H.264 MP4 encoding at 1080p and native in-app looping gallery player |
 | **Storage & Metadata** | Android MediaStore + ExifInterface | Non-destructive negative storage with full EXIF preservation |
 
 ---
