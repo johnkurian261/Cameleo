@@ -361,6 +361,12 @@ class DepthAnythingV2Engine(private val context: Context? = null) {
         val out = FloatArray(width * height)
         val twoSpatialSigmaSq = 2f * spatialSigma * spatialSigma
         val twoRangeSigmaSq = 2f * rangeSigma * rangeSigma
+        val diameter = 2 * radius + 1
+        val spatialWeights = FloatArray(diameter * diameter) { index ->
+            val dx = index % diameter - radius
+            val dy = index / diameter - radius
+            exp(-(dx * dx + dy * dy) / twoSpatialSigmaSq)
+        }
 
         for (y in 0 until height) {
             val yMin = (y - radius).coerceAtLeast(0)
@@ -377,14 +383,11 @@ class DepthAnythingV2Engine(private val context: Context? = null) {
                 var sumFiltered = 0f
 
                 for (ny in yMin..yMax) {
-                    val dy = (ny - y).toFloat()
-                    val dySq = dy * dy
+                    val kernelRow = (ny - y + radius) * diameter
                     val nRowOffset = ny * width
 
                     for (nx in xMin..xMax) {
-                        val dx = (nx - x).toFloat()
-                        val spatialDistSq = dx * dx + dySq
-                        val spatialWeight = exp(-spatialDistSq / twoSpatialSigmaSq)
+                        val spatialWeight = spatialWeights[kernelRow + nx - x + radius]
 
                         val neighborIdx = nRowOffset + nx
                         val lumaDiff = luma[neighborIdx] - centerLuma

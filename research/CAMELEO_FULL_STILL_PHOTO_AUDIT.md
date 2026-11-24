@@ -1,5 +1,36 @@
 # CAMELEO — FULL STILL-PHOTO PIPELINE, ASSET, CAMERA & ARCHITECTURE AUDIT
 
+## Current working-tree review · 24 November 2026
+
+Reviewed the Android app at `e05811c` with the local camera, color, RAW and packaging edits present. The earlier investigation below describes commit `74c0484`. Use this section for current build results, export limits and release findings.
+
+### Issues corrected
+
+| User impact | Where the issue occurred | Change |
+|---|---|---|
+| An empty gallery item could appear as a successful save. A failed JPEG copy could also leave a partial row. | JPEG export in `ImageProcessor`, MP4 in `ThreeDPhotoProcessor`, DNG in `RawPhotoProcessor` | All three use `MediaStoreWriter`. A missing stream or failed publication now fails the save. The writer attempts to discard its incomplete row. JPEG encoding also checks the compressor result, and DNG closes its creator on write failure. |
+| Changing a lens or tuning while a photo developed could affect the earlier shot. Standard still grading assumed camera ID 0, including for front-camera photos. | `CameraManager.captureAndProcessPhoto`, `captureAndProcessThreeDPhoto` and the natural burst path | Capture snapshots the processing settings and bound logical Camera2 ID at shutter time. Gallery grading uses an identity normalization matrix when the source camera is unknown. Burst frames still collect per-frame telemetry. |
+| A returning user who granted camera access but declined an optional permission could land back on the permission screen. Android 10–12 also requested a write permission declared only through Android 9. | `MainActivity.onCreate` | Startup now uses the same camera-permission criterion as the permission callback. The legacy write request ends at API 28. |
+| Debug lint failed with 48 errors. | `CameraManager` accounted for 47 Camera2 interop opt-in findings. `CameraLensWheel` had one unused layout scope. | Applied the AndroidX opt-in to the Camera2 integration class and used a regular Compose Box for the wheel. |
+
+### Open findings in priority order
+
+| Priority | Evidence and consequence | Completion check |
+|---|---|---|
+| High for public distribution | The GitHub workflow publishes the debug APK as the latest release. Its text says v2.1.0 and approximately 35 MB. Gradle declares 2.0.0, uses debug signing for the release variant, and the local universal debug APK is about 163 MiB. The depth model and four ONNX native libraries account for about 87 MiB of APK entries. | Verify the intended signing identity against an already distributed APK before changing keys. Generate release metadata from the distributable and verify an in-place upgrade. |
+| High for RAW readiness | `RawPhotoProcessor.saveDngToMediaStore` has no production caller. `processLinearRawPixels` scales one sensor sample into all three channels and takes a single black level. A Bayer mosaic needs color-filter-array-aware reconstruction for a developed RGB image. The RAW, zebra and AE/AWB lock fields in `CameraUIState` have no consumers under those names. | Verify an actual RAW-capable capture and matching capture result, a readable DNG, fallback on a JPEG-only device, and distinct color patches before advertising RAW development. |
+| Medium for color accuracy | `DeviceCalibrationManager.resolveModuleType` treats rear camera IDs 2 and 3 as ultrawide under its focal-length branch. The color matrices are manufacturer presets. A logical ID can also cover several physical lenses. | Record the actual modules and compare controlled color targets across front, wide, ultrawide and telephoto captures. |
+| Medium for export expectations | Standard still and D3D processing cap the long edge at 4096 or 2048 pixels before cropping. Earlier references to full sensor resolution therefore depend on source size, settings and aspect ratio. | Compare final JPEG dimensions against both the requested crop and the configured cap on a high-resolution sensor. |
+| Medium for release checks | CI runs unit tests and builds the debug APK. It omits the lint task that exposed the 48 errors. The remaining warning inventory includes icon locations, potentially unused resources and Android 14 selected-photo access. Some resource lookups use dynamic names. | Run lint in CI and test partial gallery permission. Verify dynamically referenced icons before treating them as removable. |
+
+### Verification
+
+The local verification command was `.\gradlew.bat --offline assembleDebug testDebugUnitTest lintDebug`. The APK built, all 66 unit tests passed with zero skipped, and lint finished with zero errors and 340 warnings. Of those warnings, 164 concern icon location, 138 flag potentially unused resources and 22 flag duplicate icons. See the individual [test results](../app/build/reports/tests/testDebugUnitTest/index.html) and [lint findings](../app/build/reports/lint-results-debug.html).
+
+ADB started successfully and listed zero attached devices. Camera startup after selective permission grants, front/rear capture during a settings change, gallery writes under storage failure, EXIF, RAW output, preview frame times and capture memory still need device verification. The local review used source, the built APK and Gradle outputs. Historical device figures below belong to their original runs.
+
+## Historical audit at commit `74c0484`
+
 **Mode:** Read-Only Forensic Technical Investigation  
 **Baseline Commit:** `74c0484` (`feat: pause video feature to focus 100% on still photo pipeline and authentic film rendering`)  
 **Application Code Modified:** NO (0 files modified)  

@@ -58,7 +58,8 @@ object ImageProcessor {
         isFlashActive: Boolean = false,
         sensorIso: Int = 100,
         exposureTimeNs: Long = 10_000_000L,
-        faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList()
+        faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
+        cameraId: String? = null
     ): Uri? = withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
@@ -185,7 +186,7 @@ object ImageProcessor {
 
                 // 2. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
                 // Executed in-place on workingBitmap using pooled IntArrays (zero new Bitmap allocations)
-                workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive)
+                workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive, cameraId = cameraId)
 
                 // 3. Apply Retro Date Stamp (draws in-place onto mutable workingBitmap)
                 if (tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
@@ -233,6 +234,7 @@ object ImageProcessor {
         lensProfile: LensProfile = LensProfile.NORMAL,
         isFlashActive: Boolean = false,
         faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
+        cameraId: String? = null,
         onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
@@ -307,7 +309,13 @@ object ImageProcessor {
 
         matrix.postTranslate(-orientedBounds.left - startX, -orientedBounds.top - startY)
 
-        var workingBitmap: Bitmap = BitmapPool.acquire(cropW, cropH)
+        val limit = com.craftcam.app.threed.ThreeDPhotoProcessor.MAX_WORKING_DIM
+        val outputScale = minOf(1f, limit.toFloat() / maxOf(cropW, cropH))
+        matrix.postScale(outputScale, outputScale)
+        val workingBitmap = BitmapPool.acquire(
+            (cropW * outputScale).roundToInt().coerceAtLeast(1),
+            (cropH * outputScale).roundToInt().coerceAtLeast(1)
+        )
         try {
             val canvas = Canvas(workingBitmap)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -317,17 +325,6 @@ object ImageProcessor {
         }
 
         try {
-            // Apply vintage film grading to the photograph WITHOUT baking in grain before 3D parallax warping
-            workingBitmap = applyPresetEffects(
-                context = context,
-                source = workingBitmap,
-                preset = preset,
-                tuning = tuning,
-                lensProfile = lensProfile,
-                isFlashActive = isFlashActive,
-                applyGrain = false
-            )
-
             // Feed to 3D Wigglegram pipeline with calibrated stereoscopic parallax strength
             val parallaxStrength = (0.032f + tuning.d3dStrengthOffset * 0.015f).coerceIn(0.018f, 0.055f)
             val threeDConfig = com.craftcam.app.threed.ThreeDConfig(
@@ -338,7 +335,18 @@ object ImageProcessor {
             val uri = threeDProcessor.processAndSaveThreeDPhoto(
                 context = context,
                 sourceBitmap = workingBitmap,
-                faces = faces,
+                faces = faces.mapNotNull { face ->
+                    val bounds = RectF(face.bounds)
+                    if (mirrorFrontCamera) bounds.set(1f - face.bounds.right, bounds.top, 1f - face.bounds.left, bounds.bottom)
+                    bounds.set(
+                        (bounds.left * orientedW - startX) / cropW, (bounds.top * orientedH - startY) / cropH,
+                        (bounds.right * orientedW - startX) / cropW, (bounds.bottom * orientedH - startY) / cropH
+                    )
+                    if (bounds.intersect(0f, 0f, 1f, 1f)) face.copy(bounds = bounds) else null
+                },
+                gradeInPlace = { bitmap ->
+                    applyPresetEffects(context, bitmap, preset, tuning, lensProfile, isFlashActive, applyGrain = false, cameraId = cameraId)
+                },
                 onProgress = onProgress
             )
             uri
@@ -515,7 +523,8 @@ object ImageProcessor {
         tuning: UserTuningConfig = UserTuningConfig(),
         lensProfile: LensProfile = LensProfile.NORMAL,
         isFlashActive: Boolean = false,
-        applyGrain: Boolean = true
+        applyGrain: Boolean = true,
+        cameraId: String? = null
     ): Bitmap {
         val width = source.width
         val height = source.height
@@ -523,6 +532,10 @@ object ImageProcessor {
         val pixels = IntArrayPool.acquire(totalPixels)
         try {
             source.getPixels(pixels, 0, width, 0, 0, width, height)
+
+            val normMat = cameraId?.let { com.craftcam.app.color.DeviceCalibrationManager(context).resolveProfile(it).normalizationMatrix }
+                ?: com.craftcam.app.color.ColorMatrix3x3.IDENTITY
+            val isIdentityNorm = normMat == com.craftcam.app.color.ColorMatrix3x3.IDENTITY
 
             val grading = preset.colorGrading
             val lens = preset.lens
@@ -546,7 +559,6 @@ object ImageProcessor {
             val baseSaturation = if (film.saturation != 1.0f) film.saturation else grading.saturation
             val baseTemp = if (film.temperature != 0.0f) film.temperature else grading.temperature
             val baseTint = if (film.tint != 0.0f) film.tint else grading.tint
-            val baseHighlightRollOff = if (film.highlightRollOff != 1.0f) film.highlightRollOff else grading.highlightRollOff
             val baseShadowR = if (film.shadowTintR != 0.0f) film.shadowTintR else grading.shadowTintR
             val baseShadowG = if (film.shadowTintG != 0.0f) film.shadowTintG else grading.shadowTintG
             val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else grading.shadowTintB
@@ -569,11 +581,11 @@ object ImageProcessor {
             val effectiveTemp = ((baseTemp + tempShift) * intensity).coerceIn(-1.0f, 1.0f)
             val effectiveTint = ((baseTint + tintShift) * intensity).coerceIn(-1.0f, 1.0f)
             val effectiveGamma = 1.0f + (grading.gamma - 1.0f) * intensity
-            val effectiveFade = (grading.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0.0f) * intensity
+            val effectiveFade = film.fadeAtIntensity(grading.fade, colorProfileAdj.fadeDelta, intensity)
             val shadowR = baseShadowR * intensity
             val shadowG = baseShadowG * intensity
             val shadowB = baseShadowB * intensity
-            val rollOff = 1.0f - (1.0f - baseHighlightRollOff) * intensity
+            val rollOff = film.shoulderAtIntensity(intensity)
 
             // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
             val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0.0f, 1.0f)
@@ -682,10 +694,9 @@ object ImageProcessor {
             val clarityBoost = 1.0f + clarity * 0.18f
             val clarityOffset = -clarity * 0.18f * 0.5f
 
-            val effRollOff = maxOf(0.86f, rollOff)
-            val hasRollOff = effRollOff < 0.99f && !isNatural
-            val knee = maxOf(0.01f, 1.0f - effRollOff)
-            val invKnee = 1.0f / knee
+            val hasRollOff = rollOff < 1f && !isNatural
+            val knee = 1f - rollOff
+            val invKnee = if (hasRollOff) 1f / knee else 0f
 
             val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
             val chunkSize = (totalPixels + numCores - 1) / numCores
@@ -707,9 +718,21 @@ object ImageProcessor {
                         var b: Float
 
                         if (lut != null && stageLut) {
-                            var inR = preLinLut[ri]
-                            var inG = preLinLut[gi]
-                            var inB = preLinLut[bi]
+                            val inR: Float
+                            val inG: Float
+                            val inB: Float
+                            if (!isIdentityNorm) {
+                                val nr = (normMat.m00 * ri + normMat.m01 * gi + normMat.m02 * bi).toInt().coerceIn(0, 255)
+                                val ng = (normMat.m10 * ri + normMat.m11 * gi + normMat.m12 * bi).toInt().coerceIn(0, 255)
+                                val nb = (normMat.m20 * ri + normMat.m21 * gi + normMat.m22 * bi).toInt().coerceIn(0, 255)
+                                inR = preLinLut[nr]
+                                inG = preLinLut[ng]
+                                inB = preLinLut[nb]
+                            } else {
+                                inR = preLinLut[ri]
+                                inG = preLinLut[gi]
+                                inB = preLinLut[bi]
+                            }
 
                             val rf = inR * 63.0f
                             val gf = inG * 63.0f
@@ -816,10 +839,6 @@ object ImageProcessor {
                                 g = sampledG
                                 b = sampledB
                             }
-                        } else if (stageLut) {
-                            r = applyFilmicCurve(ri / 255.0f, grading.contrast, grading.fade)
-                            g = applyFilmicCurve(gi / 255.0f, grading.contrast, grading.fade)
-                            b = applyFilmicCurve(bi / 255.0f, grading.contrast, grading.fade)
                         } else {
                             r = ri / 255.0f
                             g = gi / 255.0f
@@ -840,7 +859,7 @@ object ImageProcessor {
                         if (stageToneCurve) {
                             var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                             if (!isNatural) {
-                                val sLift = 0.035f * (1.0f - curLuma.coerceIn(0f, 1f)) * (1.0f - curLuma.coerceIn(0f, 1f))
+                                val sLift = intensity * 0.035f * (1.0f - curLuma.coerceIn(0f, 1f)) * (1.0f - curLuma.coerceIn(0f, 1f))
                                 r += sLift
                                 g += sLift
                                 b += sLift
@@ -900,15 +919,20 @@ object ImageProcessor {
                             g += shadowG * shadowWeight
                             b += shadowB * shadowWeight
 
-                            // F. Filmic Highlight Rolloff & Desaturating Shoulder
+                            // F. Filmic Highlight Rolloff & Desaturating Shoulder (Ratio-Preserving)
                             if (hasRollOff) {
-                                if (r > effRollOff) r = effRollOff + knee * (1.0f - exp(-(r - effRollOff) * invKnee))
-                                if (g > effRollOff) g = effRollOff + knee * (1.0f - exp(-(g - effRollOff) * invKnee))
-                                if (b > effRollOff) b = effRollOff + knee * (1.0f - exp(-(b - effRollOff) * invKnee))
+                                val maxC = maxOf(r, maxOf(g, b))
+                                if (maxC > rollOff) {
+                                    val rolledMax = com.craftcam.app.camera.profile.compressFilmHighlight(maxC, rollOff)
+                                    val scale = rolledMax / maxC
+                                    r *= scale
+                                    g *= scale
+                                    b *= scale
+                                }
                                 curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
 
-                                val highOver = maxOf(0.0f, curLuma - effRollOff) * invKnee
-                                val desat = (highOver * 0.35f).coerceIn(0.0f, 0.65f)
+                                val highOver = maxOf(0.0f, curLuma - rollOff) * invKnee
+                                val desat = highOver.coerceIn(0f, 1f) * 0.45f
                                 r = r * (1.0f - desat) + curLuma * desat
                                 g = g * (1.0f - desat) + curLuma * desat
                                 b = b * (1.0f - desat) + curLuma * desat
@@ -1987,16 +2011,6 @@ object ImageProcessor {
         }
     }
 
-    private fun applyFilmicCurve(v: Float, contrast: Float, fade: Float): Float {
-        val x = v.coerceIn(0.0f, 1.0f)
-        val s = if (x < 0.5f) 0.5f * (2.0f * x).pow(contrast)
-                else 1.0f - 0.5f * (2.0f * (1.0f - x)).pow(contrast)
-        return if (fade > 0.001f) {
-            val lift = fade * 0.12f
-            (s * (1.0f - lift) + lift).coerceIn(0.0f, 1.0f)
-        } else s.coerceIn(0.0f, 1.0f)
-    }
-
     // ─── Helpers ─────────────────────────────────────────────────────────────
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
         try {
@@ -2140,7 +2154,7 @@ object ImageProcessor {
         try {
             FileOutputStream(tempFile).use { fos ->
                 java.io.BufferedOutputStream(fos, 65536).use { bos ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 93, bos)
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 93, bos)) { "JPEG compression failed" }
                 }
             }
 
@@ -2158,24 +2172,10 @@ object ImageProcessor {
             }
 
             // 3. Insert into MediaStore and stream in a single sequential copy
-            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+            val uri = context.contentResolver.writeMediaItem(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues) { output ->
+                tempFile.inputStream().use { input -> input.copyTo(output, 65536) }
+            }
             if (uri != null) {
-                context.contentResolver.openOutputStream(uri)?.use { os ->
-                    java.io.BufferedOutputStream(os, 65536).use { bos ->
-                        java.io.FileInputStream(tempFile).use { fis ->
-                            java.io.BufferedInputStream(fis, 65536).use { bis ->
-                                bis.copyTo(bos)
-                            }
-                        }
-                    }
-                }
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    contentValues.clear()
-                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    context.contentResolver.update(uri, contentValues, null, null)
-                }
-
                 // 4. Instant Gallery Integration & Negative Archival
                 val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
                 if (id > 0L) {

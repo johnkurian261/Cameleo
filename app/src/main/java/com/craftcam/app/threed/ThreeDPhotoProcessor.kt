@@ -1,5 +1,6 @@
 package com.craftcam.app.threed
 
+import com.craftcam.app.processor.writeMediaItem
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -33,10 +34,9 @@ class ThreeDPhotoProcessor(
 ) {
     companion object {
         private const val TAG = "ThreeDPhotoProcessor"
-        private const val MAX_WORKING_DIM = 1080
+        internal const val MAX_WORKING_DIM = 1080
     }
 
-    private val depthEngine = ThreeDDepthEngine()
     private val warpEngine = ParallaxWarpEngine(config)
     private val videoEncoder = ThreeDVideoEncoder()
 
@@ -44,6 +44,7 @@ class ThreeDPhotoProcessor(
         context: Context,
         sourceBitmap: Bitmap,
         faces: List<FaceRegion> = emptyList(),
+        gradeInPlace: suspend (Bitmap) -> Unit = {},
         onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.Default) {
         val workingBitmap: Bitmap
@@ -72,7 +73,8 @@ class ThreeDPhotoProcessor(
             val disparityMap = depthEngine.computeDisparity(workingBitmap, faces)
 
             onProgress?.invoke("Synthesizing Stereoscopic Viewpoints...")
-            val rawFrames = warpEngine.generateParallaxFrames(workingBitmap, disparityMap)
+            gradeInPlace(workingBitmap)
+            val rawFrames = warpEngine.generateViewpoints(workingBitmap, disparityMap)
 
             onProgress?.invoke("Applying Vintage Emulsion...")
             val retroRenderer = RetroFrameRenderer(context, config)
@@ -91,7 +93,7 @@ class ThreeDPhotoProcessor(
 
             onProgress?.invoke("Encoding Looping Video...")
             val success = videoEncoder.encodeFramesToMp4(
-                frames = styledFrames,
+                frames = ParallaxWarpEngine.bounce(styledFrames),
                 outputFile = tempVideoFile,
                 fps = config.fps,
                 loopCount = config.loopCount
@@ -151,21 +153,10 @@ class ThreeDPhotoProcessor(
             }
         }
 
-        val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-            ?: return null
-
         try {
-            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                FileInputStream(videoFile).use { inputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, contentValues, null, null)
-            }
+            val uri = context.contentResolver.writeMediaItem(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues) { output ->
+                FileInputStream(videoFile).use { input -> input.copyTo(output) }
+            } ?: return null
 
             val id = try { android.content.ContentUris.parseId(uri) } catch (_: Exception) { 0L }
             if (id > 0L) {
@@ -183,9 +174,6 @@ class ThreeDPhotoProcessor(
             return uri
         } catch (e: Exception) {
             Log.e(TAG, "Failed writing video to MediaStore: ${e.message}", e)
-            try {
-                context.contentResolver.delete(uri, null, null)
-            } catch (_: Exception) {}
             return null
         }
     }

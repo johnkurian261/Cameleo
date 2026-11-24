@@ -61,6 +61,7 @@ import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+@androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
 class CameraManager(private val context: Context) {
 
     private val TAG = "CameraManager"
@@ -354,7 +355,6 @@ class CameraManager(private val context: Context) {
         }
     }
 
-    @OptIn(ExperimentalCamera2Interop::class)
     fun applyProCameraControls() {
         val cam = camera ?: return
         try {
@@ -429,7 +429,6 @@ class CameraManager(private val context: Context) {
         }
     }
 
-    @OptIn(ExperimentalCamera2Interop::class)
     fun clearProCameraControls() {
         val cam = camera ?: return
         try {
@@ -1271,7 +1270,6 @@ class CameraManager(private val context: Context) {
         applyCamera2Wb(isAuto = true, kelvin = 5500)
     }
 
-    @OptIn(ExperimentalCamera2Interop::class)
     private fun applyCamera2Wb(isAuto: Boolean, kelvin: Int) {
         val cam = camera ?: return
         try {
@@ -1511,14 +1509,16 @@ class CameraManager(private val context: Context) {
         }
 
         // Freeze immutable composition frame snapshot at shutter trigger instant (for Frame zoom mode)
+        val captureState = _uiState.value
+        val cameraId = camera?.cameraInfo?.let { androidx.camera.camera2.interop.Camera2CameraInfo.from(it).cameraId }
         val isFrameZoom = com.craftcam.app.config.AppSettingsStore.get(context).current.zoomMode == "Frame"
         val frameSnapshot = if (isFrameZoom) createCaptureFrameSnapshot(aspectRatio) else null
 
         // Branch into multi-frame computational photography pipeline when in NATURAL mode and forceMultiFrameHdr is explicitly active
-        if (_uiState.value.engineMode == CameraEngineMode.NATURAL) {
-            val compConfig = _uiState.value.computationalConfig
+        if (captureState.engineMode == CameraEngineMode.NATURAL) {
+            val compConfig = captureState.computationalConfig
             if (compConfig.burstFrameCount > 1 && compConfig.forceMultiFrameHdr) {
-                captureNaturalBurst(preset, aspectRatio, mirrorFrontCamera, frameSnapshot, onPhotoSaved, onError)
+                captureNaturalBurst(preset, aspectRatio, mirrorFrontCamera, frameSnapshot, captureState, cameraId, onPhotoSaved, onError)
                 return
             }
         }
@@ -1542,19 +1542,20 @@ class CameraManager(private val context: Context) {
                                 context = context,
                                 imageProxy = image,
                                 preset = preset,
-                                tuning = _uiState.value.tuning,
+                                tuning = captureState.tuning,
                                 aspectRatio = aspectRatio,
                                 mirrorFrontCamera = mirrorFrontCamera,
-                                engineMode = _uiState.value.engineMode,
-                                naturalProfile = _uiState.value.naturalProfile,
-                                naturalColorProfile = _uiState.value.naturalColorProfile,
-                                compareWithOriginal = _uiState.value.debugCompareOriginal,
+                                engineMode = captureState.engineMode,
+                                naturalProfile = captureState.naturalProfile,
+                                naturalColorProfile = captureState.naturalColorProfile,
+                                compareWithOriginal = captureState.debugCompareOriginal,
                                 captureFrameSnapshot = frameSnapshot,
-                                lensProfile = _uiState.value.shootingState.selectedLens,
-                                isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF,
-                                sensorIso = _uiState.value.liveIso,
-                                exposureTimeNs = _uiState.value.liveExposureNs,
-                                faces = _uiState.value.detectedFaces
+                                lensProfile = captureState.shootingState.selectedLens,
+                                isFlashActive = captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                sensorIso = captureState.liveIso,
+                                exposureTimeNs = captureState.liveExposureNs,
+                                cameraId = cameraId,
+                                faces = captureState.detectedFaces
                             )
                             if (uri != null) {
                                 withContext(Dispatchers.Main) {
@@ -1605,6 +1606,8 @@ class CameraManager(private val context: Context) {
             return
         }
 
+        val captureState = _uiState.value
+        val cameraId = camera?.cameraInfo?.let { androidx.camera.camera2.interop.Camera2CameraInfo.from(it).cameraId }
         val isFrameZoom = com.craftcam.app.config.AppSettingsStore.get(context).current.zoomMode == "Frame"
         val frameSnapshot = if (isFrameZoom) createCaptureFrameSnapshot(aspectRatio) else null
 
@@ -1626,13 +1629,14 @@ class CameraManager(private val context: Context) {
                                 context = context,
                                 imageProxy = image,
                                 preset = preset,
-                                tuning = _uiState.value.tuning,
+                                tuning = captureState.tuning,
                                 aspectRatio = aspectRatio,
                                 mirrorFrontCamera = mirrorFrontCamera,
                                 captureFrameSnapshot = frameSnapshot,
-                                lensProfile = _uiState.value.shootingState.selectedLens,
-                                isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF,
-                                faces = _uiState.value.detectedFaces,
+                                lensProfile = captureState.shootingState.selectedLens,
+                                isFlashActive = captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                cameraId = cameraId,
+                                faces = captureState.detectedFaces,
                                 onProgress = { progressText ->
                                     _uiState.update { it.copy(threeDProgressMessage = progressText) }
                                 }
@@ -1678,6 +1682,8 @@ class CameraManager(private val context: Context) {
         aspectRatio: AspectRatioMode,
         mirrorFrontCamera: Boolean,
         frameSnapshot: CaptureFrameSnapshot?,
+        captureState: CameraUIState,
+        cameraId: String?,
         onPhotoSaved: (Uri) -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
@@ -1687,7 +1693,7 @@ class CameraManager(private val context: Context) {
             return
         }
 
-        val compConfig = _uiState.value.computationalConfig
+        val compConfig = captureState.computationalConfig
         val targetFrames = compConfig.burstFrameCount.coerceIn(1, 5)
         val evOffsets = compConfig.evOffsets
         val tapTime = SystemClock.elapsedRealtime()
@@ -1697,7 +1703,7 @@ class CameraManager(private val context: Context) {
 
         val capturedFrames = ArrayList<CapturedFrame>()
         val cam = camera
-        val previousExposureIndex = _uiState.value.exposureIndex
+        val previousExposureIndex = captureState.exposureIndex
 
         fun processCapturedSequence() {
             cancelCaptureWatchdog()
@@ -1713,25 +1719,25 @@ class CameraManager(private val context: Context) {
             }
 
             val sequence = FrameSequence(capturedFrames)
-            val currentSceneProfile = _uiState.value.sceneAnalysis?.profile ?: ProcessingProfile.NaturalDefault
-            val currentDetectedFaces = _uiState.value.detectedFaces
+            val currentSceneProfile = captureState.sceneAnalysis?.profile ?: ProcessingProfile.NaturalDefault
+            val currentDetectedFaces = captureState.detectedFaces
 
             processingScope.launch {
                 try {
                     val uri = ImageProcessor.processComputationalPhoto(
                         context = context,
                         sequence = sequence,
-                        config = _uiState.value.computationalConfig,
+                        config = captureState.computationalConfig,
                         aspectRatio = aspectRatio,
                         mirrorFrontCamera = mirrorFrontCamera,
-                        naturalProfile = _uiState.value.naturalProfile,
-                        compareWithOriginal = _uiState.value.debugCompareOriginal,
+                        naturalProfile = captureState.naturalProfile,
+                        compareWithOriginal = captureState.debugCompareOriginal,
                         captureLatencyMs = captureLatencyMs,
                         processingProfile = currentSceneProfile,
                         faces = currentDetectedFaces,
-                        portraitConfig = _uiState.value.portraitConfig,
-                        colorConfig = _uiState.value.colorScienceConfig,
-                        cameraId = _uiState.value.selectedLens?.cameraId ?: "0",
+                        portraitConfig = captureState.portraitConfig,
+                        colorConfig = captureState.colorScienceConfig,
+                        cameraId = cameraId ?: captureState.selectedLens?.cameraId ?: "0",
                         captureFrameSnapshot = frameSnapshot,
                         onStatsUpdated = { stats ->
                             _uiState.update { it.copy(computationalStats = stats, isComputationalProcessing = false) }

@@ -85,7 +85,7 @@ class DepthAnythingV2IntegrationTest {
         assertNotNull(dispMapAi)
         assertEquals(DepthBackend.DEPTH_ANYTHING_V2, dispMapAi.backendUsed)
         assertTrue(dispMapAi.values.isNotEmpty())
-        assertTrue("Pivot must be in calibrated range", dispMapAi.pivot in 0.20f..0.80f)
+        assertTrue("Pivot must be a measured scene disparity", dispMapAi.values.any { it == dispMapAi.pivot })
 
         // Backend B: Legacy Monocular Depth Estimator
         val configLegacy = ThreeDConfig(depthBackend = DepthBackend.CURRENT)
@@ -105,17 +105,18 @@ class DepthAnythingV2IntegrationTest {
 
         val w = 320
         val h = 240
-        val pixels = IntArray(w * h) { (0xFF shl 24) or (128 shl 16) or (128 shl 8) or 128 }
-
-        // Simulate face in center of frame
+        val depth = FloatArray(w * h) { i -> if (i % w in 20..65 && i / w in 20..65) 0.98f else 0.12f }
         val face = FaceRegion(
-            bounds = RectF(0.35f, 0.30f, 0.65f, 0.70f),
+            bounds = RectF().apply {
+                left = 20f / w
+                top = 20f / h
+                right = 65f / w
+                bottom = 65f / h
+            },
             confidence = 0.95f
         )
-
-        val dispMap = engine.computeDisparityFromPixels(pixels, w, h, listOf(face))
-        assertNotNull(dispMap)
-        assertTrue("Pivot must be locked to face depth", dispMap.pivot in 0.20f..0.80f)
+        assertEquals(0.98f, engine.calculatePivot(w, h, depth, listOf(face)), 0.0001f)
+        assertEquals(0.12f, engine.calculatePivot(w, h, depth, emptyList()), 0.0001f)
     }
 
     @Test

@@ -112,7 +112,12 @@ data class CameraUIState(
     val portraitBokehActive: Boolean = false,
     val colorScienceConfig: com.craftcam.app.color.ColorScienceConfig = com.craftcam.app.color.ColorScienceConfig(),
     val sensorTelemetry: com.craftcam.app.color.CameraSensorTelemetry? = null,
-    val shootingState: com.craftcam.app.camera.profile.CameraShootingState = com.craftcam.app.camera.profile.CameraShootingState()
+    val shootingState: com.craftcam.app.camera.profile.CameraShootingState = com.craftcam.app.camera.profile.CameraShootingState(),
+    val isAeLocked: Boolean = false,
+    val isAwbLocked: Boolean = false,
+    val isRawCaptureEnabled: Boolean = false,
+    val isZebraWarningEnabled: Boolean = false,
+    val deviceSensorProfile: com.craftcam.app.color.DeviceSensorProfile? = null
 ) {
     val availableLenses: List<CameraLens>
         get() = if (lensFacing == CameraSelector.LENS_FACING_FRONT) frontLenses else rearLenses

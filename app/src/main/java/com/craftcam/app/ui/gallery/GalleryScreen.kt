@@ -665,7 +665,11 @@ private fun DazzFullScreenViewer(
         ) { page ->
             val item = photos.getOrNull(page)
             if (item != null) {
-                DazzFullScreenPhotoPage(item = item)
+                if (item.isVideo) {
+                    if (page == currentPage) key(item.uri) { GalleryVideoPage(item) }
+                } else {
+                    DazzFullScreenPhotoPage(item = item)
+                }
             }
         }
 
@@ -834,29 +838,24 @@ private fun DazzFullScreenPhotoPage(item: GalleryItem) {
     LaunchedEffect(item.uri) {
         withContext(Dispatchers.IO) {
             try {
-                if (item.isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val bmp = context.contentResolver.loadThumbnail(item.uri, android.util.Size(1080, 1080), null)
-                    fullBitmap = bmp.asImageBitmap()
-                } else {
-                    context.contentResolver.openInputStream(item.uri)?.use { boundsStream ->
-                        val boundsOptions = BitmapFactory.Options().apply {
-                            inJustDecodeBounds = true
-                        }
-                        BitmapFactory.decodeStream(boundsStream, null, boundsOptions)
-                        val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
-                        var sample = 1
-                        while (maxDim / sample > 2048) {
-                            sample *= 2
-                        }
+                context.contentResolver.openInputStream(item.uri)?.use { boundsStream ->
+                    val boundsOptions = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    BitmapFactory.decodeStream(boundsStream, null, boundsOptions)
+                    val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+                    var sample = 1
+                    while (maxDim / sample > 2048) {
+                        sample *= 2
+                    }
 
-                        context.contentResolver.openInputStream(item.uri)?.use { stream ->
-                            val decodeOptions = BitmapFactory.Options().apply {
-                                inSampleSize = sample
-                                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
-                            }
-                            val bmp = BitmapFactory.decodeStream(stream, null, decodeOptions)
-                            bmp?.let { fullBitmap = it.asImageBitmap() }
+                    context.contentResolver.openInputStream(item.uri)?.use { stream ->
+                        val decodeOptions = BitmapFactory.Options().apply {
+                            inSampleSize = sample
+                            inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
                         }
+                        val bmp = BitmapFactory.decodeStream(stream, null, decodeOptions)
+                        bmp?.let { fullBitmap = it.asImageBitmap() }
                     }
                 }
             } catch (_: Exception) {
@@ -885,23 +884,7 @@ private fun DazzFullScreenPhotoPage(item: GalleryItem) {
             Text("Failed to load photograph", color = TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         }
 
-        if (item.isVideo) {
-            IconButton(
-                onClick = { playVideo(context, item.uri) },
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.70f))
-                    .border(2.dp, VintageAmber, CircleShape)
-            ) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = "Play Video",
-                    tint = VintageAmber,
-                    modifier = Modifier.size(44.dp)
-                )
-            }
-        }
+
     }
 }
 
@@ -1127,16 +1110,6 @@ private fun sharePhotos(context: Context, items: List<GalleryItem>) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(shareIntent, "Share ${items.size} Photographs"))
-}
-
-private fun playVideo(context: Context, uri: Uri) {
-    try {
-        val playIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "video/*")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(playIntent)
-    } catch (_: Exception) {}
 }
 
 private suspend fun redevelopPhoto(

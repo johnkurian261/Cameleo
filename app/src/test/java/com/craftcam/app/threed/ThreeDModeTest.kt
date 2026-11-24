@@ -5,6 +5,52 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ThreeDModeTest {
+    @Test
+    fun upsamplingKeepsAStrongSilhouetteAndSmoothSameColorGradients() {
+        val engine = ParallaxWarpEngine(ThreeDConfig())
+        val map = DisparityMap(2, 1, floatArrayOf(0f, 1f))
+        val colors = IntArray(9) { if (it < 4) 0xff151515.toInt() else 0xffd5d5d5.toInt() }
+        val aligned = engine.resampleDisparity(colors, 9, 1, map)
+        assertTrue(aligned[3] < 0.03f)
+        assertTrue(aligned[4] > 0.97f)
+        colors.fill(colors[0])
+        val smooth = engine.resampleDisparity(colors, 9, 1, map)
+        for (i in smooth.indices) assertEquals(i / 8f, smooth[i], 0.0001f)
+    }
+
+    @Test
+    fun newlyExposedBackgroundRetainsTextureBesidePinnedSubject() {
+        val width = 100
+        val colors = IntArray(width) { if (it in 42..58) 0xffff0000.toInt() else 0xff000000.toInt() or it }
+        val depth = FloatArray(width) { if (it in 42..58) 1f else 0f }
+        val engine = ParallaxWarpEngine(ThreeDConfig())
+        for (direction in listOf(-1, 1)) {
+            val view = engine.warpPixels(colors, depth, width, 1, direction * 13.5f, 1f)
+            val gap = if (direction > 0) 32..41 else 59..68
+            assertEquals(10, gap.map { view[it] }.distinct().size)
+            assertTrue(gap.all { view[it] in colors && view[it] != colors[50] })
+        }
+    }
+
+    @Test
+    fun nearbySubjectStaysPinnedAgainstMovingBackground() {
+        val width = 100
+        val near = 0xffff0000.toInt()
+        val far = 0xff001122.toInt()
+        val marker = 0xff00ff00.toInt()
+        val colors = IntArray(width) { if (it in 42..58) near else far }
+        colors[20] = marker
+        val depth = FloatArray(width) { if (it in 42..58) 1f else 0f }
+        val pivot = ThreeDDepthEngine().calculatePivot(width, 1, depth, emptyList())
+        assertEquals(1f, pivot, 0f)
+        val engine = ParallaxWarpEngine(ThreeDConfig())
+        for (direction in listOf(-1, 1)) {
+            val view = engine.warpPixels(colors, depth, width, 1, direction * 13.5f, pivot)
+            assertEquals(20 - direction * 10, view.indexOf(marker))
+            assertEquals((42..58).toList(), view.indices.filter { view[it] == near })
+        }
+    }
+
 
     @Test
     fun testCaptureModeIncludes3D() {
@@ -25,7 +71,7 @@ class ThreeDModeTest {
         assertFalse(config.lightLeakEnabled)
         assertTrue(config.grainIntensity > 0f)
         assertTrue(config.rgbSeparationPx > 0f)
-        assertTrue(config.exportDebugMaps)
+        assertFalse(config.exportDebugMaps)
     }
 
     @Test
@@ -67,7 +113,7 @@ class ThreeDModeTest {
     @Test
     fun testQuadLensBounceCadenceAndOffsets() {
         val lensOffsets = floatArrayOf(-1.0f, -0.333f, 0.333f, 1.0f)
-        val bounceSequence = intArrayOf(0, 1, 2, 3, 2, 1)
+        val bounceSequence = ParallaxWarpEngine.bounce(listOf(0, 1, 2, 3))
 
         assertEquals(4, lensOffsets.size)
         assertEquals(6, bounceSequence.size)

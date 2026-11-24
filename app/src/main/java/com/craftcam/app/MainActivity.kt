@@ -54,16 +54,17 @@ class MainActivity : ComponentActivity() {
                             list.add(Manifest.permission.READ_MEDIA_IMAGES)
                         } else {
                             list.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                            list.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                                list.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            }
                         }
                         list.toTypedArray()
                     }
 
                     var permissionsGranted by remember {
                         mutableStateOf(
-                            requiredPermissions.all {
-                                ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-                            }
+                            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                                PackageManager.PERMISSION_GRANTED
                         )
                     }
 

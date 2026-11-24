@@ -450,7 +450,7 @@ void main() {
         if (maxCh > knee) {
             float d = maxCh - knee;
             float s = 1.0 - knee;
-            float rolledMax = knee + s * (d / (d + s * 0.75));
+            float rolledMax = knee + s * (d / (d + s));
             color = color * (rolledMax / maxCh);
             float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
             float desat = clamp((coreLuma - knee) / (1.0 - knee), 0.0, 1.0);
@@ -477,7 +477,8 @@ void main() {
     // 4. Preset & User Contrast
     if (uDebugStageToneCurve) {
         if (!uNaturalModeEnabled) {
-            float sLift = 0.035 * (1.0 - clamp(luma, 0.0, 1.0)) * (1.0 - clamp(luma, 0.0, 1.0));
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float sLift = uFilterIntensity * 0.035 * (1.0 - clamp(luma, 0.0, 1.0)) * (1.0 - clamp(luma, 0.0, 1.0));
             color += vec3(sLift);
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
@@ -525,13 +526,13 @@ void main() {
         color += uShadowTint * shadowWeight;
 
         // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
-        if (uHighlightRollOff < 0.99 && !uNaturalModeEnabled) {
-            float knee = max(0.86, uHighlightRollOff);
+        if (uHighlightRollOff < 1.0 && !uNaturalModeEnabled) {
+            float knee = uHighlightRollOff;
             float maxCh = max(max(color.r, color.g), color.b);
             if (maxCh > knee) {
                 float d = maxCh - knee;
                 float s = 1.0 - knee;
-                float rolledMax = knee + s * (d / (d + s * 0.75));
+                float rolledMax = knee + s * (d / (d + s));
                 color = color * (rolledMax / maxCh);
                 
                 float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -1097,7 +1098,7 @@ void main() {
         if (maxCh > knee) {
             float d = maxCh - knee;
             float s = 1.0 - knee;
-            float rolledMax = knee + s * (d / (d + s * 0.75));
+            float rolledMax = knee + s * (d / (d + s));
             color = color * (rolledMax / maxCh);
             float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
             float desat = clamp((coreLuma - knee) / (1.0 - knee), 0.0, 1.0);
@@ -1120,7 +1121,8 @@ void main() {
     // 4. Contrast
     if (uDebugStageToneCurve) {
         if (!uNaturalModeEnabled) {
-            float sLift = 0.035 * (1.0 - clamp(luma, 0.0, 1.0)) * (1.0 - clamp(luma, 0.0, 1.0));
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float sLift = uFilterIntensity * 0.035 * (1.0 - clamp(luma, 0.0, 1.0)) * (1.0 - clamp(luma, 0.0, 1.0));
             color += vec3(sLift);
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
@@ -1168,13 +1170,13 @@ void main() {
         color += uShadowTint * shadowWeight;
 
         // 8. Filmic Asymptotic Highlight Shoulder Rolloff (preserves hue/chromaticity into specular highlights)
-        if (uHighlightRollOff < 0.99 && !uNaturalModeEnabled) {
-            float knee = max(0.86, uHighlightRollOff);
+        if (uHighlightRollOff < 1.0 && !uNaturalModeEnabled) {
+            float knee = uHighlightRollOff;
             float maxCh = max(max(color.r, color.g), color.b);
             if (maxCh > knee) {
                 float d = maxCh - knee;
                 float s = 1.0 - knee;
-                float rolledMax = knee + s * (d / (d + s * 0.75));
+                float rolledMax = knee + s * (d / (d + s));
                 color = color * (rolledMax / maxCh);
                 
                 float coreLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));

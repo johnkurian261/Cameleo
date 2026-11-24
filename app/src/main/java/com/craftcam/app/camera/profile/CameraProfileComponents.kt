@@ -14,6 +14,14 @@ enum class LutInputSpace {
     CUSTOM_PRETRANSFORM      // Pre-LUT contrast flattening / linearization
 }
 
+/** Above the stock's knee the slope falls smoothly from one toward zero. */
+internal fun compressFilmHighlight(peak: Float, shoulder: Float): Float {
+    if (peak <= shoulder || shoulder >= 1f) return peak
+    val excess = peak - shoulder
+    val headroom = 1f - shoulder
+    return shoulder + headroom * excess / (excess + headroom)
+}
+
 /**
  * Film Stock / Color Chemistry Profile.
  * Encapsulates the film look independently from camera bodies and optical lenses.
@@ -47,6 +55,14 @@ data class FilmProfile(
     val halationColorTintB: Float = 0.10f,
     val toneCurve: com.craftcam.app.color.ToneCurve? = null
 ) {
+    fun fadeAtIntensity(presetFade: Float, adjustment: Float, intensity: Float): Float {
+        val stockFade = if (fade != 0f) fade else presetFade
+        return (stockFade + adjustment).coerceIn(0f, 1f) * intensity.coerceIn(0f, 1f)
+    }
+
+    fun shoulderAtIntensity(intensity: Float): Float =
+        1f - (1f - highlightRollOff.coerceIn(0f, 1f)) * intensity.coerceIn(0f, 1f)
+
     companion object {
         val Default = FilmProfile(id = "film_default", name = "Standard Color")
         val Classic35 = FilmProfile(

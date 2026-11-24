@@ -75,7 +75,7 @@ fun CameraLensWheel(
     val itemSpacingPx = with(density) { itemSpacingDp.toPx() }
     val maxArcOffsetPx = with(density) { 3.5.dp.toPx() }
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
@@ -107,7 +107,7 @@ fun CameraLensWheel(
                     fontWeight = FontWeight.Bold
                 )
             }
-            return@BoxWithConstraints
+            return@Box
         }
 
         // Multi-lens interactive rotating wheel

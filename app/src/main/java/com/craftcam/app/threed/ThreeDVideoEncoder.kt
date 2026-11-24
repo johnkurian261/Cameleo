@@ -74,6 +74,7 @@ class ThreeDVideoEncoder {
         var mediaMuxer: MediaMuxer? = null
         var eglHelper: EglSurfaceRenderer? = null
         var muxerStarted = false
+        var inputSurface: android.view.Surface? = null
         var trackIndex = -1
 
         try {
@@ -87,7 +88,7 @@ class ThreeDVideoEncoder {
             mediaCodec = MediaCodec.createEncoderByType(MIME_TYPE)
             mediaCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
 
-            val inputSurface = mediaCodec.createInputSurface()
+            inputSurface = mediaCodec.createInputSurface()
             eglHelper = EglSurfaceRenderer(inputSurface, encWidth, encHeight)
             eglHelper.makeCurrent()
 
@@ -112,7 +113,7 @@ class ThreeDVideoEncoder {
                 presentationTimeNs += frameDurationNs
 
                 // Drain pending encoder outputs
-                drainEncoder(mediaCodec, mediaMuxer, bufferInfo, endOfStream = false) { newTrackIndex ->
+                drainEncoder(mediaCodec, mediaMuxer, bufferInfo, trackIndex, endOfStream = false) { newTrackIndex ->
                     trackIndex = newTrackIndex
                     muxerStarted = true
                 }
@@ -120,11 +121,14 @@ class ThreeDVideoEncoder {
 
             // Signal End of Stream
             mediaCodec.signalEndOfInputStream()
-            drainEncoder(mediaCodec, mediaMuxer, bufferInfo, endOfStream = true) { newTrackIndex ->
+            drainEncoder(mediaCodec, mediaMuxer, bufferInfo, trackIndex, endOfStream = true) { newTrackIndex ->
                 trackIndex = newTrackIndex
                 muxerStarted = true
             }
 
+            check(muxerStarted) { "Encoder produced no video track" }
+            muxerStarted = false
+            mediaMuxer.stop()
             return true
         } catch (t: Throwable) {
             Log.e(TAG, "Hardware video encoding failed", t)
@@ -153,6 +157,7 @@ class ThreeDVideoEncoder {
                 Log.w(TAG, "Error releasing MediaMuxer: ${e.message}")
             }
             eglHelper?.release()
+            inputSurface?.release()
         }
     }
 
@@ -160,21 +165,22 @@ class ThreeDVideoEncoder {
         codec: MediaCodec,
         muxer: MediaMuxer?,
         bufferInfo: MediaCodec.BufferInfo,
+        currentTrackIndex: Int,
         endOfStream: Boolean,
         onMuxerStarted: (Int) -> Unit
     ) {
-        var muxerStarted = false
-        var trackIndex = -1
+        var trackIndex = currentTrackIndex
+        val deadline = android.os.SystemClock.elapsedRealtime() + 5000L
 
         while (true) {
             val encoderStatus = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC)
             if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                 if (!endOfStream) break
+                check(android.os.SystemClock.elapsedRealtime() < deadline) { "Encoder timed out waiting for EOS" }
             } else if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                 val newFormat = codec.outputFormat
                 trackIndex = muxer?.addTrack(newFormat) ?: -1
                 muxer?.start()
-                muxerStarted = true
                 onMuxerStarted(trackIndex)
             } else if (encoderStatus >= 0) {
                 val encodedData = codec.getOutputBuffer(encoderStatus)
@@ -186,7 +192,7 @@ class ThreeDVideoEncoder {
                     if (bufferInfo.size > 0 && muxer != null) {
                         encodedData.position(bufferInfo.offset)
                         encodedData.limit(bufferInfo.offset + bufferInfo.size)
-                        muxer.writeSampleData(trackIndex.coerceAtLeast(0), encodedData, bufferInfo)
+                        muxer.writeSampleData(trackIndex, encodedData, bufferInfo)
                     }
 
                     codec.releaseOutputBuffer(encoderStatus, false)

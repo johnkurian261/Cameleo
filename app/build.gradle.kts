@@ -41,6 +41,9 @@ android {
     buildFeatures {
         compose = true
     }
+    androidResources {
+        noCompress += "onnx"
+    }
     testOptions {
         unitTests.isReturnDefaultValues = true
     }

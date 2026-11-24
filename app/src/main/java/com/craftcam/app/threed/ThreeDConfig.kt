@@ -40,10 +40,10 @@ data class ThreeDConfig(
     val rgbSeparationPx: Float = 0.5f,
 
     /** Mechanical frame registration jitter amplitude in pixels (film gate tolerance). */
-    val mechanicalJitterPx: Float = 0.25f,
+    val mechanicalJitterPx: Float = 0f,
 
     /** Frame-to-frame leaf shutter exposure variation multiplier amplitude (±0.8%). */
-    val exposureVariance: Float = 0.008f,
+    val exposureVariance: Float = 0f,
 
     /** Authentic analog 35mm film grain blending intensity. */
     val grainIntensity: Float = 0.18f,
@@ -64,7 +64,7 @@ data class ThreeDConfig(
     val lightLeakIntensity: Float = 0.12f,
 
     /** Whether to export debug depth, disparity, and viewpoint maps for verification. */
-    val exportDebugMaps: Boolean = true,
+    val exportDebugMaps: Boolean = false,
 
     /** Diagnostic geometry-only mode disabling grain, jitter, and chromatic dispersion to isolate pure parallax. */
     val d3dGeometryDebug: Boolean = false

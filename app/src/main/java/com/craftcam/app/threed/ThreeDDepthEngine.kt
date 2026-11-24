@@ -291,68 +291,30 @@ class ThreeDDepthEngine(
      * The subject at this disparity plane remains perfectly stationary in physical space
      * while foreground and background exhibit stereoscopic parallax around them.
      */
-    private fun calculatePivot(
+    internal fun calculatePivot(
         w: Int,
         h: Int,
         disparityValues: FloatArray,
         faces: List<FaceRegion>
     ): Float {
-        // Priority 1: Detected face anchors
-        if (faces.isNotEmpty()) {
-            var faceSum = 0.0f
-            var faceCount = 0
-            for (face in faces) {
-                val xMin = (face.bounds.left * w).toInt().coerceIn(0, w - 1)
-                val xMax = (face.bounds.right * w).toInt().coerceIn(0, w - 1)
-                val yMin = (face.bounds.top * h).toInt().coerceIn(0, h - 1)
-                val yMax = (face.bounds.bottom * h).toInt().coerceIn(0, h - 1)
-                for (y in yMin..yMax) {
-                    val row = y * w
-                    for (x in xMin..xMax) {
-                        faceSum += disparityValues[row + x]
-                        faceCount++
-                    }
-                }
-            }
-            if (faceCount > 0) {
-                val facePivot = (faceSum / faceCount).coerceIn(0.20f, 0.80f)
-                Log.d(TAG, "Calculated dynamic face convergence pivot: $facePivot ($faceCount samples)")
-                return facePivot
-            }
-        }
-
-        // Priority 2: Center-weighted subject area (central 40% region with radial falloff)
-        var weightedSum = 0.0f
-        var weightTotal = 0.0f
-        val x0 = (w * 0.30f).toInt().coerceIn(0, w - 1)
-        val x1 = (w * 0.70f).toInt().coerceIn(0, w - 1)
-        val y0 = (h * 0.30f).toInt().coerceIn(0, h - 1)
-        val y1 = (h * 0.70f).toInt().coerceIn(0, h - 1)
-
-        val cx = (w - 1) * 0.5f
-        val cy = (h - 1) * 0.5f
-        val maxDist = kotlin.math.sqrt(cx * cx + cy * cy).coerceAtLeast(1f)
-
+        // Anchor a real surface. Averaging a foreground face with a distant wall
+        // creates a convergence plane that neither object actually occupies.
+        val face = faces.maxByOrNull { it.areaFraction * it.confidence }?.bounds
+        val cx = if (face == null) 0.5f else (face.left + face.right) * 0.5f
+        val cy = if (face == null) 0.5f else (face.top + face.bottom) * 0.5f
+        val rx = if (face == null) 0.04f else (face.right - face.left) * 0.25f
+        val ry = if (face == null) 0.04f else (face.bottom - face.top) * 0.25f
+        val x0 = ((cx - rx) * w).toInt().coerceIn(0, w - 1)
+        val x1 = ((cx + rx) * w).toInt().coerceIn(x0, w - 1)
+        val y0 = ((cy - ry) * h).toInt().coerceIn(0, h - 1)
+        val y1 = ((cy + ry) * h).toInt().coerceIn(y0, h - 1)
+        val samples = FloatArray((x1 - x0 + 1) * (y1 - y0 + 1))
+        var index = 0
         for (y in y0..y1) {
-            val row = y * w
-            val dy = y - cy
-            for (x in x0..x1) {
-                val dx = x - cx
-                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                val weight = (1.0f - dist / maxDist).coerceIn(0.1f, 1.0f)
-                val d = disparityValues[row + x]
-                weightedSum += d * weight
-                weightTotal += weight
-            }
+            for (x in x0..x1) samples[index++] = disparityValues[y * w + x]
         }
-
-        val pivot = if (weightTotal > 0f) {
-            (weightedSum / weightTotal).coerceIn(0.35f, 0.75f)
-        } else {
-            config.pivotDisparity
-        }
-        Log.d(TAG, "Calculated dynamic center convergence pivot: $pivot")
-        return pivot
+        samples.sort()
+        return samples[samples.size / 2].coerceIn(0f, 1f)
     }
 
     /**

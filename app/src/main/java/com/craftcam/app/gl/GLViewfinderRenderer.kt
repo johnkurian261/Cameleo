@@ -1297,7 +1297,6 @@ class GLViewfinderRenderer(
             val baseSaturation = if (film.saturation != 1.0f) film.saturation else color.saturation
             val baseTemp = if (film.temperature != 0.0f) film.temperature else color.temperature
             val baseTint = if (film.tint != 0.0f) film.tint else color.tint
-            val baseHighlightRollOff = if (film.highlightRollOff != 1.0f) film.highlightRollOff else color.highlightRollOff
             val baseShadowR = if (film.shadowTintR != 0.0f) film.shadowTintR else color.shadowTintR
             val baseShadowG = if (film.shadowTintG != 0.0f) film.shadowTintG else color.shadowTintG
             val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else color.shadowTintB
@@ -1310,8 +1309,8 @@ class GLViewfinderRenderer(
             val temperature = ((baseTemp + colorProfileAdj.tempDelta + tuning.temperatureOffset) * intensity).coerceIn(-1.0f, 1.0f)
             val tint = ((baseTint + colorProfileAdj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
             val gamma = 1.0f + (color.gamma - 1.0f) * intensity
-            val fade = (color.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0.0f) * intensity
-            val highlightRollOff = 1.0f - (1.0f - baseHighlightRollOff) * intensity
+            val fade = film.fadeAtIntensity(color.fade, colorProfileAdj.fadeDelta, intensity)
+            val highlightRollOff = film.shoulderAtIntensity(intensity)
 
             GLES30.glUniform1f(uContrastLoc, contrast)
             GLES30.glUniform1f(uSaturationLoc, saturation)
