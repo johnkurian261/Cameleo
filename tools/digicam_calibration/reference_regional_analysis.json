@@ -1,0 +1,903 @@
+[
+  {
+    "id": "ref1",
+    "name": "Restaurant (Warm Amber)",
+    "file": "media_1795613973085_2ce0732d.jpg",
+    "dimensions": "736x414",
+    "lighting": "Amber Tungsten",
+    "primary_profile": "CPM35",
+    "measured_global_mean_rgb": [
+      161.0,
+      94.8,
+      25.3
+    ],
+    "measured_median_luma": 98,
+    "target_mean_rgb": [
+      161.3,
+      94.8,
+      24.4
+    ],
+    "target_median_luma": 93.6,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.46,
+          0.32,
+          0.58,
+          0.48
+        ],
+        "mean_rgb": [
+          192.0,
+          104.4,
+          11.7
+        ],
+        "stddev_rgb": [
+          51.7,
+          38.7,
+          12.7
+        ],
+        "norm_rg": [
+          0.623,
+          0.339
+        ],
+        "chroma": 180.3,
+        "saturation": 0.939,
+        "cielab": [
+          53.2,
+          29.6,
+          58.7
+        ]
+      },
+      "neutral_table": {
+        "box_norm": [
+          0.7,
+          0.85,
+          0.9,
+          0.98
+        ],
+        "mean_rgb": [
+          185.7,
+          104.3,
+          12.8
+        ],
+        "stddev_rgb": [
+          37.0,
+          29.8,
+          14.7
+        ],
+        "norm_rg": [
+          0.613,
+          0.344
+        ],
+        "chroma": 172.8,
+        "saturation": 0.931,
+        "cielab": [
+          52.3,
+          27.0,
+          57.4
+        ]
+      },
+      "ambient_lights": {
+        "box_norm": [
+          0.55,
+          0.05,
+          0.85,
+          0.25
+        ],
+        "mean_rgb": [
+          216.6,
+          153.7,
+          56.4
+        ],
+        "stddev_rgb": [
+          39.4,
+          62.8,
+          61.8
+        ],
+        "norm_rg": [
+          0.508,
+          0.36
+        ],
+        "chroma": 160.2,
+        "saturation": 0.74,
+        "cielab": [
+          68.0,
+          14.8,
+          57.8
+        ]
+      },
+      "shadows": {
+        "box_norm": [
+          0.02,
+          0.7,
+          0.15,
+          0.95
+        ],
+        "mean_rgb": [
+          104.8,
+          51.3,
+          8.8
+        ],
+        "stddev_rgb": [
+          43.6,
+          28.3,
+          10.1
+        ],
+        "norm_rg": [
+          0.636,
+          0.311
+        ],
+        "chroma": 96.0,
+        "saturation": 0.916,
+        "cielab": [
+          27.8,
+          21.0,
+          34.8
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref2",
+    "name": "Red Dress (Direct Illumination/Flash)",
+    "file": "media_1795613973098_78114b3b.jpg",
+    "dimensions": "736x981",
+    "lighting": "Golden Direct Flash",
+    "primary_profile": "CPM35",
+    "measured_global_mean_rgb": [
+      166.6,
+      64.4,
+      23.4
+    ],
+    "measured_median_luma": 86,
+    "target_mean_rgb": [
+      166.6,
+      64.4,
+      23.4
+    ],
+    "target_median_luma": 76.3,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.45,
+          0.16,
+          0.65,
+          0.32
+        ],
+        "mean_rgb": [
+          191.9,
+          115.1,
+          52.8
+        ],
+        "stddev_rgb": [
+          63.0,
+          58.7,
+          33.7
+        ],
+        "norm_rg": [
+          0.533,
+          0.32
+        ],
+        "chroma": 139.1,
+        "saturation": 0.725,
+        "cielab": [
+          55.8,
+          25.1,
+          46.0
+        ]
+      },
+      "red_dress": {
+        "box_norm": [
+          0.15,
+          0.55,
+          0.65,
+          0.9
+        ],
+        "mean_rgb": [
+          230.1,
+          71.4,
+          33.1
+        ],
+        "stddev_rgb": [
+          27.7,
+          43.7,
+          16.5
+        ],
+        "norm_rg": [
+          0.688,
+          0.213
+        ],
+        "chroma": 197.0,
+        "saturation": 0.856,
+        "cielab": [
+          53.5,
+          59.6,
+          54.8
+        ]
+      },
+      "shadows": {
+        "box_norm": [
+          0.8,
+          0.6,
+          0.98,
+          0.85
+        ],
+        "mean_rgb": [
+          66.4,
+          21.8,
+          7.2
+        ],
+        "stddev_rgb": [
+          20.2,
+          11.0,
+          7.7
+        ],
+        "norm_rg": [
+          0.696,
+          0.229
+        ],
+        "chroma": 59.2,
+        "saturation": 0.892,
+        "cielab": [
+          14.2,
+          20.7,
+          18.6
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref3",
+    "name": "Indoor Portrait (Motion Softness & Amber Stamp)",
+    "file": "media_1795613973098_57e0a7c6.jpg",
+    "dimensions": "735x525",
+    "lighting": "Amber Tungsten + Motion",
+    "primary_profile": "CPM35",
+    "measured_global_mean_rgb": [
+      179.9,
+      96.2,
+      25.8
+    ],
+    "measured_median_luma": 133,
+    "target_mean_rgb": [
+      180.0,
+      96.1,
+      25.7
+    ],
+    "target_median_luma": 128.6,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.42,
+          0.3,
+          0.58,
+          0.52
+        ],
+        "mean_rgb": [
+          152.8,
+          54.9,
+          8.7
+        ],
+        "stddev_rgb": [
+          65.1,
+          36.5,
+          14.7
+        ],
+        "norm_rg": [
+          0.706,
+          0.254
+        ],
+        "chroma": 144.1,
+        "saturation": 0.943,
+        "cielab": [
+          36.9,
+          39.1,
+          45.3
+        ]
+      },
+      "wall_amber": {
+        "box_norm": [
+          0.7,
+          0.2,
+          0.95,
+          0.6
+        ],
+        "mean_rgb": [
+          224.6,
+          125.2,
+          18.2
+        ],
+        "stddev_rgb": [
+          8.9,
+          5.1,
+          4.8
+        ],
+        "norm_rg": [
+          0.61,
+          0.34
+        ],
+        "chroma": 206.4,
+        "saturation": 0.919,
+        "cielab": [
+          62.3,
+          32.3,
+          65.9
+        ]
+      },
+      "amber_timestamp": {
+        "box_norm": [
+          0.7,
+          0.82,
+          0.95,
+          0.9
+        ],
+        "mean_rgb": [
+          204.9,
+          121.5,
+          13.3
+        ],
+        "stddev_rgb": [
+          15.0,
+          14.3,
+          11.6
+        ],
+        "norm_rg": [
+          0.603,
+          0.358
+        ],
+        "chroma": 191.6,
+        "saturation": 0.935,
+        "cielab": [
+          58.8,
+          26.0,
+          63.2
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref4",
+    "name": "Sunlight Portrait (Bright Highlights)",
+    "file": "media_1795613973100_a79222ac.jpg",
+    "dimensions": "735x490",
+    "lighting": "Golden Daylight",
+    "primary_profile": "CCD",
+    "measured_global_mean_rgb": [
+      135.3,
+      112.6,
+      89.8
+    ],
+    "measured_median_luma": 104,
+    "target_mean_rgb": [
+      132.1,
+      113.7,
+      93.5
+    ],
+    "target_median_luma": 102.9,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.38,
+          0.28,
+          0.58,
+          0.52
+        ],
+        "mean_rgb": [
+          203.3,
+          153.8,
+          107.5
+        ],
+        "stddev_rgb": [
+          58.2,
+          66.3,
+          57.2
+        ],
+        "norm_rg": [
+          0.437,
+          0.331
+        ],
+        "chroma": 95.7,
+        "saturation": 0.471,
+        "cielab": [
+          67.2,
+          12.8,
+          31.4
+        ]
+      },
+      "sunlit_shoulder": {
+        "box_norm": [
+          0.35,
+          0.62,
+          0.65,
+          0.85
+        ],
+        "mean_rgb": [
+          155.7,
+          112.4,
+          76.7
+        ],
+        "stddev_rgb": [
+          80.3,
+          69.9,
+          48.6
+        ],
+        "norm_rg": [
+          0.451,
+          0.326
+        ],
+        "chroma": 79.0,
+        "saturation": 0.507,
+        "cielab": [
+          51.0,
+          12.7,
+          26.5
+        ]
+      },
+      "background_foliage": {
+        "box_norm": [
+          0.45,
+          0.02,
+          0.65,
+          0.25
+        ],
+        "mean_rgb": [
+          72.2,
+          51.3,
+          33.1
+        ],
+        "stddev_rgb": [
+          38.4,
+          28.5,
+          25.3
+        ],
+        "norm_rg": [
+          0.461,
+          0.328
+        ],
+        "chroma": 39.0,
+        "saturation": 0.541,
+        "cielab": [
+          23.3,
+          6.8,
+          15.2
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref5",
+    "name": "Car Portrait (Backlit Sun & Direct Foreground)",
+    "file": "media_1795613973104_eaba7f3e.jpg",
+    "dimensions": "736x552",
+    "lighting": "Golden Daylight + Fill",
+    "primary_profile": "CCD",
+    "measured_global_mean_rgb": [
+      147.7,
+      124.4,
+      94.1
+    ],
+    "measured_median_luma": 126,
+    "target_mean_rgb": [
+      147.7,
+      124.4,
+      94.2
+    ],
+    "target_median_luma": 124.9,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.26,
+          0.22,
+          0.45,
+          0.45
+        ],
+        "mean_rgb": [
+          135.5,
+          83.1,
+          49.2
+        ],
+        "stddev_rgb": [
+          65.4,
+          49.7,
+          39.6
+        ],
+        "norm_rg": [
+          0.506,
+          0.31
+        ],
+        "chroma": 86.3,
+        "saturation": 0.637,
+        "cielab": [
+          40.6,
+          18.4,
+          28.7
+        ]
+      },
+      "overexposed_window": {
+        "box_norm": [
+          0.48,
+          0.18,
+          0.8,
+          0.48
+        ],
+        "mean_rgb": [
+          224.8,
+          207.2,
+          172.6
+        ],
+        "stddev_rgb": [
+          26.9,
+          36.5,
+          53.6
+        ],
+        "norm_rg": [
+          0.372,
+          0.343
+        ],
+        "chroma": 52.2,
+        "saturation": 0.232,
+        "cielab": [
+          83.8,
+          0.7,
+          19.4
+        ]
+      },
+      "neutral_interior": {
+        "box_norm": [
+          0.65,
+          0.6,
+          0.88,
+          0.85
+        ],
+        "mean_rgb": [
+          98.0,
+          91.5,
+          75.1
+        ],
+        "stddev_rgb": [
+          31.3,
+          31.2,
+          28.7
+        ],
+        "norm_rg": [
+          0.37,
+          0.346
+        ],
+        "chroma": 22.9,
+        "saturation": 0.233,
+        "cielab": [
+          39.0,
+          -0.4,
+          10.4
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref6",
+    "name": "Mirror Selfie (Imperfect AWB)",
+    "file": "media_1795613973105_f442b347.jpg",
+    "dimensions": "735x509",
+    "lighting": "Amber Tungsten AWB",
+    "primary_profile": "CPM35",
+    "measured_global_mean_rgb": [
+      160.6,
+      99.8,
+      46.1
+    ],
+    "measured_median_luma": 112,
+    "target_mean_rgb": [
+      160.6,
+      99.8,
+      46.1
+    ],
+    "target_median_luma": 108.7,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.2,
+          0.12,
+          0.44,
+          0.48
+        ],
+        "mean_rgb": [
+          104.9,
+          44.2,
+          13.3
+        ],
+        "stddev_rgb": [
+          57.1,
+          28.7,
+          9.2
+        ],
+        "norm_rg": [
+          0.646,
+          0.272
+        ],
+        "chroma": 91.6,
+        "saturation": 0.873,
+        "cielab": [
+          26.3,
+          25.3,
+          31.5
+        ]
+      },
+      "red_camera": {
+        "box_norm": [
+          0.41,
+          0.32,
+          0.58,
+          0.48
+        ],
+        "mean_rgb": [
+          101.0,
+          43.7,
+          17.1
+        ],
+        "stddev_rgb": [
+          40.2,
+          30.0,
+          15.8
+        ],
+        "norm_rg": [
+          0.624,
+          0.27
+        ],
+        "chroma": 83.9,
+        "saturation": 0.831,
+        "cielab": [
+          25.5,
+          24.0,
+          28.5
+        ]
+      },
+      "neutral_wall": {
+        "box_norm": [
+          0.65,
+          0.15,
+          0.85,
+          0.6
+        ],
+        "mean_rgb": [
+          229.1,
+          170.1,
+          91.0
+        ],
+        "stddev_rgb": [
+          14.5,
+          24.4,
+          21.3
+        ],
+        "norm_rg": [
+          0.467,
+          0.347
+        ],
+        "chroma": 138.2,
+        "saturation": 0.603,
+        "cielab": [
+          73.7,
+          13.4,
+          48.5
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref7",
+    "name": "Train Interior (Yellow-Green & Timestamp)",
+    "file": "media_1795613973108_5c61493b.jpg",
+    "dimensions": "736x552",
+    "lighting": "Yellow-Green Artificial",
+    "primary_profile": "CCD",
+    "measured_global_mean_rgb": [
+      120.3,
+      108.0,
+      81.8
+    ],
+    "measured_median_luma": 81,
+    "target_mean_rgb": [
+      120.3,
+      108.0,
+      81.8
+    ],
+    "target_median_luma": 80.0,
+    "regions": {
+      "skin_arm_neck": {
+        "box_norm": [
+          0.38,
+          0.48,
+          0.52,
+          0.65
+        ],
+        "mean_rgb": [
+          114.4,
+          82.1,
+          51.7
+        ],
+        "stddev_rgb": [
+          61.5,
+          40.8,
+          30.8
+        ],
+        "norm_rg": [
+          0.461,
+          0.331
+        ],
+        "chroma": 62.7,
+        "saturation": 0.548,
+        "cielab": [
+          37.7,
+          9.6,
+          23.1
+        ]
+      },
+      "train_interior_ceiling": {
+        "box_norm": [
+          0.6,
+          0.05,
+          0.9,
+          0.25
+        ],
+        "mean_rgb": [
+          85.5,
+          79.0,
+          44.4
+        ],
+        "stddev_rgb": [
+          65.0,
+          63.0,
+          60.4
+        ],
+        "norm_rg": [
+          0.409,
+          0.378
+        ],
+        "chroma": 41.0,
+        "saturation": 0.48,
+        "cielab": [
+          33.4,
+          -2.9,
+          21.3
+        ]
+      },
+      "digital_timestamp": {
+        "box_norm": [
+          0.65,
+          0.9,
+          0.92,
+          0.96
+        ],
+        "mean_rgb": [
+          61.9,
+          52.0,
+          24.8
+        ],
+        "stddev_rgb": [
+          55.3,
+          61.5,
+          30.3
+        ],
+        "norm_rg": [
+          0.446,
+          0.375
+        ],
+        "chroma": 37.1,
+        "saturation": 0.6,
+        "cielab": [
+          22.1,
+          0.2,
+          18.7
+        ]
+      }
+    }
+  },
+  {
+    "id": "ref8",
+    "name": "Night Street (Olive-Yellow & Glow)",
+    "file": "media_1795613973083_e86e5f83.jpg",
+    "dimensions": "736x552",
+    "lighting": "Yellow-Green Artificial / Sodium",
+    "primary_profile": "CCD",
+    "measured_global_mean_rgb": [
+      98.1,
+      87.3,
+      36.2
+    ],
+    "measured_median_luma": 70,
+    "target_mean_rgb": [
+      98.2,
+      87.3,
+      36.1
+    ],
+    "target_median_luma": 71.0,
+    "regions": {
+      "skin_face": {
+        "box_norm": [
+          0.42,
+          0.35,
+          0.58,
+          0.55
+        ],
+        "mean_rgb": [
+          152.5,
+          130.3,
+          60.5
+        ],
+        "stddev_rgb": [
+          56.2,
+          43.9,
+          32.5
+        ],
+        "norm_rg": [
+          0.444,
+          0.38
+        ],
+        "chroma": 91.9,
+        "saturation": 0.603,
+        "cielab": [
+          55.2,
+          -0.3,
+          40.2
+        ]
+      },
+      "street_lamp_glow": {
+        "box_norm": [
+          0.34,
+          0.3,
+          0.44,
+          0.45
+        ],
+        "mean_rgb": [
+          215.3,
+          211.2,
+          143.2
+        ],
+        "stddev_rgb": [
+          37.5,
+          39.6,
+          58.9
+        ],
+        "norm_rg": [
+          0.378,
+          0.371
+        ],
+        "chroma": 72.1,
+        "saturation": 0.335,
+        "cielab": [
+          83.5,
+          -8.8,
+          34.2
+        ]
+      },
+      "night_shadow": {
+        "box_norm": [
+          0.75,
+          0.65,
+          0.95,
+          0.95
+        ],
+        "mean_rgb": [
+          52.3,
+          41.8,
+          6.3
+        ],
+        "stddev_rgb": [
+          17.4,
+          17.0,
+          9.0
+        ],
+        "norm_rg": [
+          0.521,
+          0.416
+        ],
+        "chroma": 46.1,
+        "saturation": 0.88,
+        "cielab": [
+          17.4,
+          0.3,
+          22.6
+        ]
+      }
+    }
+  }
+]

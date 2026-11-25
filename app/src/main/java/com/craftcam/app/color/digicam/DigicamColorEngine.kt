@@ -5,20 +5,22 @@ import android.util.Log
 import kotlin.math.*
 
 /**
- * Illuminant-Aware Golden Y2K Digicam Color Engine.
+ * Illuminant-Aware Golden Y2K Digicam Color Engine (Phase 2 Upgrade).
  *
  * Implements:
- * 1. Dynamic illuminant estimation across the four reference lighting regimes:
+ * 1. Hybrid Multi-Cue Illuminant Estimation with continuous regime weighting:
  *    - [DigicamIlluminant.GOLDEN_DAYLIGHT] (Refs 4, 5)
  *    - [DigicamIlluminant.AMBER_TUNGSTEN] (Refs 1, 3, 6)
  *    - [DigicamIlluminant.GOLDEN_DIRECT_FLASH] (Refs 2, 5)
  *    - [DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL] (Refs 7, 8)
- * 2. Partial white balance retention preventing modern smartphone over-correction.
- * 3. Hue-dependent red channel protection maintaining vivid scarlet/crimson (Ref 2).
- * 4. Compact digital camera tonal contrast with deep blacks, rich lower midtones, and soft highlight rolloff.
- * 5. Distinct parameter profiles for CPM35 (warm nostalgic compact) and CCD (pocket digicam).
+ * 2. Physically meaningful Partial White Balance in linear color space with logarithmic gain interpolation.
+ * 3. Continuous Hue-Chroma-Luminance Red Protection preventing warm skin/wood oversaturation (Ref 2).
+ * 4. Smooth continuous lighting regime interpolation with confidence-aware damping.
+ * 5. Distinct camera-specific calibrations for CPM35 (amber warmth) and CCD (punchy pocket digicam).
  */
-class DigicamColorEngine {
+class DigicamColorEngine(
+    private val hybridEstimator: HybridIlluminantEstimator = HybridIlluminantEstimator()
+) {
 
     companion object {
         private const val TAG = "DigicamColorEngine"
@@ -78,10 +80,29 @@ class DigicamColorEngine {
             opticalScatterIntensity = 0.38f,
             noiseMultiplier = 1.50f
         )
+
+        // Precomputed sRGB <-> Linear RGB lookup tables for 0ms execution
+        private val SRGB_TO_LIN = FloatArray(256) { i ->
+            val c = i / 255.0f
+            if (c <= 0.04045f) c / 12.92f else ((c + 0.055f) / 1.055f).pow(2.4f)
+        }
+
+        private val LIN_TO_SRGB_TABLE_SIZE = 1024
+        private val LIN_TO_SRGB = IntArray(LIN_TO_SRGB_TABLE_SIZE + 1) { i ->
+            val c = i.toFloat() / LIN_TO_SRGB_TABLE_SIZE.toFloat()
+            val srgb = if (c <= 0.0031308f) 12.92f * c else 1.055f * c.pow(1.0f / 2.4f) - 0.055f
+            (srgb * 255.0f).roundToInt().coerceIn(0, 255)
+        }
+
+        @JvmStatic
+        fun linearToSrgb(linear: Float): Int {
+            val idx = (linear.coerceIn(0.0f, 1.0f) * LIN_TO_SRGB_TABLE_SIZE).toInt()
+            return LIN_TO_SRGB[idx]
+        }
     }
 
     /**
-     * Estimates the prevailing scene illuminant using available capture metadata and/or image statistics.
+     * Estimates the prevailing scene illuminant using the robust hybrid multi-cue estimator.
      */
     fun estimateIlluminant(
         pixels: IntArray,
@@ -91,120 +112,141 @@ class DigicamColorEngine {
         iso: Int = 100,
         awbGains: FloatArray? = null
     ): DigicamIlluminant {
-        if (isFlashActive) {
-            return DigicamIlluminant.GOLDEN_DIRECT_FLASH
-        }
-
-        // Subsample pixels for ultra-fast 0ms statistical estimation
-        val step = maxOf(1, (width * height) / 4096)
-        var sumR = 0L
-        var sumG = 0L
-        var sumB = 0L
-        var count = 0
-
-        var idx = 0
-        val total = width * height
-        while (idx < total) {
-            val p = pixels[idx]
-            sumR += (p shr 16) and 0xFF
-            sumG += (p shr 8) and 0xFF
-            sumB += p and 0xFF
-            count++
-            idx += step
-        }
-
-        val avgR = (sumR.toDouble() / count).coerceAtLeast(1.0)
-        val avgG = (sumG.toDouble() / count).coerceAtLeast(1.0)
-        val avgB = (sumB.toDouble() / count).coerceAtLeast(1.0)
-
-        val blueRatio = (avgB / avgR).toFloat()
-        val greenRatio = (avgG / avgR).toFloat()
-        val avgLuma = (0.299 * avgR + 0.587 * avgG + 0.114 * avgB).toFloat()
-
-        // 1. Amber Tungsten: severe blue attenuation (Refs 1, 3, 6: blueRatio in 0.14..0.32)
-        if (blueRatio <= 0.35f) {
-            return DigicamIlluminant.AMBER_TUNGSTEN
-        }
-
-        // 2. Yellow-Green Artificial: Green is prominent, Blue is subdued in dark indoor/night scenes (Refs 7, 8)
-        if (avgLuma < 115.0f && greenRatio >= 0.82f && (avgG - avgB) / avgR >= 0.18f && blueRatio <= 0.72f) {
-            return DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL
-        }
-
-        // 3. Fallback check on AWB gains if provided
-        if (awbGains != null && awbGains.size >= 4) {
-            val rGain = awbGains[0]
-            val bGain = awbGains[3]
-            if (rGain > 2.1f && bGain < 1.5f) {
-                return DigicamIlluminant.AMBER_TUNGSTEN
-            }
-            if (bGain > 2.0f && rGain < 1.7f) {
-                return DigicamIlluminant.GOLDEN_DAYLIGHT
-            }
-        }
-
-        // 4. Default to Golden Daylight for balanced outdoor/illuminated scenes (Refs 4, 5)
-        return DigicamIlluminant.GOLDEN_DAYLIGHT
+        return hybridEstimator.estimateIlluminant(pixels, width, height, isFlashActive, iso, awbGains)
     }
 
     /**
-     * Resolves illuminant parameters blended with the selected camera model bias.
+     * Estimates continuous lighting regime weights for smooth transitions and confidence analysis.
+     */
+    fun estimateLightingRegime(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        isFlashActive: Boolean = false,
+        iso: Int = 100,
+        awbGains: FloatArray? = null,
+        isLivePreview: Boolean = false
+    ): LightingRegimeWeights {
+        return hybridEstimator.estimateLightingRegime(
+            pixels = pixels,
+            width = width,
+            height = height,
+            isFlashActive = isFlashActive,
+            iso = iso,
+            awbGains = awbGains,
+            applyTemporalSmoothing = isLivePreview
+        )
+    }
+
+    /**
+     * Resolves illuminant parameters blended continuously across the active lighting weights and camera model.
+     */
+    fun resolveBlendedParameters(
+        weights: LightingRegimeWeights,
+        model: DigicamModel
+    ): IlluminantParameters {
+        val wDay = weights.daylightWeight
+        val wTung = weights.tungstenWeight
+        val wFlash = weights.flashWeight
+        val wArt = weights.artificialWeight
+
+        // Interpolate base gains and parameters across regimes
+        val baseGainR = DAYLIGHT_PARAMS.gains[0] * wDay + TUNGSTEN_PARAMS.gains[0] * wTung +
+                FLASH_PARAMS.gains[0] * wFlash + ARTIFICIAL_PARAMS.gains[0] * wArt
+        val baseGainG = DAYLIGHT_PARAMS.gains[1] * wDay + TUNGSTEN_PARAMS.gains[1] * wTung +
+                FLASH_PARAMS.gains[1] * wFlash + ARTIFICIAL_PARAMS.gains[1] * wArt
+        val baseGainB = DAYLIGHT_PARAMS.gains[2] * wDay + TUNGSTEN_PARAMS.gains[2] * wTung +
+                FLASH_PARAMS.gains[2] * wFlash + ARTIFICIAL_PARAMS.gains[2] * wArt
+
+        val shadowR = DAYLIGHT_PARAMS.shadowTint[0] * wDay + TUNGSTEN_PARAMS.shadowTint[0] * wTung +
+                FLASH_PARAMS.shadowTint[0] * wFlash + ARTIFICIAL_PARAMS.shadowTint[0] * wArt
+        val shadowG = DAYLIGHT_PARAMS.shadowTint[1] * wDay + TUNGSTEN_PARAMS.shadowTint[1] * wTung +
+                FLASH_PARAMS.shadowTint[1] * wFlash + ARTIFICIAL_PARAMS.shadowTint[1] * wArt
+        val shadowB = DAYLIGHT_PARAMS.shadowTint[2] * wDay + TUNGSTEN_PARAMS.shadowTint[2] * wTung +
+                FLASH_PARAMS.shadowTint[2] * wFlash + ARTIFICIAL_PARAMS.shadowTint[2] * wArt
+
+        val retention = DAYLIGHT_PARAMS.retentionRatio * wDay + TUNGSTEN_PARAMS.retentionRatio * wTung +
+                FLASH_PARAMS.retentionRatio * wFlash + ARTIFICIAL_PARAMS.retentionRatio * wArt
+        val redBoost = DAYLIGHT_PARAMS.redSaturationBoost * wDay + TUNGSTEN_PARAMS.redSaturationBoost * wTung +
+                FLASH_PARAMS.redSaturationBoost * wFlash + ARTIFICIAL_PARAMS.redSaturationBoost * wArt
+        val contrast = DAYLIGHT_PARAMS.contrast * wDay + TUNGSTEN_PARAMS.contrast * wTung +
+                FLASH_PARAMS.contrast * wFlash + ARTIFICIAL_PARAMS.contrast * wArt
+        val saturation = DAYLIGHT_PARAMS.saturation * wDay + TUNGSTEN_PARAMS.saturation * wTung +
+                FLASH_PARAMS.saturation * wFlash + ARTIFICIAL_PARAMS.saturation * wArt
+        val rollOff = DAYLIGHT_PARAMS.highlightRollOff * wDay + TUNGSTEN_PARAMS.highlightRollOff * wTung +
+                FLASH_PARAMS.highlightRollOff * wFlash + ARTIFICIAL_PARAMS.highlightRollOff * wArt
+        val toe = DAYLIGHT_PARAMS.toeLift * wDay + TUNGSTEN_PARAMS.toeLift * wTung +
+                FLASH_PARAMS.toeLift * wFlash + ARTIFICIAL_PARAMS.toeLift * wArt
+        val scatter = DAYLIGHT_PARAMS.opticalScatterIntensity * wDay + TUNGSTEN_PARAMS.opticalScatterIntensity * wTung +
+                FLASH_PARAMS.opticalScatterIntensity * wFlash + ARTIFICIAL_PARAMS.opticalScatterIntensity * wArt
+        val noise = DAYLIGHT_PARAMS.noiseMultiplier * wDay + TUNGSTEN_PARAMS.noiseMultiplier * wTung +
+                FLASH_PARAMS.noiseMultiplier * wFlash + ARTIFICIAL_PARAMS.noiseMultiplier * wArt
+
+        val blended = IlluminantParameters(
+            illuminant = weights.primaryIlluminant,
+            gains = floatArrayOf(baseGainR, baseGainG, baseGainB),
+            shadowTint = floatArrayOf(shadowR, shadowG, shadowB),
+            retentionRatio = retention,
+            redSaturationBoost = redBoost,
+            contrast = contrast,
+            saturation = saturation,
+            highlightRollOff = rollOff,
+            toeLift = toe,
+            opticalScatterIntensity = scatter,
+            noiseMultiplier = noise
+        )
+
+        return when (model) {
+            DigicamModel.CPM35 -> {
+                // CPM35: Golden nostalgic digital compact (warm amber cast, softer midtone contrast, rich reds)
+                blended.copy(
+                    gains = floatArrayOf(
+                        blended.gains[0] * 1.05f,
+                        blended.gains[1] * 0.98f,
+                        blended.gains[2] * 0.92f
+                    ),
+                    contrast = blended.contrast * 0.98f,
+                    saturation = blended.saturation * 1.05f,
+                    redSaturationBoost = blended.redSaturationBoost * 1.08f,
+                    opticalScatterIntensity = blended.opticalScatterIntensity * 1.15f
+                )
+            }
+            DigicamModel.CCD -> {
+                // CCD: Classic pocket digicam (punchier contrast, deeper blacks, crisp digital response)
+                blended.copy(
+                    gains = floatArrayOf(
+                        blended.gains[0] * 0.98f,
+                        blended.gains[1] * 1.02f,
+                        blended.gains[2] * 0.98f
+                    ),
+                    contrast = blended.contrast * 1.06f,
+                    saturation = blended.saturation * 1.02f,
+                    toeLift = (blended.toeLift * 0.85f).coerceAtLeast(0.01f),
+                    highlightRollOff = (blended.highlightRollOff * 0.98f).coerceAtLeast(0.72f),
+                    noiseMultiplier = blended.noiseMultiplier * 1.10f
+                )
+            }
+        }
+    }
+
+    /**
+     * Resolves illuminant parameters for a discrete illuminant (backward-compatibility).
      */
     fun resolveParameters(
         illuminant: DigicamIlluminant,
         model: DigicamModel
     ): IlluminantParameters {
-        val base = when (illuminant) {
-            DigicamIlluminant.GOLDEN_DAYLIGHT -> DAYLIGHT_PARAMS
-            DigicamIlluminant.AMBER_TUNGSTEN -> TUNGSTEN_PARAMS
-            DigicamIlluminant.GOLDEN_DIRECT_FLASH -> FLASH_PARAMS
-            DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL -> ARTIFICIAL_PARAMS
+        val weights = when (illuminant) {
+            DigicamIlluminant.GOLDEN_DAYLIGHT -> LightingRegimeWeights.BALANCED_DAYLIGHT
+            DigicamIlluminant.AMBER_TUNGSTEN -> LightingRegimeWeights(0f, 1f, 0f, 0f, 1f, DigicamIlluminant.AMBER_TUNGSTEN)
+            DigicamIlluminant.GOLDEN_DIRECT_FLASH -> LightingRegimeWeights(0f, 0f, 1f, 0f, 1f, DigicamIlluminant.GOLDEN_DIRECT_FLASH)
+            DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL -> LightingRegimeWeights(0f, 0f, 0f, 1f, 1f, DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL)
         }
-
-        return when (model) {
-            DigicamModel.CPM35 -> {
-                // CPM35: Golden nostalgic digital compact (extra amber warmth, softer contrast, rich reds)
-                base.copy(
-                    gains = floatArrayOf(
-                        base.gains[0] * 1.05f,
-                        base.gains[1] * 0.98f,
-                        base.gains[2] * 0.92f
-                    ),
-                    contrast = base.contrast * 0.98f,
-                    saturation = base.saturation * 1.05f,
-                    redSaturationBoost = base.redSaturationBoost * 1.10f,
-                    opticalScatterIntensity = base.opticalScatterIntensity * 1.15f
-                )
-            }
-            DigicamModel.CCD -> {
-                // CCD: Classic pocket digicam (punchier contrast, deeper blacks, crisp digital response)
-                base.copy(
-                    gains = floatArrayOf(
-                        base.gains[0] * 0.98f,
-                        base.gains[1] * 1.02f,
-                        base.gains[2] * 0.98f
-                    ),
-                    contrast = base.contrast * 1.06f,
-                    saturation = base.saturation * 1.02f,
-                    toeLift = (base.toeLift * 0.85f).coerceAtLeast(0.01f),
-                    highlightRollOff = (base.highlightRollOff * 0.98f).coerceAtLeast(0.72f),
-                    noiseMultiplier = base.noiseMultiplier * 1.10f
-                )
-            }
-        }
+        return resolveBlendedParameters(weights, model)
     }
 
     /**
      * Processes input pixel buffer with illuminant-aware color rendering.
-     *
-     * @param pixels ARGB_8888 pixel buffer (modified in-place).
-     * @param width Image width.
-     * @param height Image height.
-     * @param model Camera identity (CPM35 or CCD).
-     * @param isFlashActive Whether hardware flash fired.
-     * @param iso Sensor sensitivity.
-     * @param awbGains Camera2 AWB gains if available.
-     * @return Resolved illuminant profile applied.
      */
     fun process(
         pixels: IntArray,
@@ -213,10 +255,11 @@ class DigicamColorEngine {
         model: DigicamModel = DigicamModel.CPM35,
         isFlashActive: Boolean = false,
         iso: Int = 100,
-        awbGains: FloatArray? = null
+        awbGains: FloatArray? = null,
+        isLivePreview: Boolean = false
     ): IlluminantParameters {
-        val illuminant = estimateIlluminant(pixels, width, height, isFlashActive, iso, awbGains)
-        val params = resolveParameters(illuminant, model)
+        val weights = estimateLightingRegime(pixels, width, height, isFlashActive, iso, awbGains, isLivePreview)
+        val params = resolveBlendedParameters(weights, model)
 
         applyColorTransform(pixels, width, height, params)
         return params
@@ -224,21 +267,29 @@ class DigicamColorEngine {
 
     /**
      * Core pixel processing transform combining:
-     * - Partial white balance chromatic adaptation
-     * - Hue-dependent red protection
+     * - Physically motivated partial white balance in linear color space with logarithmic gain interpolation
+     * - Continuous hue-chroma-luminance red protection
      * - Non-linear compact digicam tone curve
-     * - Shadow color tinting
+     * - Deep shadow color tinting
      */
-    private fun applyColorTransform(
+    internal fun applyColorTransform(
         pixels: IntArray,
         width: Int,
         height: Int,
         params: IlluminantParameters
     ) {
         val total = width * height
-        val gainR = params.gains[0]
-        val gainG = params.gains[1]
-        val gainB = params.gains[2]
+
+        // 1. Partial White Balance Gains via Logarithmic Interpolation
+        // partialGain = exp(retentionRatio * ln(targetGain))
+        val targetR = params.gains[0]
+        val targetG = params.gains[1]
+        val targetB = params.gains[2]
+        val retention = params.retentionRatio.coerceIn(0.10f, 1.0f)
+
+        val linGainR = exp(retention * ln(max(targetR.toDouble(), 0.10))).toFloat()
+        val linGainG = exp(retention * ln(max(targetG.toDouble(), 0.10))).toFloat()
+        val linGainB = exp(retention * ln(max(targetB.toDouble(), 0.10))).toFloat()
 
         val shadowR = params.shadowTint[0] * 255f
         val shadowG = params.shadowTint[1] * 255f
@@ -253,15 +304,12 @@ class DigicamColorEngine {
         // Precompute 256-entry S-curve LUT for 0ms CPU execution
         val toneLut = FloatArray(256) { i ->
             val x = i / 255f
-            // Toe compression
             val xToe = toe + (1f - toe) * x.pow(1.06f)
-            // S-curve contrast around midpoint 0.45
             val xCont = if (xToe < 0.45f) {
                 0.45f * (xToe / 0.45f).pow(contrast)
             } else {
                 1f - 0.55f * ((1f - xToe) / 0.55f).pow(contrast)
             }
-            // Soft shoulder highlight rolloff
             if (xCont > shoulder) {
                 val excess = xCont - shoulder
                 val headroom = 1f - shoulder
@@ -273,23 +321,54 @@ class DigicamColorEngine {
 
         for (i in 0 until total) {
             val p = pixels[i]
-            var r = (p shr 16) and 0xFF
-            var g = (p shr 8) and 0xFF
-            var b = p and 0xFF
+            val r8 = (p shr 16) and 0xFF
+            val g8 = (p shr 8) and 0xFF
+            val b8 = p and 0xFF
 
-            // 1. Partial White Balance Chromatic Adaptation
-            var rf = (r * gainR).coerceIn(0f, 255f)
-            var gf = (g * gainG).coerceIn(0f, 255f)
-            var bf = (b * gainB).coerceIn(0f, 255f)
+            // 1. Linear Color Space Partial White Balance
+            val rLin = SRGB_TO_LIN[r8] * linGainR
+            val gLin = SRGB_TO_LIN[g8] * linGainG
+            val bLin = SRGB_TO_LIN[b8] * linGainB
 
-            // 2. Saturated Red Hue Protection (Section 9: retain rich scarlet Ref 2 #EF391E)
-            if (rf > gf * 1.25f && rf > bf * 1.25f) {
-                val redDominance = ((rf - maxOf(gf, bf)) / 255f).coerceIn(0f, 1f)
-                val boost = 1f + (redBoost - 1f) * redDominance
-                rf = (rf * boost).coerceAtMost(255f)
-                // Keep green and blue from muddling the saturated red
-                gf = (gf * (1f - redDominance * 0.08f)).coerceAtLeast(0f)
-                bf = (bf * (1f - redDominance * 0.12f)).coerceAtLeast(0f)
+            var rf = linearToSrgb(rLin).toFloat()
+            var gf = linearToSrgb(gLin).toFloat()
+            var bf = linearToSrgb(bLin).toFloat()
+
+            // 2. Continuous Hue-Chroma-Luminance Red Protection (Ref 2 scarlet preservation)
+            // Eliminates hard threshold rf > 1.25*gf, replacing with smooth angular falloff
+            val maxC = maxOf(rf, maxOf(gf, bf))
+            val minC = minOf(rf, minOf(gf, bf))
+            val chroma = maxC - minC
+            val saturation = if (maxC > 0.001f) chroma / maxC else 0.0f
+
+            if (saturation > 0.30f && rf > gf && rf > bf) {
+                // Approximate fast hue angle in degrees [0, 360]
+                val delta = maxC - minC
+                val hueDegrees = if (delta > 0.001f) {
+                    val rawHue = ((gf - bf) / delta) * 60f
+                    if (rawHue < 0f) rawHue + 360f else rawHue
+                } else 0.0f
+
+                // Distance from pure scarlet (0° / 360°)
+                val distFromRed = minOf(hueDegrees, 360f - hueDegrees)
+
+                // Smooth Gaussian falloff (sigma = 18°): full at 0° (scarlet), decays to zero at 35° (orange/skin)
+                val hueFactor = exp(- (distFromRed * distFromRed) / (2f * 18f * 18f))
+
+                // Saturation gating: only vivid fabrics receive boost, not muted woods or subtle skin flushes
+                val satGating = ((saturation - 0.35f) / 0.30f).coerceIn(0.0f, 1.0f)
+
+                val effectiveBoost = 1.0f + (redBoost - 1.0f) * hueFactor * satGating
+
+                // Apply scarlet boost with soft-knee ceiling preserving fabric texture
+                val boostedR = rf * effectiveBoost
+                val rExcess = max(0f, boostedR - 220f)
+                rf = if (rExcess > 0f) 220f + 35f * (rExcess / (rExcess + 35f * 0.70f)) else boostedR
+
+                // Controlled slight green/blue attenuation on pure scarlet to prevent color fogging
+                val attenuation = hueFactor * satGating * 0.08f
+                gf = (gf * (1f - attenuation)).coerceAtLeast(0f)
+                bf = (bf * (1f - attenuation * 1.2f)).coerceAtLeast(0f)
             }
 
             // 3. Tonal Contrast Curve

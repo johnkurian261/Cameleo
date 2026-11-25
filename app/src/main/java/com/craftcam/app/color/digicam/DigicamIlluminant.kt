@@ -27,6 +27,65 @@ enum class DigicamModel {
 }
 
 /**
+ * Continuous lighting regime weights enabling smooth interpolation between lighting conditions.
+ */
+data class LightingRegimeWeights(
+    val daylightWeight: Float,
+    val tungstenWeight: Float,
+    val flashWeight: Float,
+    val artificialWeight: Float,
+    val confidence: Float,
+    val primaryIlluminant: DigicamIlluminant,
+    val estimatedColorTempK: Int = 5000,
+    val neutralPixelFraction: Float = 0.0f
+) {
+    companion object {
+        val BALANCED_DAYLIGHT = LightingRegimeWeights(
+            daylightWeight = 1.0f,
+            tungstenWeight = 0.0f,
+            flashWeight = 0.0f,
+            artificialWeight = 0.0f,
+            confidence = 1.0f,
+            primaryIlluminant = DigicamIlluminant.GOLDEN_DAYLIGHT,
+            estimatedColorTempK = 5500,
+            neutralPixelFraction = 0.50f
+        )
+    }
+
+    /**
+     * Blends this weight distribution toward neutral daylight according to [confidence].
+     * Low confidence reduces aggressive color shifts.
+     */
+    fun withConfidenceDamping(): LightingRegimeWeights {
+        if (confidence >= 0.95f) return this
+        val wDaylight = daylightWeight * confidence + 1.0f * (1.0f - confidence)
+        val wTungsten = tungstenWeight * confidence
+        val wFlash = flashWeight * confidence
+        val wArtificial = artificialWeight * confidence
+        val total = wDaylight + wTungsten + wFlash + wArtificial
+        val normDaylight = if (total > 0f) wDaylight / total else 1.0f
+        val normTungsten = if (total > 0f) wTungsten / total else 0.0f
+        val normFlash = if (total > 0f) wFlash / total else 0.0f
+        val normArtificial = if (total > 0f) wArtificial / total else 0.0f
+
+        val primary = when {
+            normFlash >= 0.50f -> DigicamIlluminant.GOLDEN_DIRECT_FLASH
+            normTungsten >= maxOf(normDaylight, normArtificial) -> DigicamIlluminant.AMBER_TUNGSTEN
+            normArtificial >= maxOf(normDaylight, normTungsten) -> DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL
+            else -> DigicamIlluminant.GOLDEN_DAYLIGHT
+        }
+
+        return copy(
+            daylightWeight = normDaylight,
+            tungstenWeight = normTungsten,
+            flashWeight = normFlash,
+            artificialWeight = normArtificial,
+            primaryIlluminant = primary
+        )
+    }
+}
+
+/**
  * Calibrated parameters for an illuminant profile.
  */
 data class IlluminantParameters(

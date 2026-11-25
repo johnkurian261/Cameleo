@@ -1,0 +1,178 @@
+[
+  {
+    "id": "ref1",
+    "name": "Restaurant (Warm Amber)",
+    "file": "media_1795613973085_2ce0732d.jpg",
+    "dimensions": "736x414",
+    "lighting": "Amber Tungsten",
+    "primary_profile": "CPM35",
+    "measured_mean_rgb": [
+      161.0,
+      94.8,
+      25.3
+    ],
+    "measured_median_luma": 98,
+    "p10_luma": 37,
+    "p90_luma": 194,
+    "target_mean_rgb": [
+      161.3,
+      94.8,
+      24.4
+    ],
+    "target_median_luma": 93.6
+  },
+  {
+    "id": "ref2",
+    "name": "Red Dress (Direct Illumination/Flash)",
+    "file": "media_1795613973098_78114b3b.jpg",
+    "dimensions": "736x981",
+    "lighting": "Golden Direct Flash",
+    "primary_profile": "CPM35",
+    "measured_mean_rgb": [
+      166.6,
+      64.4,
+      23.4
+    ],
+    "measured_median_luma": 86,
+    "p10_luma": 32,
+    "p90_luma": 149,
+    "target_mean_rgb": [
+      166.6,
+      64.4,
+      23.4
+    ],
+    "target_median_luma": 76.3
+  },
+  {
+    "id": "ref3",
+    "name": "Indoor Portrait (Motion Softness & Amber Stamp)",
+    "file": "media_1795613973098_57e0a7c6.jpg",
+    "dimensions": "735x525",
+    "lighting": "Amber Tungsten + Motion",
+    "primary_profile": "CPM35",
+    "measured_mean_rgb": [
+      179.9,
+      96.2,
+      25.8
+    ],
+    "measured_median_luma": 133,
+    "p10_luma": 20,
+    "p90_luma": 198,
+    "target_mean_rgb": [
+      180.0,
+      96.1,
+      25.7
+    ],
+    "target_median_luma": 128.6
+  },
+  {
+    "id": "ref4",
+    "name": "Sunlight Portrait (Bright Highlights)",
+    "file": "media_1795613973100_a79222ac.jpg",
+    "dimensions": "735x490",
+    "lighting": "Golden Daylight",
+    "primary_profile": "CCD",
+    "measured_mean_rgb": [
+      135.3,
+      112.6,
+      89.8
+    ],
+    "measured_median_luma": 104,
+    "p10_luma": 40,
+    "p90_luma": 232,
+    "target_mean_rgb": [
+      132.1,
+      113.7,
+      93.5
+    ],
+    "target_median_luma": 102.9
+  },
+  {
+    "id": "ref5",
+    "name": "Car Portrait (Backlit Sun & Direct Foreground)",
+    "file": "media_1795613973104_eaba7f3e.jpg",
+    "dimensions": "736x552",
+    "lighting": "Golden Daylight + Fill",
+    "primary_profile": "CCD",
+    "measured_mean_rgb": [
+      147.7,
+      124.4,
+      94.1
+    ],
+    "measured_median_luma": 126,
+    "p10_luma": 47,
+    "p90_luma": 204,
+    "target_mean_rgb": [
+      147.7,
+      124.4,
+      94.2
+    ],
+    "target_median_luma": 124.9
+  },
+  {
+    "id": "ref6",
+    "name": "Mirror Selfie (Imperfect AWB)",
+    "file": "media_1795613973105_f442b347.jpg",
+    "dimensions": "735x509",
+    "lighting": "Amber Tungsten AWB",
+    "primary_profile": "CPM35",
+    "measured_mean_rgb": [
+      160.6,
+      99.8,
+      46.1
+    ],
+    "measured_median_luma": 112,
+    "p10_luma": 29,
+    "p90_luma": 186,
+    "target_mean_rgb": [
+      160.6,
+      99.8,
+      46.1
+    ],
+    "target_median_luma": 108.7
+  },
+  {
+    "id": "ref7",
+    "name": "Train Interior (Yellow-Green & Timestamp)",
+    "file": "media_1795613973108_5c61493b.jpg",
+    "dimensions": "736x552",
+    "lighting": "Yellow-Green Artificial",
+    "primary_profile": "CCD",
+    "measured_mean_rgb": [
+      120.3,
+      108.0,
+      81.8
+    ],
+    "measured_median_luma": 81,
+    "p10_luma": 31,
+    "p90_luma": 250,
+    "target_mean_rgb": [
+      120.3,
+      108.0,
+      81.8
+    ],
+    "target_median_luma": 80.0
+  },
+  {
+    "id": "ref8",
+    "name": "Night Street (Olive-Yellow & Glow)",
+    "file": "media_1795613973083_e86e5f83.jpg",
+    "dimensions": "736x552",
+    "lighting": "Yellow-Green Artificial / Sodium",
+    "primary_profile": "CCD",
+    "measured_mean_rgb": [
+      98.1,
+      87.3,
+      36.2
+    ],
+    "measured_median_luma": 70,
+    "p10_luma": 31,
+    "p90_luma": 161,
+    "target_mean_rgb": [
+      98.2,
+      87.3,
+      36.1
+    ],
+    "target_median_luma": 71.0
+  }
+]

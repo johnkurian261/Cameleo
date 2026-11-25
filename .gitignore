@@ -110,3 +110,12 @@ screen_*.png
 crop_live_temp.png
 lens_preview.png
 
+
+# Track the FXNR regression suite and its production density texture.
+!tools/
+tools/*
+!tools/fxnr/
+!tools/digicam_calibration/
+!app/src/main/assets/grains/
+app/src/main/assets/grains/*
+!app/src/main/assets/grains/fxnr_v2_density.png

@@ -65,6 +65,9 @@ import java.util.concurrent.Executors
 class CameraManager(private val context: Context) {
 
     private val TAG = "CameraManager"
+    private val dfunsCapture = DFunsCapture()
+    private val digicamCapture = DigicamCaptureController()
+    private var dfunsBoundFormat = android.graphics.ImageFormat.JPEG
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
@@ -122,19 +125,24 @@ class CameraManager(private val context: Context) {
     private fun startPreviewWatchdog() {
         previewWatchdogJob?.cancel()
         previewWatchdogJob = processingScope.launch {
+            var lastRecovery = 0L
             while (isActive) {
                 delay(1000L)
                 val now = SystemClock.elapsedRealtime()
                 val isCapturing = _uiState.value.isCapturing || isCapturingInProgress.get()
                 if (isCameraActive && !isCapturing) {
                     val timeSinceLastFrame = now - lastPreviewFrameTimestamp
-                    if (timeSinceLastFrame > 2000L) {
+                    if (timeSinceLastFrame > 2000L && now - lastRecovery > 2000L) {
                         Log.w(TAG, "Preview watchdog alert: No camera frame for ${timeSinceLastFrame}ms. Triggering non-destructive recovery.")
-                        lastPreviewFrameTimestamp = now
+                        lastRecovery = now
                         withContext(Dispatchers.Main) {
+                            if (currentLifecycleOwner?.lifecycle?.currentState
+                                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) != true ||
+                                _uiState.value.isCapturing || isCapturingInProgress.get()
+                            ) return@withContext
                             try {
                                 glRenderer?.requestRenderSafe()
-                                if (timeSinceLastFrame > 3500L) {
+                                if (SystemClock.elapsedRealtime() - lastPreviewFrameTimestamp > 3500L) {
                                     bindCameraUseCases()
                                 }
                             } catch (e: Exception) {
@@ -286,6 +294,7 @@ class CameraManager(private val context: Context) {
     fun setEngineMode(mode: CameraEngineMode) {
         if (_uiState.value.engineMode != mode) {
             _uiState.update { it.copy(engineMode = mode) }
+            if (currentPreset.id == "ccd_flash") bindCameraUseCases()
             val isNatural = mode == CameraEngineMode.NATURAL
             val isPro = mode == CameraEngineMode.PRO
 
@@ -374,7 +383,8 @@ class CameraManager(private val context: Context) {
                     (config.isoMode == IsoMode.MANUAL && config.shutterMode == ShutterMode.MANUAL)
             val isManualShutterAutoIso = config.shutterMode == ShutterMode.MANUAL && config.isoMode == IsoMode.AUTO
 
-            if (isManualExposure && (caps?.supportsManualExposure != false)) {
+            val flashOff = _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF
+            if (flashOff && isManualExposure && (caps?.supportsManualExposure != false)) {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
                 val minIso = caps?.minIso ?: 50
                 val maxIso = caps?.maxIso ?: 3200
@@ -385,7 +395,7 @@ class CameraManager(private val context: Context) {
                 val clampedShutter = config.exposureTimeNs.coerceIn(minShutter, maxShutter)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, clampedIso)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, clampedShutter)
-            } else if (isManualShutterAutoIso && (caps?.supportsManualExposure != false)) {
+            } else if (flashOff && isManualShutterAutoIso && (caps?.supportsManualExposure != false)) {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
                 val minIso = caps?.minIso ?: 50
                 val maxIso = caps?.maxIso ?: 3200
@@ -397,7 +407,7 @@ class CameraManager(private val context: Context) {
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, liveIso)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, clampedShutter)
             } else {
-                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                // CameraX selects AE mode for flash metering and the still request.
                 val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
                 val targetIndex = (config.evCompensation / step).roundToInt()
                     .coerceIn(_uiState.value.minExposureIndex, _uiState.value.maxExposureIndex)
@@ -530,15 +540,10 @@ class CameraManager(private val context: Context) {
 
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
+            val wasFisheye = isFisheyeActive()
+            val changedDFuns = (currentPreset.id == "ccd_flash") != (preset.id == "ccd_flash")
             currentPreset = preset
             glRenderer?.updatePreset(preset)
-
-            val isFisheyePreset = preset.id == "analog_fisheye_f" ||
-                    preset.name.contains("Fisheye", ignoreCase = true) ||
-                    preset.lens.barrelDistortion >= 0.8f
-            if (isFisheyePreset) {
-                setZoomRatio(1.0f, triggerOverlay = false)
-            }
 
             val isZero = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
             val newEngineMode = if (isZero) {
@@ -588,6 +593,7 @@ class CameraManager(private val context: Context) {
                     )
                 )
             }
+            updateFisheyeZoom(wasFisheye)
             glRenderer?.setNaturalMode(newEngineMode == CameraEngineMode.NATURAL, _uiState.value.naturalProfile)
             glRenderer?.updateLensProfile(initialLens, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
 
@@ -599,7 +605,7 @@ class CameraManager(private val context: Context) {
             }
 
             // If in video mode, re-bind overlay effect for the active preset's video recording profile
-            if (_uiState.value.captureMode == CaptureMode.VIDEO) {
+            if (_uiState.value.captureMode == CaptureMode.VIDEO || changedDFuns) {
                 bindCameraUseCases()
             }
         }
@@ -611,7 +617,7 @@ class CameraManager(private val context: Context) {
     }
 
     fun setGrainEnabled(enabled: Boolean) {
-        updateTuning { it.copy(grainBoost = if (enabled) 1.0f else 0.0f, debugStageGrain = enabled) }
+        updateTuning { it.copy(grainBoost = if (enabled && it.grainBoost <= 0f) 1f else it.grainBoost, debugStageGrain = enabled) }
     }
 
     fun setFilmColorProfileIndex(index: Int) {
@@ -623,9 +629,7 @@ class CameraManager(private val context: Context) {
         if (lensType == LensType.COLOR_FLASH && _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
             setFlashMode(ImageCapture.FLASH_MODE_ON)
         }
-        if (lensType == LensType.FISHEYE_F || lensType == LensType.FISHEYE_W) {
-            setZoomRatio(1.0f, triggerOverlay = false)
-        }
+        val wasFisheye = isFisheyeActive()
         _uiState.update { state ->
             state.copy(
                 shootingState = state.shootingState.copy(
@@ -633,6 +637,7 @@ class CameraManager(private val context: Context) {
                 )
             )
         }
+        updateFisheyeZoom(wasFisheye)
         glRenderer?.updateLensProfile(lensProfile, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
 
         // Physical sensor exposure adjustment for optical accessories
@@ -776,15 +781,33 @@ class CameraManager(private val context: Context) {
                 .setResolutionSelector(previewResolutionSelector)
 
             // Attach Camera2Interop CaptureCallback to receive live sensor readouts & hardware face metadata
+            // Query the selected CameraX ID. An absent or unsupported mode leaves control with the ISP.
+            val cameraInfo = cameraSelector.filter(provider.availableCameraInfos).firstOrNull()
+                ?.let { androidx.camera.camera2.interop.Camera2CameraInfo.from(it) }
+            fun supports(key: CameraCharacteristics.Key<IntArray>, mode: Int): Boolean =
+                cameraInfo?.getCameraCharacteristic(key)?.contains(mode) == true
+
+            val dfuns = currentPreset.id == "ccd_flash" && _uiState.value.engineMode == CameraEngineMode.FILM
+            val dfunsChars = if (dfuns && cameraInfo != null)
+                context.getSystemService(android.hardware.camera2.CameraManager::class.java).getCameraCharacteristics(cameraInfo.cameraId)
+            else null
             val camera2Extender = Camera2Interop.Extender(previewBuilder)
-            camera2Extender.setCaptureRequestOption(
-                CaptureRequest.NOISE_REDUCTION_MODE,
-                CaptureRequest.NOISE_REDUCTION_MODE_FAST
-            )
-            camera2Extender.setCaptureRequestOption(
-                CaptureRequest.EDGE_MODE,
-                CaptureRequest.EDGE_MODE_FAST
-            )
+            if (dfunsChars != null) {
+                dfunsCapture.configure(camera2Extender, dfunsChars)
+            } else {
+                if (supports(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES, CaptureRequest.NOISE_REDUCTION_MODE_FAST)) {
+                    camera2Extender.setCaptureRequestOption(
+                        CaptureRequest.NOISE_REDUCTION_MODE,
+                        CaptureRequest.NOISE_REDUCTION_MODE_FAST
+                    )
+                }
+                if (supports(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES, CaptureRequest.EDGE_MODE_FAST)) {
+                    camera2Extender.setCaptureRequestOption(
+                        CaptureRequest.EDGE_MODE,
+                        CaptureRequest.EDGE_MODE_FAST
+                    )
+                }
+            }
             try {
                 val cameraService = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
                 val targetFacing = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) {
@@ -810,6 +833,10 @@ class CameraManager(private val context: Context) {
             }
             camera2Extender.setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    if (request.get(CaptureRequest.CONTROL_CAPTURE_INTENT) == CaptureRequest.CONTROL_CAPTURE_INTENT_STILL_CAPTURE) {
+                        if (dfuns) dfunsCapture.record(result)
+                        Log.d(TAG, "Still capture flash state=${result.get(CaptureResult.FLASH_STATE)}")
+                    }
                     lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
 
                     val iso = result.get(CaptureResult.SENSOR_SENSITIVITY)
@@ -937,41 +964,76 @@ class CameraManager(private val context: Context) {
                     .setFlashMode(_uiState.value.flashMode)
 
                 val captureExtender = Camera2Interop.Extender(imageCaptureBuilder)
-                captureExtender.setCaptureRequestOption(
-                    CaptureRequest.NOISE_REDUCTION_MODE,
-                    CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY
-                )
-                captureExtender.setCaptureRequestOption(
-                    CaptureRequest.EDGE_MODE,
-                    CaptureRequest.EDGE_MODE_HIGH_QUALITY
-                )
-                captureExtender.setCaptureRequestOption(
-                    CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,
-                    CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_HIGH_QUALITY
-                )
-                captureExtender.setCaptureRequestOption(
-                    CaptureRequest.HOT_PIXEL_MODE,
-                    CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY
-                )
-                captureExtender.setCaptureRequestOption(
-                    CaptureRequest.SHADING_MODE,
-                    CaptureRequest.SHADING_MODE_HIGH_QUALITY
-                )
+                val isDigicamPreset = currentPreset.id in listOf("ccd_r", "disp_flash", "disp_cpm35", "ccd_retro_compact") ||
+                    currentPreset.category == com.craftcam.app.model.CameraCategory.CCD_DIGITAL
+                if (dfunsChars != null) {
+                    dfunsCapture.configure(captureExtender, dfunsChars)
+                } else if (isDigicamPreset && cameraInfo != null) {
+                    val cameraChars = context.getSystemService(android.hardware.camera2.CameraManager::class.java)
+                        .getCameraCharacteristics(cameraInfo.cameraId)
+                    val isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF
+                    digicamCapture.configureCapture(captureExtender, cameraChars, isFlashActive)
+                } else {
+                    if (supports(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES, CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY)) {
+                        captureExtender.setCaptureRequestOption(
+                            CaptureRequest.NOISE_REDUCTION_MODE,
+                            CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY
+                        )
+                    }
+                    if (supports(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES, CaptureRequest.EDGE_MODE_HIGH_QUALITY)) {
+                        captureExtender.setCaptureRequestOption(
+                            CaptureRequest.EDGE_MODE,
+                            CaptureRequest.EDGE_MODE_HIGH_QUALITY
+                        )
+                    }
+                    if (supports(CameraCharacteristics.COLOR_CORRECTION_AVAILABLE_ABERRATION_MODES, CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_HIGH_QUALITY)) {
+                        captureExtender.setCaptureRequestOption(
+                            CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,
+                            CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_HIGH_QUALITY
+                        )
+                    }
+                    if (supports(CameraCharacteristics.HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES, CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY)) {
+                        captureExtender.setCaptureRequestOption(
+                            CaptureRequest.HOT_PIXEL_MODE,
+                            CaptureRequest.HOT_PIXEL_MODE_HIGH_QUALITY
+                        )
+                    }
+                    if (supports(CameraCharacteristics.SHADING_AVAILABLE_MODES, CaptureRequest.SHADING_MODE_HIGH_QUALITY)) {
+                        captureExtender.setCaptureRequestOption(
+                            CaptureRequest.SHADING_MODE,
+                            CaptureRequest.SHADING_MODE_HIGH_QUALITY
+                        )
+                    }
 
+                }
                 imageCapture = imageCaptureBuilder.build()
 
                 val prev = preview
                 val ic = imageCapture
                 if (prev != null && ic != null) {
-                    camera = provider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        prev,
-                        ic
-                    )
+                    if (dfunsChars != null && cameraInfo != null) {
+                        for (format in dfunsCapture.formats(cameraInfo.cameraId, dfunsChars)) {
+                            var candidate: ImageCapture? = null
+                            try {
+                                candidate = imageCaptureBuilder.setBufferFormat(format).build()
+                                camera = provider.bindToLifecycle(lifecycleOwner, cameraSelector, prev, candidate)
+                                dfunsBoundFormat = format
+                                imageCapture = candidate
+                                Log.i(TAG, "D_FUNS v1 camera=${cameraInfo.cameraId} bound format=$format")
+                                break
+                            } catch (e: IllegalArgumentException) {
+                                candidate?.let { provider.unbind(it) }
+                                if (format == android.graphics.ImageFormat.JPEG) throw e
+                                Log.w(TAG, "D_FUNS stream combination rejected for $format", e)
+                            }
+                        }
+                    } else {
+                        camera = provider.bindToLifecycle(lifecycleOwner, cameraSelector, prev, ic)
+                    }
                     val rot = camera?.cameraInfo?.sensorRotationDegrees
                     val isFront = _uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT
                     val res = prev.resolutionInfo?.resolution
+                    if (camera?.cameraInfo?.hasFlashUnit() == false) setFlashMode(ImageCapture.FLASH_MODE_OFF)
                     if (rot != null && res != null) {
                         onCameraOrientationChanged?.invoke(rot, isFront, res.width, res.height)
                     }
@@ -1024,7 +1086,8 @@ class CameraManager(private val context: Context) {
                 val updateZoomBounds = { zs: androidx.camera.core.ZoomState ->
                     val minZ = zs.minZoomRatio
                     val maxZ = zs.maxZoomRatio.coerceAtMost(10.0f)
-                    val targetZoom = _uiState.value.selectedLens?.equivalentZoom ?: _uiState.value.zoomRatio
+                    val targetZoom = if (isFisheyeActive()) fisheyeZoom(minZ) else
+                        _uiState.value.selectedLens?.equivalentZoom ?: _uiState.value.zoomRatio
                     val clamped = targetZoom.coerceIn(minZ, maxZ)
                     val baseEq = _uiState.value.selectedLens?.equivalentFocalLength35mm
                         ?: _uiState.value.zoomState.baseFocalLength35mm
@@ -1216,6 +1279,7 @@ class CameraManager(private val context: Context) {
         }
         _uiState.update { it.copy(flashMode = targetMode) }
         imageCapture?.flashMode = targetMode
+        if (_uiState.value.engineMode == CameraEngineMode.PRO) applyProCameraControls()
         glRenderer?.updateLensProfile(
             _uiState.value.shootingState.selectedLens,
             isFlashActive = targetMode != ImageCapture.FLASH_MODE_OFF
@@ -1320,6 +1384,18 @@ class CameraManager(private val context: Context) {
 
         if (triggerOverlay) {
             triggerZoomOverlay()
+        }
+    }
+
+    private fun fisheyeZoom(minZoom: Float): Float =
+        if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_BACK) minZoom else 1f
+
+    private fun updateFisheyeZoom(wasFisheye: Boolean) {
+        if (isFisheyeActive()) {
+            val minZoom = camera?.cameraInfo?.zoomState?.value?.minZoomRatio ?: 1f
+            setZoomRatio(fisheyeZoom(minZoom))
+        } else if (wasFisheye) {
+            setZoomRatio(1f)
         }
     }
 
@@ -1536,6 +1612,9 @@ class CameraManager(private val context: Context) {
                     checkPendingRebind()
 
                     // Application-level coroutine scope: never aborted if user navigates to gallery
+                    val dfuns = preset.id == "ccd_flash" && captureState.engineMode == CameraEngineMode.FILM
+                    val format = image.format
+                    val shotResult = if (dfuns) dfunsCapture.resultFor(image.imageInfo.timestamp) else null
                     processingScope.launch {
                         try {
                             val uri = ImageProcessor.processAndSaveImage(
@@ -1551,10 +1630,14 @@ class CameraManager(private val context: Context) {
                                 compareWithOriginal = captureState.debugCompareOriginal,
                                 captureFrameSnapshot = frameSnapshot,
                                 lensProfile = captureState.shootingState.selectedLens,
-                                isFlashActive = captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                isFlashActive = if (dfuns && shotResult != null) shotResult.get(android.hardware.camera2.CaptureResult.FLASH_STATE) in listOf(android.hardware.camera2.CaptureResult.FLASH_STATE_FIRED, android.hardware.camera2.CaptureResult.FLASH_STATE_PARTIAL) else captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
                                 sensorIso = captureState.liveIso,
                                 exposureTimeNs = captureState.liveExposureNs,
                                 cameraId = cameraId,
+                                stillResult = shotResult,
+                                rawCharacteristics = if (dfuns && format in com.craftcam.app.processor.DFunsRaw.formats && cameraId != null)
+                                    context.getSystemService(android.hardware.camera2.CameraManager::class.java).getCameraCharacteristics(cameraId)
+                                else null,
                                 faces = captureState.detectedFaces
                             )
                             if (uri != null) {
@@ -1569,7 +1652,11 @@ class CameraManager(private val context: Context) {
                         } catch (t: Throwable) {
                             Log.e(TAG, "Error developing captured photo", t)
                             withContext(Dispatchers.Main) {
-                                onError(t.message ?: "Image processing failed")
+                                if (dfuns && cameraId != null && format in com.craftcam.app.processor.DFunsRaw.formats) {
+                                    dfunsCapture.reject(cameraId, format)
+                                    if (currentPreset.id == "ccd_flash") bindCameraUseCases()
+                                    onError("RAW development unavailable. Take another photo to use the fallback.")
+                                } else onError(t.message ?: "Image processing failed")
                             }
                         }
                     }
@@ -1582,7 +1669,16 @@ class CameraManager(private val context: Context) {
                     checkPendingRebind()
                     Log.e(TAG, "Hardware photo capture failed: ${exception.message}", exception)
                     ContextCompat.getMainExecutor(context).execute {
-                        onError(exception.message ?: "Camera capture failed")
+                        if (preset.id == "ccd_flash" && currentPreset.id == preset.id && cameraId != null &&
+                            captureState.engineMode == CameraEngineMode.FILM &&
+                            exception.imageCaptureError == ImageCapture.ERROR_CAPTURE_FAILED &&
+                            camera?.cameraInfo?.cameraState?.value?.type == androidx.camera.core.CameraState.Type.OPEN &&
+                            exception.cause !is androidx.camera.core.CameraControl.OperationCanceledException &&
+                            dfunsBoundFormat != android.graphics.ImageFormat.JPEG) {
+                            dfunsCapture.reject(cameraId, dfunsBoundFormat)
+                            bindCameraUseCases()
+                            onError("Capture stream unavailable. Take another photo to use the fallback.")
+                        } else onError(exception.message ?: "Camera capture failed")
                     }
                 }
             }

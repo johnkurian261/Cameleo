@@ -603,10 +603,11 @@ object ImageProcessor {
                 )
 
                 // 2b. Skin Tone Intelligence Engine (Layers 1-4: multi-space probability, anatomical prior, camera-specific rendering)
+                var lastSkinResult: com.craftcam.app.color.skin.SkinProcessingResult? = null
                 if (tuning.skinToneIntelligenceEnabled) {
                     val skinProfile = com.craftcam.app.color.skin.SkinToneProfileCatalog.getProfileForPreset(preset.id, preset.category)
                     val skinEngine = com.craftcam.app.color.skin.SkinToneIntelligenceEngine()
-                    val skinResult = skinEngine.process(
+                    val sResult = skinEngine.process(
                         pixels = pixels,
                         width = width,
                         height = height,
@@ -616,15 +617,16 @@ object ImageProcessor {
                         isFlashActive = isFlashActive,
                         iso = sensorIso
                     )
+                    lastSkinResult = sResult
                     if (tuning.debugSkinToneStages) {
                         com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(
                             context = context,
                             sourceBmp = origCopy ?: source,
-                            colorProb = skinResult.refinedSkinMask,
-                            spatialPrior = skinResult.refinedSkinMask,
-                            refinedMask = skinResult.refinedSkinMask,
+                            colorProb = sResult.refinedSkinMask,
+                            spatialPrior = sResult.refinedSkinMask,
+                            refinedMask = sResult.refinedSkinMask,
                             finalBmp = source,
-                            result = skinResult
+                            result = sResult
                         )
                     }
                 }
@@ -715,6 +717,21 @@ object ImageProcessor {
 
                 // 7. Developer diagnostics export if enabled
                 if (tuning.debugDigicamStages && origCopy != null) {
+                    val weights = colorEngine.estimateLightingRegime(pixels, width, height, isFlashActive, sensorIso)
+                    com.craftcam.app.color.digicam.DigicamInspector.exportDiagnostics(
+                        context = context,
+                        model = digicamModel,
+                        weights = weights,
+                        params = params,
+                        isFlashActive = isFlashActive,
+                        sensorIso = sensorIso,
+                        sourceBmp = origCopy,
+                        wbBmp = stagePwb,
+                        opticalBmp = stageOptical,
+                        noiseBmp = stageNoise,
+                        finalBmp = source,
+                        skinResult = lastSkinResult
+                    )
                     com.craftcam.app.processor.digicam.DigicamDiagnostics.exportDebugStages(
                         context = context,
                         original = origCopy,
