@@ -79,6 +79,7 @@ uniform int uLutInputSpace; // 0=SRGB, 1=LINEAR, 2=CUSTOM_PRETRANSFORM
 uniform bool uPreLinearizationEnabled;
 uniform float uPreLinearizationStrength;
 uniform float uFilterIntensity;
+uniform float uLowerMidtoneStrength;
 uniform float uClarityStrength;
 uniform float uSkinProtection;
 uniform mat4 uTexMatrix;
@@ -265,8 +266,8 @@ void main() {
             } else {
                 float rn = rPhys / rBubble;
                 // Authentic hemispherical fisheye warp: cubic radial expansion
-                // rn goes 0..1, rDist goes 0..1 with strong center magnification (2.78x) and perimeter compression
-                float rDistNorm = rn * (0.36 + 0.64 * rn * rn);
+                // rn goes 0..1, rDist goes 0..1 with moderate center magnification (1.43x) and perimeter compression
+                float rDistNorm = rn * (0.70 + 0.30 * rn * rn);
                 float rDistPhys = rDistNorm * 0.44;
                 vec2 dir = pPhys / max(rPhys, 0.0001);
                 vec2 pDistPhys = dir * rDistPhys;
@@ -277,7 +278,7 @@ void main() {
         } else if (uLensType == 3) { // FISHEYE_W: Full-frame wide-angle curvilinear fisheye
             float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
             float rn = clamp(rPhys / rCorner, 0.0, 1.0);
-            float rDistNorm = rn * (0.55 + 0.45 * rn * rn);
+            float rDistNorm = rn * (0.80 + 0.20 * rn * rn);
             float rDistPhys = rDistNorm * rCorner;
             vec2 dir = pPhys / max(rPhys, 0.0001);
             vec2 pDistPhys = dir * rDistPhys;
@@ -485,7 +486,16 @@ void main() {
 
         if (abs(uContrast - 1.0) > 0.01) {
             float pivot = 0.26;
-            color = clamp((color - pivot) * uContrast + pivot, 0.0, 1.0);
+            color = (color - pivot) * uContrast + pivot;
+            if (uLowerMidtoneStrength == 0.0) color = clamp(color, 0.0, 1.0);
+        }
+
+        if (uLowerMidtoneStrength > 0.0) {
+            float y = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float x = clamp((y - 0.035) / 0.65, 0.0, 1.0);
+            float envelope = 4.0 * x * (1.0 - x);
+            float toe = 1.0 - smoothstep(0.0, 0.18, y);
+            color += vec3(uLowerMidtoneStrength * envelope * envelope - 0.029 * uFilterIntensity * toe);
         }
 
         // 4b. Authentic Midtone Clarity (from DAZZ Camera Engine)
@@ -498,7 +508,9 @@ void main() {
 
         // 5. Preset & User Saturation with Smart Vibrance Protection
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-        if (abs(uSaturation - 1.0) > 0.01) {
+        if (uLowerMidtoneStrength > 0.0) {
+            color = mix(vec3(luma), color, uSaturation);
+        } else if (abs(uSaturation - 1.0) > 0.01) {
             const float lr = 0.2126;
             const float lg = 0.7152;
             const float lb = 0.0722;
@@ -513,6 +525,43 @@ void main() {
             ), 0.0, 1.0);
             color = mix(mix(vec3(luma), color, uSaturation), vibColor, clamp(uSkinProtection, 0.0, 1.0));
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        // 5b. Authentic Photographic Skin Tone Protection (Live Viewfinder)
+        if (uSkinProtection > 0.01) {
+            float yVal = dot(color, vec3(0.299, 0.587, 0.114));
+            float cbVal = dot(color, vec3(-0.1687, -0.3313, 0.5000)) + 0.5;
+            float crVal = dot(color, vec3(0.5000, -0.4187, -0.0813)) + 0.5;
+            
+            // Calibrated physiological skin locus (YCbCr + normalized chromaticity)
+            float dCb = (cbVal - 0.40) / 0.09;
+            float dCr = (crVal - 0.59) / 0.10;
+            float isSkin = exp(-0.5 * (dCb * dCb + dCr * dCr));
+            
+            float rgbSum = max(0.001, color.r + color.g + color.b);
+            float rNorm = color.r / rgbSum;
+            float gNorm = color.g / rgbSum;
+            bool validChroma = (rNorm >= 0.33 && rNorm <= 0.60) && (gNorm >= 0.24 && gNorm <= 0.40);
+            bool validOrder = (color.r >= color.g * 0.90) && (color.g >= color.b * 0.75);
+            bool validLuma = (yVal > 0.12 && yVal < 0.96);
+            
+            if (validChroma && validOrder && validLuma && isSkin > 0.10) {
+                float skinWeight = clamp(isSkin * uSkinProtection, 0.0, 1.0);
+                
+                // Guard against excessive yellow chroma (mustard hue, where G approaches R)
+                float maxHealthyG = color.r * 0.84;
+                if (color.g > maxHealthyG) {
+                    float excessG = color.g - maxHealthyG;
+                    color.g -= excessG * skinWeight * 0.80;
+                    color.r += excessG * skinWeight * 0.15; // Healthy blood perfusion (+a*)
+                }
+                // Guard against blue channel starvation (preserves radiant translucent skin)
+                float minHealthyB = color.r * 0.36;
+                if (color.b < minHealthyB) {
+                    color.b += (minHealthyB - color.b) * skinWeight * 0.70;
+                }
+                luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            }
         }
 
         // 6. Gamma Response
@@ -742,6 +791,7 @@ uniform int uLutInputSpace; // 0=SRGB, 1=LINEAR, 2=CUSTOM_PRETRANSFORM
 uniform bool uPreLinearizationEnabled;
 uniform float uPreLinearizationStrength;
 uniform float uFilterIntensity;
+uniform float uLowerMidtoneStrength;
 uniform float uClarityStrength;
 uniform float uSkinProtection;
 in vec2 vTextureCoord;
@@ -924,8 +974,8 @@ void main() {
             } else {
                 float rn = rPhys / rBubble;
                 // Authentic hemispherical fisheye warp: cubic radial expansion
-                // rn goes 0..1, rDist goes 0..1 with strong center magnification (2.78x) and perimeter compression
-                float rDistNorm = rn * (0.36 + 0.64 * rn * rn);
+                // rn goes 0..1, rDist goes 0..1 with moderate center magnification (1.43x) and perimeter compression
+                float rDistNorm = rn * (0.70 + 0.30 * rn * rn);
                 float rDistPhys = rDistNorm * 0.44;
                 vec2 dir = pPhys / max(rPhys, 0.0001);
                 vec2 pDistPhys = dir * rDistPhys;
@@ -936,7 +986,7 @@ void main() {
         } else if (uLensType == 3) { // FISHEYE_W: Full-frame wide-angle curvilinear fisheye
             float rCorner = isPortrait ? length(vec2(0.5, 0.5 / aspect)) : length(vec2(0.5 * aspect, 0.5));
             float rn = clamp(rPhys / rCorner, 0.0, 1.0);
-            float rDistNorm = rn * (0.55 + 0.45 * rn * rn);
+            float rDistNorm = rn * (0.80 + 0.20 * rn * rn);
             float rDistPhys = rDistNorm * rCorner;
             vec2 dir = pPhys / max(rPhys, 0.0001);
             vec2 pDistPhys = dir * rDistPhys;
@@ -1129,7 +1179,16 @@ void main() {
 
         if (abs(uContrast - 1.0) > 0.01) {
             float pivot = 0.26;
-            color = clamp((color - pivot) * uContrast + pivot, 0.0, 1.0);
+            color = (color - pivot) * uContrast + pivot;
+            if (uLowerMidtoneStrength == 0.0) color = clamp(color, 0.0, 1.0);
+        }
+
+        if (uLowerMidtoneStrength > 0.0) {
+            float y = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float x = clamp((y - 0.035) / 0.65, 0.0, 1.0);
+            float envelope = 4.0 * x * (1.0 - x);
+            float toe = 1.0 - smoothstep(0.0, 0.18, y);
+            color += vec3(uLowerMidtoneStrength * envelope * envelope - 0.029 * uFilterIntensity * toe);
         }
 
         // 4b. Authentic Midtone Clarity (from DAZZ Camera Engine)
@@ -1142,7 +1201,9 @@ void main() {
 
         // 5. Saturation with Smart Vibrance Protection
         luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-        if (abs(uSaturation - 1.0) > 0.01) {
+        if (uLowerMidtoneStrength > 0.0) {
+            color = mix(vec3(luma), color, uSaturation);
+        } else if (abs(uSaturation - 1.0) > 0.01) {
             const float lr = 0.2126;
             const float lg = 0.7152;
             const float lb = 0.0722;
@@ -1157,6 +1218,43 @@ void main() {
             ), 0.0, 1.0);
             color = mix(mix(vec3(luma), color, uSaturation), vibColor, clamp(uSkinProtection, 0.0, 1.0));
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+
+        // 5b. Authentic Photographic Skin Tone Protection (Live Video Viewfinder)
+        if (uSkinProtection > 0.01) {
+            float yVal = dot(color, vec3(0.299, 0.587, 0.114));
+            float cbVal = dot(color, vec3(-0.1687, -0.3313, 0.5000)) + 0.5;
+            float crVal = dot(color, vec3(0.5000, -0.4187, -0.0813)) + 0.5;
+            
+            // Calibrated physiological skin locus (YCbCr + normalized chromaticity)
+            float dCb = (cbVal - 0.40) / 0.09;
+            float dCr = (crVal - 0.59) / 0.10;
+            float isSkin = exp(-0.5 * (dCb * dCb + dCr * dCr));
+            
+            float rgbSum = max(0.001, color.r + color.g + color.b);
+            float rNorm = color.r / rgbSum;
+            float gNorm = color.g / rgbSum;
+            bool validChroma = (rNorm >= 0.33 && rNorm <= 0.60) && (gNorm >= 0.24 && gNorm <= 0.40);
+            bool validOrder = (color.r >= color.g * 0.90) && (color.g >= color.b * 0.75);
+            bool validLuma = (yVal > 0.12 && yVal < 0.96);
+            
+            if (validChroma && validOrder && validLuma && isSkin > 0.10) {
+                float skinWeight = clamp(isSkin * uSkinProtection, 0.0, 1.0);
+                
+                // Guard against excessive yellow chroma (mustard hue, where G approaches R)
+                float maxHealthyG = color.r * 0.84;
+                if (color.g > maxHealthyG) {
+                    float excessG = color.g - maxHealthyG;
+                    color.g -= excessG * skinWeight * 0.80;
+                    color.r += excessG * skinWeight * 0.15; // Healthy blood perfusion (+a*)
+                }
+                // Guard against blue channel starvation (preserves radiant translucent skin)
+                float minHealthyB = color.r * 0.36;
+                if (color.b < minHealthyB) {
+                    color.b += (minHealthyB - color.b) * skinWeight * 0.70;
+                }
+                luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            }
         }
 
         // 6. Gamma
@@ -1366,7 +1464,7 @@ void main() {
         "analog_vintage_color", "analog_dexp", "dexp", "d exp" -> "lut_dexp.png"
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
         "analog_135ne", "135ne", "135 ne"-> "lut_135ne.png"
-        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_ccd_flash.png"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_dfuns_v1.png"
         "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
         "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
         "disp_classic", "disp_golf", "golf" -> "lut_disp_classic.png"
@@ -1409,7 +1507,7 @@ void main() {
         presetId in listOf("ccd_y2k_digital", "classicu") -> "grains/grain_classicu.jpg"
         presetId in listOf("ccd_retro_compact", "dqs") -> "grains/grain_dqs.jpg"
         presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
-        presetId in listOf("disp_flash", "disp_cpm35") -> "grains/grain_cpm35.jpg"
+        presetId in listOf("disp_flash", "disp_cpm35") -> ""
         presetId in listOf("disp_warm", "135sr") -> "grains/grain540_01.jpg"
         presetId in listOf("inst_vintage", "inst_c") -> "grains/grain_instc.jpg"
         presetId in listOf("inst_paf", "paf") -> "grains/grain_paf.jpg"

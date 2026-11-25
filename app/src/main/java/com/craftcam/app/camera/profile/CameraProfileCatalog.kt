@@ -7,7 +7,7 @@ import com.craftcam.app.model.GrainBlendMode
 
 object CameraProfileCatalog {
 
-    val FXN_R = CameleoCameraProfile(
+    val FXN_R_LEGACY = CameleoCameraProfile(
         id = "fxn_r",
         name = "FXNR",
         subtitle = "Classic Negative",
@@ -57,6 +57,24 @@ object CameraProfileCatalog {
             luminanceWeightingEnabled = true,
             luminanceWeightingPower = 1.0f
         )
+    )
+
+    // Point FXN_R at FXN_R_LEGACY to reproduce the original stock on both renderers.
+    val FXN_R = FXN_R_LEGACY.copy(
+        filmProfile = FXN_R_LEGACY.filmProfile.copy(
+            id = "film_fxn_r_v2",
+            lutInputSpace = LutInputSpace.SRGB,
+            // Warmer print highlights and cooler dye shadows, with a gentler lift near mid-gray.
+            contrast = 1.18f,
+            saturation = 1.08f,
+            temperature = 0.36f,
+            shadowTintR = -0.065f,
+            shadowTintG = 0.025f,
+            shadowTintB = 0.085f,
+            lowerMidtoneStrength = 0.025f,
+            clarityStrength = 0f
+        ),
+        grainProfile = FXN_R_LEGACY.grainProfile.copy(assetPath = "grains/fxnr_v2_density.png")
     )
 
     val D_CLASSIC = CameleoCameraProfile(
@@ -296,8 +314,8 @@ object CameraProfileCatalog {
             lutAssetPath = "lut_ccd_y2k_digital.png",
             contrast = 1.18f,
             saturation = 1.16f,
-            temperature = 0.06f,
-            tint = 0.10f,
+            temperature = 0.04f,
+            tint = 0.00f,
             toeLift = 0.020f,
             shoulderClip = 0.990f,
             highlightRollOff = 0.86f,
@@ -327,58 +345,31 @@ object CameraProfileCatalog {
         )
     )
 
-    val CCD_FLASH = CameleoCameraProfile(
-        id = "ccd_flash",
-        name = "CCD Flash",
-        subtitle = "Night Party Flash Look",
+    val D_FUNS = CameleoCameraProfile(
+        id = "ccd_flash", // Stable persisted preset key.
+        name = "D Funs",
+        subtitle = "Single-use 35mm",
         presetId = "ccd_flash",
-        focalLengths = listOf(
-            FocalLengthOption("32mm", 32f),
-            FocalLengthOption("50mm", 50f)
-        ),
+        focalLengths = listOf(FocalLengthOption("32mm", 32f)),
         defaultFocalLengthMm = 32f,
-        supportedLenses = listOf(
-            LensType.NORMAL,
-            LensType.FISHEYE_F,
-            LensType.FISHEYE_W,
-            LensType.COLOR_FLASH,
-            LensType.STARBURST
-        ),
+        supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W,
+            LensType.COLOR_FLASH, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
-        defaultRatio = AspectRatioMode.RATIO_4_3,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
         filmProfile = FilmProfile(
-            id = "film_ccd_flash",
-            name = "CCD Direct Flash Sensor",
-            lutAssetPath = "lut_ccd_flash.png",
-            contrast = 1.30f,
-            saturation = 1.18f,
-            temperature = 0.08f,
-            tint = 0.02f,
-            toeLift = 0.020f,
-            shoulderClip = 0.985f,
-            highlightRollOff = 0.88f,
-            halationThreshold = 0.84f,
-            halationIntensity = 0.22f,
-            halationColorTintR = 1.0f,
-            halationColorTintG = 0.88f,
-            halationColorTintB = 0.92f
+            id = "dfuns_negative_v1", name = "D Funs colour negative",
+            lutAssetPath = "lut_dfuns_v1.png", lutInputSpace = LutInputSpace.SRGB,
+            highlightRollOff = 1f, halationThreshold = 1f, halationIntensity = 0f
         ),
         grainProfile = GrainProfile(
-            id = "grain_ccd_flash",
-            mode = GrainMode.SCANNED,
-            assetPath = "grains/grain_dfuns.jpg",
-            intensity = 0.22f,
-            scale = 0.90f,
-            isColorNoise = false,
-            luminanceWeightingEnabled = true,
-            luminanceWeightingPower = 0.5f
+            id = "dfuns_scan_v1", mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dfuns.jpg", intensity = 0.16f, scale = 1f,
+            shadowStrength = 0.38f, highlightStrength = 0.08f,
+            isColorNoise = false, luminanceWeightingEnabled = true
         ),
         opticalProfile = OpticalProfile(
-            id = "optical_ccd_flash",
-            vignetteStrength = 0.45f,
-            vignetteRadius = 0.72f,
-            chromaticAberration = 0.003f,
-            distortionStrength = 0.0f
+            id = "dfuns_optics_v1", vignetteStrength = 0.24f, vignetteRadius = 0.90f,
+            chromaticAberration = 0.0006f
         )
     )
 
@@ -1365,32 +1356,41 @@ object CameraProfileCatalog {
             id = "film_cpm35",
             name = "Color Print Motion 35",
             lutAssetPath = "lut_disp_flash.png",
-            contrast = 1.10f,
-            saturation = 1.06f,
-            temperature = 0.08f,
-            tint = 0.02f,
-            fade = 0.02f,
-            toeLift = 0.035f,
-            shoulderClip = 0.965f,
-            highlightRollOff = 0.86f,
-            shadowTintR = 0.020f,
-            shadowTintG = 0.015f,
-            shadowTintB = 0.010f,
-            clarityStrength = 0.35f,
-            halationThreshold = 0.74f,
-            halationIntensity = 0.35f,
+            contrast = 1.04f,
+            saturation = 1.02f,
+            temperature = 0.0f,
+            tint = 0.0f,
+            fade = 0.005f,
+            toeLift = 0.003f,
+            shoulderClip = 0.995f,
+            highlightRollOff = 0.94f,
+            shadowTintR = 0.0f,
+            shadowTintG = 0.0f,
+            shadowTintB = 0.0f,
+            clarityStrength = 0.15f,
+            skinProtection = 0.85f,
+            halationThreshold = 0.82f,
+            halationIntensity = 0.16f,
             halationColorTintR = 1.0f,
-            halationColorTintG = 0.22f,
-            halationColorTintB = 0.04f
+            halationColorTintG = 0.35f,
+            halationColorTintB = 0.08f
         ),
         grainProfile = GrainProfile(
             id = "grain_cpm35",
-            mode = GrainMode.SCANNED,
-            assetPath = "grains/grain_cpm35.jpg",
-            intensity = 0.28f,
-            scale = 1.20f,
+            mode = GrainMode.PROCEDURAL,
+            intensity = 0.18f,
+            scale = 0.85f,
+            isColorNoise = true,
             luminanceWeightingEnabled = true,
-            luminanceWeightingPower = 1.0f
+            luminanceWeightingPower = 0.6f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_cpm35",
+            vignetteStrength = 0.24f,
+            vignetteRadius = 0.86f,
+            chromaticAberration = 0.003f,
+            edgeSoftness = 0.12f,
+            flareStrength = 0.22f
         )
     )
 
@@ -1492,7 +1492,7 @@ object CameraProfileCatalog {
         D_EXP,
         D_3D,
         CCD_DIGITAL,
-        CCD_FLASH,
+        D_FUNS,
         CLASSIC_U,
         DQS_CAMERA,
         INSTANT_CAMERA,
@@ -1534,7 +1534,7 @@ object CameraProfileCatalog {
             "analog_cinema_film", "d3d", "d_3d", "d 3d" -> return D_3D
             "analog_vintage_color", "dexp", "d exp" -> return D_EXP
             "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> return CCD_DIGITAL
-            "ccd_flash", "d_funs", "dfuns" -> return CCD_FLASH
+            "ccd_flash", "d_funs", "dfuns" -> return D_FUNS
             "ccd_y2k_digital", "classic_u", "classicu" -> return CLASSIC_U
             "dqs", "ccd_retro_compact" -> return DQS_CAMERA
             "inst_vintage", "inst_c" -> return INSTANT_CAMERA

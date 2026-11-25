@@ -307,7 +307,7 @@ object PresetCatalog {
             halation = HalationConfig(enabled = true, threshold = 0.92f, intensity = 0.08f, radius = 8f, haloRed = 0.85f, haloGreen = 0.85f, haloBlue = 1.0f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.40f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGICAM_YELLOW_DATETIME)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE)
         ),
 
         CameraPreset(
@@ -321,8 +321,8 @@ object PresetCatalog {
             colorGrading = ColorGradingConfig(
                 contrast = 1.12f,
                 saturation = 1.14f,
-                temperature = -0.12f,
-                tint = 0.05f,
+                temperature = 0.02f,
+                tint = 0.00f,
                 fade = 0.02f,
                 highlightRollOff = 0.90f
             ),
@@ -330,7 +330,7 @@ object PresetCatalog {
             lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.85f, chromaticAberration = 0.005f),
             dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -22)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE)
         ),
 
         CameraPreset(
@@ -388,14 +388,14 @@ object PresetCatalog {
             year = "1996",
             description = "Disposable camera loaded with motion print film featuring intense red/orange halation around bright light sources.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
-                saturation = 1.12f,
-                temperature = 0.12f,
-                tint = 0.02f,
-                fade = 0.04f,
+                contrast = 1.04f,
+                saturation = 1.02f,
+                temperature = 0.0f,
+                tint = 0.0f,
+                fade = 0.02f,
                 highlightRollOff = 0.88f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.28f, scale = 1.20f, assetPath = "grains/grain_cpm35.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.40f, highlightStrength = 0.18f),
+            grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.85f, assetPath = "", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.35f, highlightStrength = 0.12f),
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.84f, chromaticAberration = 0.006f, softness = 0.10f),
             halation = HalationConfig(enabled = true, threshold = 0.72f, intensity = 0.42f, radius = 22f, haloRed = 1.0f, haloGreen = 0.22f, haloBlue = 0.04f),
             dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.55f),

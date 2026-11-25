@@ -69,8 +69,8 @@ class DigicamColorEngine(
 
         val ARTIFICIAL_PARAMS = IlluminantParameters(
             illuminant = DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL,
-            gains = floatArrayOf(1.02f, 1.05f, 0.52f),
-            shadowTint = floatArrayOf(0.012f, 0.024f, 0.008f),
+            gains = floatArrayOf(1.02f, 1.00f, 0.78f),
+            shadowTint = floatArrayOf(0.014f, 0.014f, 0.016f),
             retentionRatio = 0.65f,
             redSaturationBoost = 1.12f,
             contrast = 1.18f,
@@ -198,15 +198,17 @@ class DigicamColorEngine(
 
         return when (model) {
             DigicamModel.CPM35 -> {
-                // CPM35: Golden nostalgic digital compact (warm amber cast, softer midtone contrast, rich reds)
+                // CPM35: Golden nostalgic digital compact (warm amber cast, punchier digicam midtones, rich reds, clean black point)
                 blended.copy(
                     gains = floatArrayOf(
                         blended.gains[0] * 1.05f,
                         blended.gains[1] * 0.98f,
                         blended.gains[2] * 0.92f
                     ),
-                    contrast = blended.contrast * 0.98f,
+                    contrast = blended.contrast * 1.00f,
                     saturation = blended.saturation * 1.05f,
+                    toeLift = blended.toeLift * 0.95f,
+                    highlightRollOff = 0.94f,
                     redSaturationBoost = blended.redSaturationBoost * 1.08f,
                     opticalScatterIntensity = blended.opticalScatterIntensity * 1.15f
                 )
@@ -215,9 +217,9 @@ class DigicamColorEngine(
                 // CCD: Classic pocket digicam (punchier contrast, deeper blacks, crisp digital response)
                 blended.copy(
                     gains = floatArrayOf(
-                        blended.gains[0] * 0.98f,
-                        blended.gains[1] * 1.02f,
-                        blended.gains[2] * 0.98f
+                        blended.gains[0] * 1.01f,
+                        blended.gains[1] * 0.99f,
+                        blended.gains[2] * 0.96f
                     ),
                     contrast = blended.contrast * 1.06f,
                     saturation = blended.saturation * 1.02f,
@@ -313,91 +315,124 @@ class DigicamColorEngine(
             if (xCont > shoulder) {
                 val excess = xCont - shoulder
                 val headroom = 1f - shoulder
-                shoulder + headroom * (excess / (excess + headroom * 0.85f))
+                shoulder + headroom * (excess / (excess + headroom * 0.45f))
             } else {
                 xCont
             }.coerceIn(0f, 1f)
         }
 
-        for (i in 0 until total) {
-            val p = pixels[i]
-            val r8 = (p shr 16) and 0xFF
-            val g8 = (p shr 8) and 0xFF
-            val b8 = p and 0xFF
+        // Precompute 256-entry linear sRGB + partial WB gain LUTs to avoid millions of pow/ln calls
+        val rLinLut = FloatArray(256) { linearToSrgb(SRGB_TO_LIN[it] * linGainR).toFloat() }
+        val gLinLut = FloatArray(256) { linearToSrgb(SRGB_TO_LIN[it] * linGainG).toFloat() }
+        val bLinLut = FloatArray(256) { linearToSrgb(SRGB_TO_LIN[it] * linGainB).toFloat() }
 
-            // 1. Linear Color Space Partial White Balance
-            val rLin = SRGB_TO_LIN[r8] * linGainR
-            val gLin = SRGB_TO_LIN[g8] * linGainG
-            val bLin = SRGB_TO_LIN[b8] * linGainB
+        fun processRow(y: Int) {
+            val rowOffset = y * width
+            for (x in 0 until width) {
+                val i = rowOffset + x
+                val p = pixels[i]
+                val r8 = (p shr 16) and 0xFF
+                val g8 = (p shr 8) and 0xFF
+                val b8 = p and 0xFF
 
-            var rf = linearToSrgb(rLin).toFloat()
-            var gf = linearToSrgb(gLin).toFloat()
-            var bf = linearToSrgb(bLin).toFloat()
+                // 1. Linear Color Space Partial White Balance (LUT accelerated)
+                var rf = rLinLut[r8]
+                var gf = gLinLut[g8]
+                var bf = bLinLut[b8]
 
-            // 2. Continuous Hue-Chroma-Luminance Red Protection (Ref 2 scarlet preservation)
-            // Eliminates hard threshold rf > 1.25*gf, replacing with smooth angular falloff
-            val maxC = maxOf(rf, maxOf(gf, bf))
-            val minC = minOf(rf, minOf(gf, bf))
-            val chroma = maxC - minC
-            val saturation = if (maxC > 0.001f) chroma / maxC else 0.0f
+                // 2. Continuous Hue-Chroma-Luminance Red Protection (Ref 2 scarlet preservation)
+                // Eliminates hard threshold rf > 1.25*gf, replacing with smooth angular falloff
+                val maxC = maxOf(rf, maxOf(gf, bf))
+                val minC = minOf(rf, minOf(gf, bf))
+                val chroma = maxC - minC
+                val saturation = if (maxC > 0.001f) chroma / maxC else 0.0f
 
-            if (saturation > 0.30f && rf > gf && rf > bf) {
-                // Approximate fast hue angle in degrees [0, 360]
-                val delta = maxC - minC
-                val hueDegrees = if (delta > 0.001f) {
-                    val rawHue = ((gf - bf) / delta) * 60f
-                    if (rawHue < 0f) rawHue + 360f else rawHue
-                } else 0.0f
+                if (saturation > 0.30f && rf > gf && rf > bf) {
+                    // Approximate fast hue angle in degrees [0, 360]
+                    val delta = maxC - minC
+                    val hueDegrees = if (delta > 0.001f) {
+                        val rawHue = ((gf - bf) / delta) * 60f
+                        if (rawHue < 0f) rawHue + 360f else rawHue
+                    } else 0.0f
 
-                // Distance from pure scarlet (0° / 360°)
-                val distFromRed = minOf(hueDegrees, 360f - hueDegrees)
+                    // Distance from pure scarlet (0° / 360°)
+                    val distFromRed = minOf(hueDegrees, 360f - hueDegrees)
 
-                // Smooth Gaussian falloff (sigma = 18°): full at 0° (scarlet), decays to zero at 35° (orange/skin)
-                val hueFactor = exp(- (distFromRed * distFromRed) / (2f * 18f * 18f))
+                    // Smooth Gaussian falloff (sigma = 18°): full at 0° (scarlet), decays to zero at 35° (orange/skin)
+                    val hueFactor = exp(- (distFromRed * distFromRed) / (2f * 18f * 18f))
 
-                // Saturation gating: only vivid fabrics receive boost, not muted woods or subtle skin flushes
-                val satGating = ((saturation - 0.35f) / 0.30f).coerceIn(0.0f, 1.0f)
+                    // Saturation gating: only vivid fabrics receive boost, not muted woods or subtle skin flushes
+                    val satGating = ((saturation - 0.35f) / 0.30f).coerceIn(0.0f, 1.0f)
 
-                val effectiveBoost = 1.0f + (redBoost - 1.0f) * hueFactor * satGating
+                    val effectiveBoost = 1.0f + (redBoost - 1.0f) * hueFactor * satGating
 
-                // Apply scarlet boost with soft-knee ceiling preserving fabric texture
-                val boostedR = rf * effectiveBoost
-                val rExcess = max(0f, boostedR - 220f)
-                rf = if (rExcess > 0f) 220f + 35f * (rExcess / (rExcess + 35f * 0.70f)) else boostedR
+                    // Apply scarlet boost with soft-knee ceiling preserving fabric texture
+                    val boostedR = rf * effectiveBoost
+                    val rExcess = max(0f, boostedR - 220f)
+                    rf = if (rExcess > 0f) 220f + 35f * (rExcess / (rExcess + 35f * 0.70f)) else boostedR
 
-                // Controlled slight green/blue attenuation on pure scarlet to prevent color fogging
-                val attenuation = hueFactor * satGating * 0.08f
-                gf = (gf * (1f - attenuation)).coerceAtLeast(0f)
-                bf = (bf * (1f - attenuation * 1.2f)).coerceAtLeast(0f)
+                    // Controlled slight green/blue attenuation on pure scarlet to prevent color fogging
+                    val attenuation = hueFactor * satGating * 0.08f
+                    gf = (gf * (1f - attenuation)).coerceAtLeast(0f)
+                    bf = (bf * (1f - attenuation * 1.2f)).coerceAtLeast(0f)
+                }
+
+                // 3. Tonal Contrast Curve
+                val rIdx = rf.roundToInt().coerceIn(0, 255)
+                val gIdx = gf.roundToInt().coerceIn(0, 255)
+                val bIdx = bf.roundToInt().coerceIn(0, 255)
+
+                rf = toneLut[rIdx] * 255f
+                gf = toneLut[gIdx] * 255f
+                bf = toneLut[bIdx] * 255f
+
+                // 4. Color Saturation Adjustment
+                val luma = 0.299f * rf + 0.587f * gf + 0.114f * bf
+                rf = (luma + (rf - luma) * sat).coerceIn(0f, 255f)
+                gf = (luma + (gf - luma) * sat).coerceIn(0f, 255f)
+                bf = (luma + (bf - luma) * sat).coerceIn(0f, 255f)
+
+                // 5. Ambient Shadow Tinting (warm/olive tint in deep shadows)
+                val shadowWeight = ((60f - luma) / 60f).coerceIn(0f, 1f)
+                if (shadowWeight > 0f) {
+                    rf = (rf + shadowR * shadowWeight).coerceIn(0f, 255f)
+                    gf = (gf + shadowG * shadowWeight).coerceIn(0f, 255f)
+                    bf = (bf + shadowB * shadowWeight).coerceIn(0f, 255f)
+                }
+
+                pixels[i] = (0xFF shl 24) or
+                        (rf.roundToInt() shl 16) or
+                        (gf.roundToInt() shl 8) or
+                        bf.roundToInt()
             }
+        }
 
-            // 3. Tonal Contrast Curve
-            val rIdx = rf.roundToInt().coerceIn(0, 255)
-            val gIdx = gf.roundToInt().coerceIn(0, 255)
-            val bIdx = bf.roundToInt().coerceIn(0, 255)
-
-            rf = toneLut[rIdx] * 255f
-            gf = toneLut[gIdx] * 255f
-            bf = toneLut[bIdx] * 255f
-
-            // 4. Color Saturation Adjustment
-            val luma = 0.299f * rf + 0.587f * gf + 0.114f * bf
-            rf = (luma + (rf - luma) * sat).coerceIn(0f, 255f)
-            gf = (luma + (gf - luma) * sat).coerceIn(0f, 255f)
-            bf = (luma + (bf - luma) * sat).coerceIn(0f, 255f)
-
-            // 5. Ambient Shadow Tinting (warm/olive tint in deep shadows)
-            val shadowWeight = ((60f - luma) / 60f).coerceIn(0f, 1f)
-            if (shadowWeight > 0f) {
-                rf = (rf + shadowR * shadowWeight).coerceIn(0f, 255f)
-                gf = (gf + shadowG * shadowWeight).coerceIn(0f, 255f)
-                bf = (bf + shadowB * shadowWeight).coerceIn(0f, 255f)
+        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+        if (numCores <= 1 || total < 40_000) {
+            for (y in 0 until height) {
+                processRow(y)
             }
-
-            pixels[i] = (0xFF shl 24) or
-                    (rf.roundToInt() shl 16) or
-                    (gf.roundToInt() shl 8) or
-                    bf.roundToInt()
+        } else {
+            val rowsPerCore = (height + numCores - 1) / numCores
+            val latch = java.util.concurrent.CountDownLatch(numCores)
+            for (c in 0 until numCores) {
+                val startY = c * rowsPerCore
+                val endY = minOf(height, startY + rowsPerCore)
+                java.util.concurrent.ForkJoinPool.commonPool().execute {
+                    try {
+                        for (y in startY until endY) {
+                            processRow(y)
+                        }
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+            }
+            try {
+                latch.await()
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
         }
     }
 }
