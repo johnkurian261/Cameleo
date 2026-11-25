@@ -549,8 +549,14 @@ object ImageProcessor {
         val height = source.height
         val totalPixels = width * height
         val pixels = IntArrayPool.acquire(totalPixels)
+        val sourcePixels = if (tuning.skinToneIntelligenceEnabled) {
+            IntArrayPool.acquire(totalPixels).also { System.arraycopy(pixels, 0, it, 0, totalPixels) }
+        } else null
         try {
             source.getPixels(pixels, 0, width, 0, 0, width, height)
+            if (sourcePixels != null) {
+                System.arraycopy(pixels, 0, sourcePixels, 0, totalPixels)
+            }
 
             val film = stock.filmProfile
             val v2 = film.lowerMidtoneStrength > 0f
@@ -616,7 +622,8 @@ object ImageProcessor {
                         illuminant = params.illuminant,
                         profile = skinProfile,
                         isFlashActive = isFlashActive,
-                        iso = sensorIso
+                        iso = sensorIso,
+                        sourcePixels = sourcePixels
                     )
                     lastSkinResult = sResult
                     if (tuning.debugSkinToneStages) {
@@ -1372,7 +1379,8 @@ object ImageProcessor {
                     illuminant = skinIlluminant,
                     profile = skinProfile,
                     isFlashActive = isFlashActive,
-                    iso = sensorIso
+                    iso = sensorIso,
+                    sourcePixels = sourcePixels
                 )
                 if (tuning.debugSkinToneStages) {
                     com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(
@@ -1474,6 +1482,9 @@ object ImageProcessor {
             return source
         } finally {
             IntArrayPool.release(pixels)
+            if (sourcePixels != null) {
+                IntArrayPool.release(sourcePixels)
+            }
         }
     }
 

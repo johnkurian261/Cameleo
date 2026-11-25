@@ -62,7 +62,7 @@ class SkinAnatomyPrior {
                 for (x in 0 until width) {
                     val nx = x * invW - 0.5f
                     val distFromCenter = sqrt(nx * nx + ny * ny) * 1.414f // [0.0, 1.0]
-                    // Center-weighted conservative prior in [0.45, 0.55]
+                    // Center-weighted conservative prior in [0.40, 0.55]
                     prior[row + x] = (0.55f - distFromCenter * 0.10f).coerceIn(0.40f, 0.55f)
                 }
             }

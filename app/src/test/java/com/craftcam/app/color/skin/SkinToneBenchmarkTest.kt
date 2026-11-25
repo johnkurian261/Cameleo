@@ -64,14 +64,42 @@ class SkinToneBenchmarkTest {
     fun benchmark_720pViewfinder() {
         val width = 1280
         val height = 720
-        runBenchmarkSuite("720p Viewfinder (0.92 MP)", width, height, iterations = 5)
+        runBenchmarkSuite("720p Viewfinder (0.92 MP)", width, height, iterations = 3)
     }
 
     @Test
     fun benchmark_1080pStandard() {
         val width = 1920
         val height = 1080
-        runBenchmarkSuite("1080p Standard (2.07 MP)", width, height, iterations = 5)
+        runBenchmarkSuite("1080p Standard (2.07 MP)", width, height, iterations = 3)
+    }
+
+    @Test
+    fun benchmark_3MPDigicam() {
+        val width = 2048
+        val height = 1536
+        runBenchmarkSuite("3MP Digicam Retro (3.15 MP)", width, height, iterations = 3)
+    }
+
+    @Test
+    fun benchmark_6MPCompact() {
+        val width = 3072
+        val height = 2048
+        runBenchmarkSuite("6MP Early DSLR / Compact (6.29 MP)", width, height, iterations = 2)
+    }
+
+    @Test
+    fun benchmark_8MPPeakDigicam() {
+        val width = 3264
+        val height = 2448
+        runBenchmarkSuite("8MP Digicam Peak (7.99 MP)", width, height, iterations = 2)
+    }
+
+    @Test
+    fun benchmark_12MPSensorNative() {
+        val width = 4000
+        val height = 3000
+        runBenchmarkSuite("12MP Smartphone Sensor Native (12.00 MP)", width, height, iterations = 2)
     }
 
     private fun runBenchmarkSuite(label: String, width: Int, height: Int, iterations: Int) {

@@ -37,45 +37,105 @@ class SkinMaskRefiner {
 
         val radius = max(2, (minOf(width, height) * featherRadiusFrac).toInt())
         val refined = FloatArray(total)
-        val temp = FloatArray(total)
+        val temp = com.craftcam.app.processor.FloatArrayPool.acquire(total)
 
         val windowSize = 2 * radius + 1
         val invWindowSize = 1.0f / windowSize
 
-        // Horizontal Pass
-        for (y in 0 until height) {
-            val rowOffset = y * width
-            var windowSum = 0.0f
+        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
 
-            for (x in -radius..radius) {
-                val cx = x.coerceIn(0, width - 1)
-                windowSum += fusedMask[rowOffset + cx]
+        try {
+            // Horizontal Pass
+            fun processHorizontalRow(y: Int) {
+                val rowOffset = y * width
+                var windowSum = 0.0f
+
+                for (x in -radius..radius) {
+                    val cx = x.coerceIn(0, width - 1)
+                    windowSum += fusedMask[rowOffset + cx]
+                }
+
+                for (x in 0 until width) {
+                    temp[rowOffset + x] = windowSum * invWindowSize
+                    val xLeft = (x - radius).coerceIn(0, width - 1)
+                    val xRight = (x + radius + 1).coerceIn(0, width - 1)
+                    windowSum += fusedMask[rowOffset + xRight] - fusedMask[rowOffset + xLeft]
+                }
             }
 
-            for (x in 0 until width) {
-                temp[rowOffset + x] = windowSum * invWindowSize
-                val xLeft = (x - radius).coerceIn(0, width - 1)
-                val xRight = (x + radius + 1).coerceIn(0, width - 1)
-                windowSum += fusedMask[rowOffset + xRight] - fusedMask[rowOffset + xLeft]
+            if (numCores <= 1 || total < 40_000) {
+                for (y in 0 until height) {
+                    processHorizontalRow(y)
+                }
+            } else {
+                val rowsPerCore = (height + numCores - 1) / numCores
+                val latchH = java.util.concurrent.CountDownLatch(numCores)
+                for (c in 0 until numCores) {
+                    val startY = c * rowsPerCore
+                    val endY = minOf(height, startY + rowsPerCore)
+                    java.util.concurrent.ForkJoinPool.commonPool().execute {
+                        try {
+                            for (y in startY until endY) {
+                                processHorizontalRow(y)
+                            }
+                        } finally {
+                            latchH.countDown()
+                        }
+                    }
+                }
+                try {
+                    latchH.await()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
             }
-        }
 
-        // Vertical Pass
-        for (x in 0 until width) {
-            var windowSum = 0.0f
+            // Vertical Pass
+            fun processVerticalCol(x: Int) {
+                var windowSum = 0.0f
 
-            for (y in -radius..radius) {
-                val cy = y.coerceIn(0, height - 1)
-                windowSum += temp[cy * width + x]
+                for (y in -radius..radius) {
+                    val cy = y.coerceIn(0, height - 1)
+                    windowSum += temp[cy * width + x]
+                }
+
+                for (y in 0 until height) {
+                    val idx = y * width + x
+                    refined[idx] = (windowSum * invWindowSize).coerceIn(0.0f, 1.0f)
+                    val yTop = (y - radius).coerceIn(0, height - 1)
+                    val yBottom = (y + radius + 1).coerceIn(0, height - 1)
+                    windowSum += temp[yBottom * width + x] - temp[yTop * width + x]
+                }
             }
 
-            for (y in 0 until height) {
-                val idx = y * width + x
-                refined[idx] = (windowSum * invWindowSize).coerceIn(0.0f, 1.0f)
-                val yTop = (y - radius).coerceIn(0, height - 1)
-                val yBottom = (y + radius + 1).coerceIn(0, height - 1)
-                windowSum += temp[yBottom * width + x] - temp[yTop * width + x]
+            if (numCores <= 1 || total < 40_000) {
+                for (x in 0 until width) {
+                    processVerticalCol(x)
+                }
+            } else {
+                val colsPerCore = (width + numCores - 1) / numCores
+                val latchV = java.util.concurrent.CountDownLatch(numCores)
+                for (c in 0 until numCores) {
+                    val startX = c * colsPerCore
+                    val endX = minOf(width, startX + colsPerCore)
+                    java.util.concurrent.ForkJoinPool.commonPool().execute {
+                        try {
+                            for (x in startX until endX) {
+                                processVerticalCol(x)
+                            }
+                        } finally {
+                            latchV.countDown()
+                        }
+                    }
+                }
+                try {
+                    latchV.await()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
             }
+        } finally {
+            com.craftcam.app.processor.FloatArrayPool.release(temp)
         }
 
         return refined

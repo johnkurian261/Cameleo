@@ -64,6 +64,15 @@ data class SkinToneConfig(
     /** Strength of yellow-cast correction [0.0..1.0]. */
     val yellowCastProtectionStrength: Float = 0.85f,
 
+    /** Conservative headless baseline spatial confidence when no faces are detected. */
+    val headlessBaselineConfidence: Float = 0.28f,
+
+    /** Whether protection uses source-referred comparison to distinguish genuine lighting from filter error. */
+    val sourceRelativeProtectionEnabled: Boolean = true,
+
+    /** Dimension threshold above which mask estimation runs at reduced resolution for performance. */
+    val adaptiveResolutionThreshold: Int = 1600,
+
     /** Developer debug stage export flag. */
     val debugVisualizationsEnabled: Boolean = false
 )

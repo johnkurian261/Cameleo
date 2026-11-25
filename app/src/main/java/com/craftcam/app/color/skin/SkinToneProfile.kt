@@ -68,8 +68,8 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = -1.2f, // Steers towards organic red-orange (h ~ 48..55 deg), away from golden yellow
         skinGains = floatArrayOf(1.02f, 0.99f, 0.98f), // Preserves blue channel (no blue starvation!)
-        skinMidtoneLift = 0.010f, // Subtle film toe lift
-        skinHighlightKnee = 0.90f, // Soft negative film shoulder compression
+        skinMidtoneLift = 0.008f, // Subtle film toe lift
+        skinHighlightKnee = 0.88f, // Soft negative film shoulder compression
         maxSkinSaturation = 0.65f,
         textureDampening = 0.22f // Preserves organic film grain
     )
@@ -94,11 +94,11 @@ object SkinToneProfileCatalog {
             yellowCastProtectionStrength = 0.60f // Guards against mustard under daylight; retains amber bloom under tungsten
         ),
         targetHueBias = 3.5f, // Radiant golden-amber cast matching references
-        skinGains = floatArrayOf(1.05f, 0.98f, 0.92f),
-        skinMidtoneLift = 0.015f, // Restrained to preserve deep shadows and authentic digicam punch
-        skinHighlightKnee = 0.84f,
+        skinGains = floatArrayOf(1.04f, 0.98f, 0.93f),
+        skinMidtoneLift = 0.012f, // Restrained to preserve deep shadows and authentic digicam punch
+        skinHighlightKnee = 0.86f,
         maxSkinSaturation = 0.70f,
-        textureDampening = 0.20f
+        textureDampening = 0.18f
     )
 
     /**
@@ -117,14 +117,14 @@ object SkinToneProfileCatalog {
             shadowProtection = 0.80f,
             maximumHueShiftDegrees = 3.0f,
             yellowCastProtectionEnabled = true,
-            yellowCastProtectionStrength = 0.75f
+            yellowCastProtectionStrength = 0.85f
         ),
         targetHueBias = 1.0f, // Balanced clean golden daylight, punchy flash
         skinGains = floatArrayOf(1.02f, 1.00f, 0.96f),
-        skinMidtoneLift = 0.005f, // Preserves authentic digital highlight clipping and direct flash punch
-        skinHighlightKnee = 0.92f, // Crisp digital direct flash highlights
+        skinMidtoneLift = 0.003f, // Minimal midtone lift to preserve authentic digicam contrast
+        skinHighlightKnee = 0.96f, // Crisp digital direct flash highlights (harder digital clipping)
         maxSkinSaturation = 0.66f,
-        textureDampening = 0.10f // Sharp digital electronic texture
+        textureDampening = 0.08f // Sharp digital electronic texture
     )
 
     /**
