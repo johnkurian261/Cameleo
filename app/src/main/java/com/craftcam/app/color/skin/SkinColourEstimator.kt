@@ -71,6 +71,38 @@ class SkinColourEstimator {
 
             return floatArrayOf(okL, chroma, hue)
         }
+
+        /**
+         * Converts OKLCh [L, C, h_degrees] back to 8-bit sRGB [R, G, B].
+         * Exact mathematical inverse of rgbToOklch.
+         */
+        fun oklchToRgb(okL: Float, chroma: Float, hueDegrees: Float): IntArray {
+            val hRad = hueDegrees * (PI_F / 180.0f)
+            val okA = chroma * cos(hRad)
+            val okB = chroma * sin(hRad)
+
+            // OKLab to LMS
+            val l_ = okL + 0.3963377774f * okA + 0.2158037573f * okB
+            val m_ = okL - 0.1055613458f * okA - 0.0638541728f * okB
+            val s_ = okL - 0.0894841775f * okA - 1.2914855480f * okB
+
+            val l = l_ * l_ * l_
+            val m = m_ * m_ * m_
+            val s = s_ * s_ * s_
+
+            // LMS to Linear sRGB
+            val rLin = (+4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s).coerceIn(0.0f, 1.0f)
+            val gLin = (-1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s).coerceIn(0.0f, 1.0f)
+            val bLin = (-0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s).coerceIn(0.0f, 1.0f)
+
+            // Linear sRGB to gamma-encoded sRGB
+            fun toSrgb(lin: Float): Int {
+                val srgb = if (lin <= 0.0031308f) 12.92f * lin else 1.055f * lin.pow(1.0f / 2.4f) - 0.055f
+                return (srgb * 255.0f).roundToInt().coerceIn(0, 255)
+            }
+
+            return intArrayOf(toSrgb(rLin), toSrgb(gLin), toSrgb(bLin))
+        }
     }
 
     /**

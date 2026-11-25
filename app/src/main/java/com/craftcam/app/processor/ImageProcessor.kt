@@ -568,7 +568,7 @@ object ImageProcessor {
             val isNatural = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
 
             val isCpm35 = preset.id == "disp_flash" || stock.id == "disposable_cpm35" || preset.id == "disp_cpm35" || preset.name.contains("CPM35", ignoreCase = true)
-            val isCcd = preset.id == "ccd_r" || stock.id == "ccd_digital" || preset.category == CameraCategory.CCD_DIGITAL || preset.id == "ccd_retro_compact"
+            val isCcd = (preset.id == "ccd_r" || stock.id == "ccd_digital" || preset.id == "ccd_retro_compact" || (preset.category == CameraCategory.CCD_DIGITAL && preset.id != "ccd_flash"))
             val isDigicamTarget = (isCpm35 || isCcd) && !isNatural && !isCamcorder
             val digicamModel = if (isCpm35) com.craftcam.app.color.digicam.DigicamModel.CPM35 else com.craftcam.app.color.digicam.DigicamModel.CCD
 

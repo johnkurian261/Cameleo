@@ -50,47 +50,53 @@ object SkinToneProfileCatalog {
 
     /**
      * D FUNS: Single-use 35mm disposable camera.
-     * Organic film negative response, warm direct-flash falloff, natural flash-lit skin, believable film highlights.
+     * Organic colour negative film response, soft highlight compression, preserved blue channel,
+     * and natural red-orange skin relationships (calibrated against Kodak FunSaver / Fujifilm QuickSnap).
      */
     val D_FUNS = SkinToneProfile(
         id = "skin_dfuns",
         name = "D Funs Disposable Film",
         config = SkinToneConfig(
-            warmthStrength = 0.18f,
-            saturationProtection = 0.88f,
-            maxAllowedSkinSaturation = 0.68f,
-            highlightProtection = 0.90f,
-            shadowProtection = 0.80f,
-            maximumHueShiftDegrees = 4.0f
+            warmthStrength = 0.12f,
+            saturationProtection = 0.90f,
+            maxAllowedSkinSaturation = 0.65f,
+            highlightProtection = 0.92f,
+            shadowProtection = 0.82f,
+            maximumHueShiftDegrees = 3.5f,
+            yellowCastProtectionEnabled = true,
+            yellowCastProtectionStrength = 0.80f
         ),
-        targetHueBias = 2.0f, // Subtle warm golden-amber film shift
-        skinGains = floatArrayOf(1.06f, 0.98f, 0.90f),
-        skinMidtoneLift = 0.020f, // Restrained to preserve natural disposable flash shadow falloff
-        skinHighlightKnee = 0.84f,
-        maxSkinSaturation = 0.68f,
-        textureDampening = 0.25f // Preserves organic film grain while preventing excessive noise on faces
+        targetHueBias = -1.2f, // Steers towards organic red-orange (h ~ 48..55 deg), away from golden yellow
+        skinGains = floatArrayOf(1.02f, 0.99f, 0.98f), // Preserves blue channel (no blue starvation!)
+        skinMidtoneLift = 0.010f, // Subtle film toe lift
+        skinHighlightKnee = 0.90f, // Soft negative film shoulder compression
+        maxSkinSaturation = 0.65f,
+        textureDampening = 0.22f // Preserves organic film grain
     )
 
     /**
      * CPM35: Golden early digital compact.
      * Reference-calibrated against Refs 1, 2, 3, 6:
      * Golden illuminated skin, amber tungsten retention, deep contrast shadows, soft optical detail.
+     * Protected against excessive mustard drift under neutral daylight.
      */
     val CPM35 = SkinToneProfile(
         id = "skin_cpm35",
         name = "CPM35 Golden Compact",
         config = SkinToneConfig(
-            warmthStrength = 0.22f,
+            warmthStrength = 0.20f,
             saturationProtection = 0.85f,
             maxAllowedSkinSaturation = 0.70f,
             highlightProtection = 0.86f,
             shadowProtection = 0.85f,
-            maximumHueShiftDegrees = 5.0f
+            maximumHueShiftDegrees = 4.5f,
+            yellowCastProtectionEnabled = true,
+            yellowCastProtectionStrength = 0.60f // Guards against mustard under daylight; retains amber bloom under tungsten
         ),
         targetHueBias = 3.5f, // Radiant golden-amber cast matching references
-        skinGains = floatArrayOf(1.08f, 0.97f, 0.86f),
-        skinMidtoneLift = 0.018f, // Restrained to preserve deep shadows and authentic digicam punch
-        skinHighlightKnee = 0.82f,
+        skinGains = floatArrayOf(1.05f, 0.98f, 0.92f),
+        skinMidtoneLift = 0.015f, // Restrained to preserve deep shadows and authentic digicam punch
+        skinHighlightKnee = 0.84f,
         maxSkinSaturation = 0.70f,
         textureDampening = 0.20f
     )
@@ -104,19 +110,21 @@ object SkinToneProfileCatalog {
         id = "skin_ccd",
         name = "CCD Y2K Digicam",
         config = SkinToneConfig(
-            warmthStrength = 0.12f,
-            saturationProtection = 0.86f,
+            warmthStrength = 0.10f,
+            saturationProtection = 0.88f,
             maxAllowedSkinSaturation = 0.66f,
-            highlightProtection = 0.92f,
+            highlightProtection = 0.94f,
             shadowProtection = 0.80f,
-            maximumHueShiftDegrees = 3.5f
+            maximumHueShiftDegrees = 3.0f,
+            yellowCastProtectionEnabled = true,
+            yellowCastProtectionStrength = 0.75f
         ),
-        targetHueBias = 1.0f, // Balanced clean golden daylight
-        skinGains = floatArrayOf(1.03f, 1.00f, 0.94f),
-        skinMidtoneLift = 0.010f, // Preserves authentic digital highlight clipping and direct flash punch
-        skinHighlightKnee = 0.88f,
+        targetHueBias = 1.0f, // Balanced clean golden daylight, punchy flash
+        skinGains = floatArrayOf(1.02f, 1.00f, 0.96f),
+        skinMidtoneLift = 0.005f, // Preserves authentic digital highlight clipping and direct flash punch
+        skinHighlightKnee = 0.92f, // Crisp digital direct flash highlights
         maxSkinSaturation = 0.66f,
-        textureDampening = 0.15f
+        textureDampening = 0.10f // Sharp digital electronic texture
     )
 
     /**

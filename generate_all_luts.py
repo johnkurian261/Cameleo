@@ -188,7 +188,7 @@ def grade_ccd_classic(r, g, b):
     
     return adjust_saturation(r, g, b, 1.38)
 
-# 8. CCD Flash (D FunS / Night Strobe Pop)
+# 8. CCD Flash (Night Strobe Pop)
 # Harsh xenon strobe pop: blown luminous foreground skin, deep black background falloff
 def grade_ccd_flash(r, g, b):
     r = film_s_curve(r, contrast=1.46, toe=0.01, shoulder=0.95)
@@ -208,6 +208,29 @@ def grade_ccd_flash(r, g, b):
     r += 0.04 * sh
     
     return adjust_saturation(r, g, b, 1.34)
+
+# 8b. D FunS (Single-Use 35mm Disposable Film Camera)
+# Authentic colour negative film response: organic red-orange skin, soft highlight shoulder compression, preserved blue channel
+def grade_dfuns_disposable_film(r, g, b):
+    r = film_s_curve(r, contrast=1.22, toe=0.035, shoulder=0.88)
+    g = film_s_curve(g, contrast=1.20, toe=0.030, shoulder=0.88)
+    b = film_s_curve(b, contrast=1.16, toe=0.038, shoulder=0.89)
+    luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    
+    # Soft warm flash/daylight illumination (subtle red-orange dye density, preserving blue!)
+    if luma > 0.45:
+        hi = clamp((luma - 0.45) * 1.5)
+        r += 0.05 * hi
+        g += 0.015 * hi
+        b += 0.010 * hi
+        
+    # Gentle negative film shadow warmth (subtle orange base density lift)
+    sh = clamp(1.0 - luma * 2.8)
+    r += 0.025 * sh
+    g += 0.010 * sh
+    b += 0.005 * sh
+    
+    return adjust_saturation(r, g, b, 1.10)
 
 # 9. CCD Cool Digital (IR / Aerochrome False-Color)
 # Surreal false-color infrared: green foliage flips to vivid scarlet/pink, skies deepen to midnight indigo
@@ -558,7 +581,8 @@ ALL_GRADES = {
     "lut_nt16.png":                grade_analog_fxn_r,
     "lut_ct2f.png":                grade_analog_soft_film,
     "lut_135ne.png":               grade_ccd_classic,
-    "lut_dfuns.png":               grade_ccd_flash,
+    "lut_dfuns.png":               grade_dfuns_disposable_film,
+    "lut_dfuns_v1.png":            grade_dfuns_disposable_film,
     "lut_d3d.png":                 grade_analog_cinema_film,
     "lut_instant.png":             grade_inst_classic,
     "lut_ir.png":                  grade_ccd_cool_digital,

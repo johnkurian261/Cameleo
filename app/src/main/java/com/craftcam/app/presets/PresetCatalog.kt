@@ -307,7 +307,7 @@ object PresetCatalog {
             halation = HalationConfig(enabled = true, threshold = 0.92f, intensity = 0.08f, radius = 8f, haloRed = 0.85f, haloGreen = 0.85f, haloBlue = 1.0f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.40f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = false)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGICAM_YELLOW_DATETIME)
         ),
 
         CameraPreset(
@@ -328,7 +328,7 @@ object PresetCatalog {
             ),
             grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_classicu.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.32f, highlightStrength = 0.15f),
             lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.85f, chromaticAberration = 0.005f),
-            dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
+            dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -22)
         ),
@@ -337,21 +337,21 @@ object PresetCatalog {
             id = "ccd_flash",
             iconResName = "cam_dfuns",
             name = "D Funs",
-            subtitle = "CCD Flash Party Camera",
-            category = CameraCategory.CCD_DIGITAL,
-            year = "2001",
-            description = "Punchy high-energy direct flash look. High contrast, saturated neon tones, and rapid radial light falloff.",
+            subtitle = "Single-use 35mm",
+            category = CameraCategory.DISPOSABLE,
+            year = "1995",
+            description = "Iconic 35mm single-use disposable camera. Organic colour negative film response, soft highlight compression, and natural flash warmth.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.12f,
-                saturation = 1.16f,
-                temperature = 0.08f,
-                tint = 0.02f,
+                contrast = 1.08f,
+                saturation = 1.06f,
+                temperature = 0.04f,
+                tint = 0.01f,
                 fade = 0.02f,
-                highlightRollOff = 0.88f
+                highlightRollOff = 0.90f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.34f, highlightStrength = 0.15f),
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.82f, chromaticAberration = 0.004f),
-            dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
+            dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -23)
         ),
@@ -374,7 +374,7 @@ object PresetCatalog {
             ),
             grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_dqs.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.12f),
             lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.004f),
-            dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.35f),
+            dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -21)
         ),
@@ -401,7 +401,7 @@ object PresetCatalog {
             dust = DustConfig(enabled = true, assetPath = "dust_135.png", opacity = 0.55f),
             lightLeak = LightLeakConfig(enabled = true, intensity = 0.45f, warmColorBias = 0.90f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -28)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE)
         ),
 
         CameraPreset(

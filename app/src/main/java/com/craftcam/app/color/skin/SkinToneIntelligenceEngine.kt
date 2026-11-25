@@ -167,6 +167,20 @@ class SkinToneIntelligenceEngine(
             var curG = (g0 + dg).coerceIn(0f, 255f)
             var curB = (b0 + db).coerceIn(0f, 255f)
 
+            // 2b. Camera-Specific Continuous OKLCh Hue Steering (reproduces authentic camera color science)
+            if (!protectionOnly && abs(profile.targetHueBias) > 0.01f && conf > 0.05f) {
+                val oklch = SkinColourEstimator.rgbToOklch(curR.roundToInt(), curG.roundToInt(), curB.roundToInt())
+                val maxHueShift = config.maximumHueShiftDegrees
+                val deltaHue = (profile.targetHueBias * conf).coerceIn(-maxHueShift, maxHueShift)
+                var shiftedHue = oklch[2] + deltaHue
+                if (shiftedHue < 0f) shiftedHue += 360f
+                else if (shiftedHue >= 360f) shiftedHue -= 360f
+                val shiftedRgb = SkinColourEstimator.oklchToRgb(oklch[0], oklch[1], shiftedHue)
+                curR = shiftedRgb[0].toFloat()
+                curG = shiftedRgb[1].toFloat()
+                curB = shiftedRgb[2].toFloat()
+            }
+
             // 3. Highlight Asymptotic Rolloff on Skin (prevents cheek/forehead blowout)
             val maxC = maxOf(curR, maxOf(curG, curB))
             val knee255 = knee * 255.0f
@@ -214,9 +228,20 @@ class SkinToneIntelligenceEngine(
                 val rbRatio = curR / maxOf(1.0f, curB)
                 val rgRatio = curR / maxOf(1.0f, curG)
 
-                // Blue channel starvation recovery (target balanced R/B ratio ~ 1.65..1.75)
-                if (rbRatio > 1.75f) {
-                    val targetB = curR / 1.70f
+                val maxAllowedRb = when (profile.id) {
+                    "skin_dfuns" -> 1.95f
+                    "skin_cpm35" -> 2.35f
+                    else -> 1.75f
+                }
+                val targetRb = when (profile.id) {
+                    "skin_dfuns" -> 1.70f
+                    "skin_cpm35" -> 1.95f
+                    else -> 1.70f
+                }
+
+                // Blue channel starvation recovery
+                if (rbRatio > maxAllowedRb) {
+                    val targetB = curR / targetRb
                     val deltaB = (targetB - curB) * config.yellowCastProtectionStrength * 0.85f
                     curB = (curB + deltaB).coerceIn(0f, 255f)
                 }
