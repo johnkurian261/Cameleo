@@ -9,14 +9,24 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -25,12 +35,20 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -65,7 +83,8 @@ data class GalleryItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -76,7 +95,7 @@ fun GalleryScreen(
 
     // Multi-select state
     var isSelectionMode by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var selectedIds by remember { mutableStateOf<Set<Uri>>(emptySet()) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
     // Redevelop state
@@ -118,6 +137,27 @@ fun GalleryScreen(
         }
     }
 
+
+    val prefs = remember { context.getSharedPreferences("gallery", Context.MODE_PRIVATE) }
+    var favourites by remember { mutableStateOf(prefs.getStringSet("favourites", emptySet()).orEmpty().toSet()) }
+    var negatives by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(allPhotos) {
+        negatives = withContext(Dispatchers.IO) { java.io.File(context.filesDir, "negatives").list().orEmpty().toSet() }
+    }
+    var album by remember { mutableStateOf("All Photos") }
+    var expanded by remember { mutableStateOf(false) }
+    val albums = remember(allPhotos, favourites, negatives) {
+        linkedMapOf("All Photos" to allPhotos,
+            "Favourites" to allPhotos.filter { it.uri.toString() in favourites },
+            "Negatives" to allPhotos.filter { !it.isVideo && "neg_${it.id}.jpg" in negatives }
+        ).apply { putAll(allPhotos.groupBy {
+            if (it.name.startsWith("CAMELEO_3D_")) "D3D" else resolveFilterName(it.name, it.cameraModel)
+        }.toSortedMap()) }
+    }
+    val albumItems = albums[album].orEmpty()
+    val visible = remember(albumItems) {
+        albumItems.sortedWith(compareBy<GalleryItem> { it.dateAdded }.thenBy { it.id })
+    }
     // Delete single photo
     val onDeletePhoto: (GalleryItem) -> Unit = { item ->
         deletePhoto(context, item.uri)
@@ -135,118 +175,7 @@ fun GalleryScreen(
             .background(CameraBlack)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ─── TOP NAVIGATION BAR (Simple, No Bubbles) ──────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                if (!isSelectionMode) {
-                    // Left: Return to camera button (clean back arrow, NO bubble)
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_back),
-                            contentDescription = "Back",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    // Center: Clean Darkroom title
-                    Text(
-                        text = "DARKROOM",
-                        color = TextPrimary,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
-
-                    // Right: Import & Select Buttons (simple icons, NO bubble background/border)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        IconButton(
-                            onClick = {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            },
-                            modifier = Modifier.size(44.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_dazz_importphoto),
-                                contentDescription = "Import Photo",
-                                tint = TextPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { isSelectionMode = true },
-                            modifier = Modifier.size(44.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_dazz_select),
-                                contentDescription = "Select Mode",
-                                tint = TextPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                } else {
-                    // Selection Mode Header
-                    TextButton(
-                        onClick = {
-                            isSelectionMode = false
-                            selectedIds = emptySet()
-                        }
-                    ) {
-                        Text(
-                            text = "CANCEL",
-                            color = VintageAmber,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Text(
-                        text = "${selectedIds.size} SELECTED",
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    TextButton(
-                        onClick = {
-                            selectedIds = if (selectedIds.size == allPhotos.size) {
-                                emptySet()
-                            } else {
-                                allPhotos.map { it.id }.toSet()
-                            }
-                        }
-                    ) {
-                        Text(
-                            text = if (selectedIds.size == allPhotos.size) "NONE" else "ALL",
-                            color = VintageAmber,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            // ─── PHOTO GRID / EMPTY STATE ─────────────────────────────────────────────
+            Box(Modifier.weight(1f)) {
             if (isLoading || isImporting) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -261,7 +190,7 @@ fun GalleryScreen(
                         )
                     }
                 }
-            } else if (allPhotos.isEmpty()) {
+            } else if (visible.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -277,7 +206,7 @@ fun GalleryScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "NO PHOTOGRAPHS YET",
+                            text = "No photos in this album",
                             color = TextSecondary,
                             fontSize = 14.sp,
                             fontFamily = FontFamily.Monospace,
@@ -286,7 +215,7 @@ fun GalleryScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Shoot frames with dazzz or tap the import button to develop your photos.",
+                            text = "Take a photo or open the album menu to import one.",
                             color = TextMuted,
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center,
@@ -295,107 +224,136 @@ fun GalleryScreen(
                     }
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    itemsIndexed(allPhotos, key = { _, item -> item.id }) { index, item ->
-                        val isSelected = selectedIds.contains(item.id)
-                        DazzGalleryThumbnail(
-                            item = item,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = isSelected,
-                            onClick = {
-                                if (isSelectionMode) {
-                                    selectedIds = if (isSelected) {
-                                        selectedIds - item.id
+                key(album) {
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = visible.lastIndex)
+                    LazyVerticalGrid(
+                        state = gridState,
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = if (isSelectionMode) 0.dp else 108.dp),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
+                        itemsIndexed(visible, key = { _, item -> item.uri.toString() }) { index, item ->
+                            val isSelected = selectedIds.contains(item.uri)
+                            DazzGalleryThumbnail(
+                                item = item,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = isSelected,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        selectedIds = if (isSelected) {
+                                            selectedIds - item.uri
+                                        } else {
+                                            selectedIds + item.uri
+                                        }
                                     } else {
-                                        selectedIds + item.id
+                                        selectedIndex = index
                                     }
-                                } else {
-                                    selectedIndex = index
+                                },
+                                onLongClick = {
+                                    if (!isSelectionMode) {
+                                        isSelectionMode = true
+                                        selectedIds = setOf(item.uri)
+                                    }
                                 }
-                            },
-                            onLongClick = {
-                                if (!isSelectionMode) {
-                                    isSelectionMode = true
-                                    selectedIds = setOf(item.id)
+                            )
+                        }
+                    }
+                }
+            }
+            }
+            if (isSelectionMode) {
+                Box(Modifier.fillMaxWidth().background(Color.Black).navigationBarsPadding().height(124.dp)) {
+                    Column(Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("${selectedIds.size} selected", color = TextSecondary, fontSize = 14.sp)
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 24.dp, end = 24.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            val enabled = selectedIds.isNotEmpty()
+                            GalleryAction(R.drawable.ic_dazz_share, "Share selected", {
+                                sharePhotos(context, visible.filter { it.uri in selectedIds })
+                            }, enabled = enabled)
+                            GalleryAction(R.drawable.ic_dazz_liked, "Toggle favourites", {
+                                val keys = selectedIds.map { it.toString() }.toSet()
+                                favourites = if (favourites.containsAll(keys)) favourites - keys else favourites + keys
+                                prefs.edit().putStringSet("favourites", favourites).apply()
+                                selectedIds = emptySet()
+                            }, enabled = enabled)
+                            GalleryAction(R.drawable.ic_dazz_delete, "Delete selected", { showBatchDeleteConfirm = true }, enabled = enabled)
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.align(Alignment.BottomStart).navigationBarsPadding()
+            .padding(start = 26.dp, bottom = if (isSelectionMode) 76.dp else 24.dp)) {
+            GalleryAction(R.drawable.ic_dazz_camera_back, "Return to camera", onNavigateBack, large = true)
+        }
+        BackHandler(enabled = expanded || selectedIndex != null || isSelectionMode) {
+            when {
+                expanded -> expanded = false
+                selectedIndex != null -> selectedIndex = null
+                else -> { isSelectionMode = false; selectedIds = emptySet() }
+            }
+        }
+        val categories = listOf("All Photos", "Favourites", "Negatives")
+        Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            GalleryAction(R.drawable.ic_dazz_setting, "Settings", onSettings)
+            if (!expanded) {
+                Button(onClick = { expanded = true }, shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = galleryChrome),
+                    contentPadding = PaddingValues(horizontal = 14.dp), modifier = Modifier.height(40.dp)) {
+                    if (album in categories) Text(album, color = Color.White, fontSize = 14.sp)
+                    else GalleryCameraIcon(album, Modifier.size(32.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Icon(painterResource(R.drawable.gallery_menu_chevron), "Choose album", Modifier.size(13.dp), tint = Color.White)
+                }
+            }
+            GalleryAction(if (isSelectionMode) R.drawable.ic_dazz_close else R.drawable.ic_dazz_select,
+                if (isSelectionMode) "Cancel selection" else "Select photos",
+                { isSelectionMode = !isSelectionMode; selectedIds = emptySet() })
+        }
+        if (expanded) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null) { expanded = false })
+                Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 60.dp)
+                    .fillMaxWidth(0.765f).widthIn(max = 340.dp).heightIn(max = maxHeight * 0.54f)
+                    .clip(RoundedCornerShape(22.dp)).background(galleryChrome)
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(22.dp))
+                    .verticalScroll(rememberScrollState()).padding(vertical = 10.dp)) {
+                    albums.forEach { (name, entries) ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                            .selectable(album == name, role = Role.RadioButton) {
+                                album = name; expanded = false; selectedIds = emptySet()
+                            }.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+                                val icon = when (name) {
+                                    "All Photos" -> R.drawable.ic_dazz_cate_all
+                                    "Favourites" -> R.drawable.ic_dazz_cate_liked
+                                    "Negatives" -> R.drawable.ic_dazz_cate_negatives
+                                    else -> null
                                 }
+                                if (icon != null) Icon(painterResource(icon), null, Modifier.size(25.dp), tint = Color.White)
+                                else GalleryCameraIcon(name, Modifier.size(36.dp), decorative = true)
                             }
-                        )
+                            Spacer(Modifier.width(10.dp))
+                            Text(name, Modifier.weight(1f), color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(entries.size.toString(), color = Color.White.copy(alpha = 0.64f), fontSize = 14.sp)
+                        }
+                    }
+                    TextButton(onClick = {
+                        expanded = false
+                        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Icon(painterResource(R.drawable.ic_dazz_importphoto), null, Modifier.size(24.dp), tint = Color.White)
+                        Text("Import photo", color = Color.White)
                     }
                 }
             }
         }
-
-        // ─── MULTI-SELECT BOTTOM DOCK (Simple, No Like) ──────────────────────────────
-        AnimatedVisibility(
-            visible = isSelectionMode && selectedIds.isNotEmpty(),
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 24.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(30.dp),
-                color = Color(0xEE161822),
-                border = BorderStroke(1.dp, Color(0x44FFFFFF)),
-                shadowElevation = 10.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    Text(
-                        text = "${selectedIds.size} Selected",
-                        color = VintageAmber,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(20.dp)
-                            .background(Color(0x33FFFFFF))
-                    )
-                    // Share
-                    IconButton(
-                        onClick = {
-                            val selectedItems = allPhotos.filter { selectedIds.contains(it.id) }
-                            sharePhotos(context, selectedItems)
-                        },
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_share),
-                            contentDescription = "Share Selected",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    // Delete
-                    IconButton(
-                        onClick = { showBatchDeleteConfirm = true },
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dazz_delete),
-                            contentDescription = "Delete Selected",
-                            tint = VintageRed,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-
         // Batch delete confirmation
         if (showBatchDeleteConfirm) {
             AlertDialog(
@@ -421,10 +379,10 @@ fun GalleryScreen(
                     TextButton(
                         onClick = {
                             showBatchDeleteConfirm = false
-                            val toDelete = allPhotos.filter { selectedIds.contains(it.id) }
+                            val toDelete = allPhotos.filter { selectedIds.contains(it.uri) }
                             deletePhotos(context, toDelete.map { it.uri })
                             toDelete.forEach { GalleryCache.remove(it.id) }
-                            val updated = allPhotos.filter { !selectedIds.contains(it.id) }
+                            val updated = allPhotos.filter { !selectedIds.contains(it.uri) }
                             allPhotos = updated
                             GalleryCache.cachedItems = updated
                             selectedIds = emptySet()
@@ -443,9 +401,9 @@ fun GalleryScreen(
         }
 
         // ─── FULL SCREEN PHOTO VIEWER OVERLAY ─────────────────────────────────────
-        selectedIndex?.let { initialIndex ->
+        selectedIndex?.takeIf { visible.isNotEmpty() }?.let { initialIndex ->
             DazzFullScreenViewer(
-                photos = allPhotos,
+                photos = visible,
                 initialIndex = initialIndex,
                 onDismiss = { selectedIndex = null },
                 onDelete = { photoToDelete ->
@@ -484,6 +442,32 @@ fun GalleryScreen(
             )
         }
     }
+}
+
+private val galleryChrome = Color(0xED30231D)
+
+@Composable
+private fun GalleryAction(icon: Int, label: String, action: () -> Unit, large: Boolean = false, enabled: Boolean = true) {
+    val background = if (large) Color(0xFFDBD6D2) else galleryChrome
+    val foreground = if (large) Color.Black else Color.White
+    IconButton(onClick = action, enabled = enabled, modifier = Modifier.size(if (large) 48.dp else 44.dp)) {
+        Box(Modifier.size(if (large) 44.dp else 40.dp).background(background, CircleShape),
+            contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), label, Modifier.size(if (large) 22.dp else 20.dp),
+                tint = foreground.copy(alpha = if (enabled) 1f else 0.38f))
+        }
+    }
+}
+
+@Composable
+private fun GalleryCameraIcon(name: String, modifier: Modifier = Modifier, decorative: Boolean = false) {
+    val context = LocalContext.current
+    val id = remember(name) {
+        val preset = PresetCatalog.allPresets.firstOrNull { it.name.equals(name, ignoreCase = true) }
+        preset?.let { context.resources.getIdentifier(it.iconResName, "drawable", context.packageName) }
+            ?.takeIf { it != 0 } ?: R.drawable.cam_original
+    }
+    Image(painterResource(id), if (decorative) null else name, modifier, contentScale = ContentScale.Fit)
 }
 
 // ─── DAZZ CAM THUMBNAIL COMPONENT ───────────────────────────────────────────
@@ -600,27 +584,6 @@ private fun DazzGalleryThumbnail(
                     )
                 }
             }
-        } else {
-            // Film emulsion badge in bottom-left
-            val filmTag = remember(item.name, item.cameraModel) {
-                resolveFilterName(item.name, item.cameraModel)
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .padding(horizontal = 4.dp, vertical = 1.dp)
-            ) {
-                Text(
-                    text = filmTag.uppercase(),
-                    color = Color(0xFFE2E4EA),
-                    fontSize = 8.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-            }
         }
     }
 }
@@ -668,7 +631,7 @@ private fun DazzFullScreenViewer(
                 if (item.isVideo) {
                     if (page == currentPage) key(item.uri) { GalleryVideoPage(item) }
                 } else {
-                    DazzFullScreenPhotoPage(item = item)
+                    DazzFullScreenPhotoPage(item = item, active = page == currentPage)
                 }
             }
         }
@@ -683,39 +646,14 @@ private fun DazzFullScreenViewer(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Close / Back button (simple icon, NO bubble background)
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_dazz_back),
-                    contentDescription = "Back",
-                    tint = TextPrimary,
-                    modifier = Modifier.size(22.dp)
-                )
+            GalleryAction(R.drawable.ic_dazz_back, "Back to gallery", onDismiss)
+            Surface(shape = CircleShape, color = galleryChrome) {
+                Text("${currentPage + 1} / ${photos.size}", color = Color.White,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
             }
-
-            // Dazz Cam DarkroomNumberLabel counter e.g. "3 / 12"
-            if (photos.isNotEmpty()) {
-                Text(
-                    text = "${currentPage + 1} / ${photos.size}",
-                    color = VintageAmber,
-                    fontSize = 15.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                GalleryCameraIcon(filmTag, Modifier.size(28.dp))
             }
-
-            // Film / Camera Profile Tag (clean text, no bubble)
-            Text(
-                text = filmTag,
-                color = TextSecondary,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold
-            )
         }
 
         // ─── BOTTOM ACTIONS (Share, Redevelop, Delete - Clean, No Bubbles) ───
@@ -726,18 +664,6 @@ private fun DazzFullScreenViewer(
                 .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Filter Name Only (No 'Shot on Cameleo', clean typography)
-            Text(
-                text = filmTag.uppercase(),
-                color = VintageAmber.copy(alpha = 0.9f),
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             // Action Buttons: Flat and clean, NO bubble/capsule border around Delete or other icons
             Row(
                 modifier = Modifier
@@ -830,7 +756,7 @@ private fun DazzFullScreenViewer(
 
 // ─── FULL SCREEN PHOTO PAGE ─────────────────────────────────────────────────
 @Composable
-private fun DazzFullScreenPhotoPage(item: GalleryItem) {
+private fun DazzFullScreenPhotoPage(item: GalleryItem, active: Boolean) {
     val context = LocalContext.current
     var fullBitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var isImageLoading by remember(item.uri) { mutableStateOf(true) }
@@ -871,13 +797,59 @@ private fun DazzFullScreenPhotoPage(item: GalleryItem) {
             .padding(vertical = 70.dp),
         contentAlignment = Alignment.Center
     ) {
-        fullBitmap?.let {
-            Image(
-                bitmap = it,
-                contentDescription = item.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-            )
+        fullBitmap?.let { bitmap ->
+            var viewport by remember { mutableStateOf(IntSize.Zero) }
+            var zoom by remember(item.uri, active, viewport) { mutableFloatStateOf(1f) }
+            var pan by remember(item.uri, active, viewport) { mutableStateOf(Offset.Zero) }
+
+            fun transform(target: Float, focus: Offset, movement: Offset) {
+                if (viewport.width == 0 || viewport.height == 0) return
+                val next = target.coerceIn(1f, 4f)
+                val center = Offset(viewport.width / 2f, viewport.height / 2f)
+                val anchor = focus - center
+                val offset = anchor + (pan - anchor) * (next / zoom) + movement
+                val fit = minOf(viewport.width.toFloat() / bitmap.width, viewport.height.toFloat() / bitmap.height)
+                val limitX = ((bitmap.width * fit * next - viewport.width) / 2f).coerceAtLeast(0f)
+                val limitY = ((bitmap.height * fit * next - viewport.height) / 2f).coerceAtLeast(0f)
+                pan = Offset(offset.x.coerceIn(-limitX, limitX), offset.y.coerceIn(-limitY, limitY))
+                zoom = next
+            }
+
+            Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged { viewport = it }
+                .pointerInput(item.uri, active, viewport) {
+                    detectTapGestures(onDoubleTap = { focus ->
+                        transform(if (zoom > 1f) 1f else 2f, focus, Offset.Zero)
+                    })
+                }
+                .pointerInput(item.uri, active, viewport) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var transforming = false
+                        var totalPan = Offset.Zero
+                        do {
+                            val event = awaitPointerEvent()
+                            val movement = event.calculatePan()
+                            totalPan += movement
+                            if (event.changes.count { it.pressed } >= 2 ||
+                                (zoom > 1f && totalPan.getDistance() > viewConfiguration.touchSlop)) {
+                                transforming = true
+                            }
+                            if (transforming && event.changes.any { it.pressed && it.previousPressed }) {
+                                transform(zoom * event.calculateZoom(), event.calculateCentroid(useCurrent = false), movement)
+                                event.changes.forEach { it.consume() }
+                            }
+                        } while (event.changes.any { it.pressed })
+                    }
+                }
+            ) {
+                Image(bitmap, item.name, contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        scaleX = zoom
+                        scaleY = zoom
+                        translationX = pan.x
+                        translationY = pan.y
+                    })
+            }
         } ?: if (isImageLoading) {
             CircularProgressIndicator(color = VintageAmber, strokeWidth = 2.dp)
         } else {
@@ -969,22 +941,14 @@ private fun RedevelopFilmSheet(
                             if (isChosen) VintageAmber else Color(0x22FFFFFF)
                         ),
                         modifier = Modifier
-                            .width(130.dp)
+                            .width(100.dp)
                             .clickable { selectedPreset = preset }
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.Start
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = preset.name,
-                                color = if (isChosen) VintageAmber else TextPrimary,
-                                fontSize = 13.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            GalleryCameraIcon(preset.name, Modifier.size(36.dp))
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = preset.subtitle,
@@ -1048,6 +1012,7 @@ private fun RedevelopFilmSheet(
 
 // ─── PHOTO LOADING, PERSISTENCE & SYSTEM ACTIONS ────────────────────────────
 private fun resolveFilterName(name: String?, cameraModel: String?): String {
+    if (name?.startsWith("CAMELEO_3D_") == true) return "D3D"
     val cleanModel = cameraModel?.replace("CAMELEO", "", ignoreCase = true)?.trim()
     if (!cleanModel.isNullOrEmpty()) {
         if (cleanModel.equals("Natural", ignoreCase = true)) return "Zero"
