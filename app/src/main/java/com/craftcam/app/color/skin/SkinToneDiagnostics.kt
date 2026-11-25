@@ -84,6 +84,8 @@ object SkinToneDiagnostics {
                 Max Allowed Saturation: ${result.profileApplied.maxSkinSaturation}
                 Skin Highlight Knee: ${result.profileApplied.skinHighlightKnee}
                 Texture Dampening: ${result.profileApplied.textureDampening}
+                Yellow Cast Protection Enabled: ${result.profileApplied.config.yellowCastProtectionEnabled}
+                Yellow Cast Protection Strength: ${result.profileApplied.config.yellowCastProtectionStrength}
                 """.trimIndent()
             )
 

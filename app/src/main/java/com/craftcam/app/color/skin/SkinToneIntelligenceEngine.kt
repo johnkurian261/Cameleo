@@ -209,7 +209,28 @@ class SkinToneIntelligenceEngine(
                 curB = (curB + shadowLift * 0.90f).coerceIn(0f, 255f)
             }
 
-            // 7. Confidence-Weighted Protection Blending: Final = Camera Grade + conf * Delta_protective
+            // 7. Yellow Cast Guard (guards against blue-channel starvation and mustard/yellowish skin drift)
+            if (config.yellowCastProtectionEnabled && config.protectionEnabled) {
+                val rbRatio = curR / maxOf(1.0f, curB)
+                val rgRatio = curR / maxOf(1.0f, curG)
+
+                // Blue channel starvation recovery (target balanced R/B ratio ~ 1.65..1.75)
+                if (rbRatio > 1.75f) {
+                    val targetB = curR / 1.70f
+                    val deltaB = (targetB - curB) * config.yellowCastProtectionStrength * 0.85f
+                    curB = (curB + deltaB).coerceIn(0f, 255f)
+                }
+
+                // Green over-amplification dampening (target healthy R/G ratio ~ 1.30..1.35)
+                if (rgRatio < 1.30f && curG > curB * 1.15f) {
+                    val targetG = curR / 1.32f
+                    val deltaG = (curG - targetG) * config.yellowCastProtectionStrength * 0.75f
+                    curG = (curG - deltaG).coerceIn(0f, 255f)
+                    curR = (curR - deltaG * 0.15f).coerceIn(0f, 255f)
+                }
+            }
+
+            // 8. Confidence-Weighted Protection Blending: Final = Camera Grade + conf * Delta_protective
             val finalR = (r0 + (curR - r0) * conf).roundToInt().coerceIn(0, 255)
             val finalG = (g0 + (curG - g0) * conf).roundToInt().coerceIn(0, 255)
             val finalB = (b0 + (curB - b0) * conf).roundToInt().coerceIn(0, 255)

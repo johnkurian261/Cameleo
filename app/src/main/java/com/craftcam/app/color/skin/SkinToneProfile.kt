@@ -143,6 +143,33 @@ object SkinToneProfileCatalog {
     )
 
     /**
+     * D3D: Motion picture single-image 3D photography (Kodak Vision3 500T).
+     * Reference-calibrated against genuine D3D portraits:
+     * Balanced red-orange warmth, natural skin reflectance, blue channel preservation,
+     * and targeted yellow-cast protection (prevents mustard skin without pink overcorrection).
+     */
+    val D3D = SkinToneProfile(
+        id = "skin_d3d",
+        name = "D3D Motion Picture 3D",
+        config = SkinToneConfig(
+            warmthStrength = 0.08f,
+            saturationProtection = 0.90f,
+            maxAllowedSkinSaturation = 0.65f,
+            highlightProtection = 0.92f,
+            shadowProtection = 0.85f,
+            maximumHueShiftDegrees = 3.0f,
+            yellowCastProtectionEnabled = true,
+            yellowCastProtectionStrength = 0.85f
+        ),
+        targetHueBias = 0.0f,
+        skinGains = floatArrayOf(1.00f, 1.00f, 1.00f),
+        skinMidtoneLift = 0.012f,
+        skinHighlightKnee = 0.88f,
+        maxSkinSaturation = 0.65f,
+        textureDampening = 0.15f
+    )
+
+    /**
      * NATURAL: Reference flagship computational photography.
      * Strict multi-complexion neutral fidelity across all human complexions.
      */
@@ -167,6 +194,7 @@ object SkinToneProfileCatalog {
 
     fun getProfileForPreset(presetId: String, category: CameraCategory? = null): SkinToneProfile {
         return when {
+            presetId == "analog_cinema_film" || presetId == "d3d" || presetId == "d_3d" || presetId.equals("d 3d", ignoreCase = true) || presetId.contains("cinema", ignoreCase = true) -> D3D
             presetId == "ccd_flash" || presetId == "d_funs" -> D_FUNS
             presetId == "disp_flash" || presetId == "disp_cpm35" || presetId.contains("cpm", ignoreCase = true) -> CPM35
             presetId == "ccd_r" || presetId == "ccd_retro_compact" || category == CameraCategory.CCD_DIGITAL -> CCD

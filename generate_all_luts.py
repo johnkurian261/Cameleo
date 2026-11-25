@@ -147,26 +147,26 @@ def grade_analog_faded_film(r, g, b):
     return adjust_saturation(r, g, b, 0.72)
 
 # 6. Cinema Film (Kodak Vision3 500T / D3D)
-# Dramatic blockbuster Teal & Orange split: deep teal shadows, warm tungsten amber highlights
+# Balanced motion picture negative: rich cinematic contrast, cool teal shadows, natural red-orange skin tones without yellow cast
 def grade_analog_cinema_film(r, g, b):
-    r = film_s_curve(r, contrast=1.34, toe=0.02, shoulder=0.85)
-    g = film_s_curve(g, contrast=1.28, toe=0.03, shoulder=0.86)
-    b = film_s_curve(b, contrast=1.24, toe=0.05, shoulder=0.88)
+    r = film_s_curve(r, contrast=1.24, toe=0.02, shoulder=0.90)
+    g = film_s_curve(g, contrast=1.22, toe=0.03, shoulder=0.90)
+    b = film_s_curve(b, contrast=1.20, toe=0.04, shoulder=0.91)
     luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
     
-    # Deep cool teal shadows
-    sh = clamp(1.0 - luma * 2.0)
-    r -= 0.14 * sh
-    g += 0.06 * sh
-    b += 0.20 * sh
+    # Deep cool teal shadows (concentrated in shadows below 0.35)
+    sh = clamp(1.0 - luma * 2.6)
+    r -= 0.10 * sh
+    g += 0.03 * sh
+    b += 0.14 * sh
     
-    # Intense warm amber tungsten highlights
-    hi = clamp((luma - 0.38) * 1.8)
-    r += 0.20 * hi
-    g += 0.08 * hi
-    b -= 0.16 * hi
+    # Balanced warm highlights: preserves red-orange vascular tone without crushing blue or over-boosting green
+    hi = clamp((luma - 0.48) * 1.8)
+    r += 0.08 * hi
+    g += 0.02 * hi
+    b -= 0.04 * hi
     
-    return adjust_saturation(r, g, b, 1.30)
+    return adjust_saturation(r, g, b, 1.10)
 
 # 7. CCD Classic (135 NE / 2003 Compact Digicam)
 # High digital contrast, vivid electric cyan/blue skies, cool metallic shadows, punchy primaries

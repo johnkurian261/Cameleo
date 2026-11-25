@@ -58,6 +58,12 @@ data class SkinToneConfig(
     /** Tone curve lower-midtone protection factor. */
     val lowerMidtoneProtection: Float = 0.75f,
 
+    /** Whether yellow-cast protection is active (guards against blue-channel starvation and mustard skin). */
+    val yellowCastProtectionEnabled: Boolean = false,
+
+    /** Strength of yellow-cast correction [0.0..1.0]. */
+    val yellowCastProtectionStrength: Float = 0.85f,
+
     /** Developer debug stage export flag. */
     val debugVisualizationsEnabled: Boolean = false
 )

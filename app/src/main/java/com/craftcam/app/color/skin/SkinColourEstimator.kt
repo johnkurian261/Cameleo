@@ -94,10 +94,10 @@ class SkinColourEstimator {
     private fun resolveLocus(illuminant: DigicamIlluminant): LocusCenter {
         return when (illuminant) {
             DigicamIlluminant.GOLDEN_DAYLIGHT -> LocusCenter(
-                cbCenter = 108f, crCenter = 152f, cbSigma = 18f, crSigma = 22f,
-                minRnorm = 0.35f, maxRnorm = 0.56f, minGnorm = 0.27f, maxGnorm = 0.38f,
-                oklchHueCenter = 50.0f, oklchHueSigma = 14.0f,
-                oklchMinChroma = 0.025f, oklchMaxChroma = 0.170f
+                cbCenter = 108f, crCenter = 152f, cbSigma = 20f, crSigma = 24f,
+                minRnorm = 0.34f, maxRnorm = 0.58f, minGnorm = 0.26f, maxGnorm = 0.39f,
+                oklchHueCenter = 50.0f, oklchHueSigma = 16.0f,
+                oklchMinChroma = 0.025f, oklchMaxChroma = 0.175f
             )
             DigicamIlluminant.AMBER_TUNGSTEN -> LocusCenter(
                 cbCenter = 94f, crCenter = 162f, cbSigma = 22f, crSigma = 26f,

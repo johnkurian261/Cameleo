@@ -344,21 +344,22 @@ object ImageProcessor {
                 maxParallaxDisplacement = parallaxStrength,
                 grainIntensity = if (tuning.debugStageGrain) 0.18f * tuning.grainBoost * tuning.filterIntensity else 0f
             )
+            val mappedFaces = faces.mapNotNull { face ->
+                val bounds = RectF(face.bounds)
+                if (mirrorFrontCamera) bounds.set(1f - face.bounds.right, bounds.top, 1f - face.bounds.left, bounds.bottom)
+                bounds.set(
+                    (bounds.left * orientedW - startX) / cropW, (bounds.top * orientedH - startY) / cropH,
+                    (bounds.right * orientedW - startX) / cropW, (bounds.bottom * orientedH - startY) / cropH
+                )
+                if (bounds.intersect(0f, 0f, 1f, 1f)) face.copy(bounds = bounds) else null
+            }
             val threeDProcessor = com.craftcam.app.threed.ThreeDPhotoProcessor(threeDConfig)
             val uri = threeDProcessor.processAndSaveThreeDPhoto(
                 context = context,
                 sourceBitmap = workingBitmap,
-                faces = faces.mapNotNull { face ->
-                    val bounds = RectF(face.bounds)
-                    if (mirrorFrontCamera) bounds.set(1f - face.bounds.right, bounds.top, 1f - face.bounds.left, bounds.bottom)
-                    bounds.set(
-                        (bounds.left * orientedW - startX) / cropW, (bounds.top * orientedH - startY) / cropH,
-                        (bounds.right * orientedW - startX) / cropW, (bounds.bottom * orientedH - startY) / cropH
-                    )
-                    if (bounds.intersect(0f, 0f, 1f, 1f)) face.copy(bounds = bounds) else null
-                },
+                faces = mappedFaces,
                 gradeInPlace = { bitmap ->
-                    applyPresetEffects(context, bitmap, preset, tuning, lensProfile, isFlashActive, applyGrain = false, cameraId = cameraId)
+                    applyPresetEffects(context, bitmap, preset, tuning, lensProfile, isFlashActive, applyGrain = false, cameraId = cameraId, faces = mappedFaces)
                 },
                 onProgress = onProgress
             )
