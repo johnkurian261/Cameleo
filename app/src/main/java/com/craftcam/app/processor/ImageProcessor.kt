@@ -32,6 +32,11 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.*
 
+internal fun interface FilmStageObserver {
+    // Row workers own disjoint pixel indices. Observers must support concurrent writes.
+    fun pixel(stage: String, index: Int, r: Float, g: Float, b: Float)
+}
+
 object ImageProcessor {
 
     private const val TAG = "ImageProcessor"
@@ -59,13 +64,19 @@ object ImageProcessor {
         sensorIso: Int = 100,
         exposureTimeNs: Long = 10_000_000L,
         faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
-        cameraId: String? = null
+        cameraId: String? = null,
+        rawCharacteristics: android.hardware.camera2.CameraCharacteristics? = null,
+        stillResult: android.hardware.camera2.CaptureResult? = null
     ): Uri? = withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
         try {
             rotation = imageProxy.imageInfo.rotationDegrees
-            rawBitmap = imageProxyToBitmap(imageProxy)
+            rawBitmap = if (preset.id == "ccd_flash" && imageProxy.format in DFunsRaw.formats) {
+                val metadata = requireNotNull(stillResult) { "Missing D Funs RAW metadata" }
+                val scale = com.craftcam.app.camera.DFunsCapture.exposureScale(metadata, tuning.dfunsStrictExposure)
+                DFunsRaw.decode(imageProxy, requireNotNull(rawCharacteristics), metadata, scale)
+            } else imageProxyToBitmap(imageProxy)
         } finally {
             // Instantly free the hardware buffer so CameraX never drops subsequent shots
             imageProxy.close()
@@ -79,7 +90,8 @@ object ImageProcessor {
         val rawH = rawBitmap.height
 
         val appSettings = AppSettingsStore.get(context).current
-        val maxExportDim = if (appSettings.highResolutionExport) 4096 else 2048
+        val maxExportDim = photoExportLimit(appSettings.highResolutionExport, rawW, rawH, preset,
+            engineMode == com.craftcam.app.model.CameraEngineMode.FILM)
 
         val matrix = Matrix()
         // A. Cap export resolution based on user high-resolution export setting
@@ -186,7 +198,7 @@ object ImageProcessor {
 
                 // 2. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
                 // Executed in-place on workingBitmap using pooled IntArrays (zero new Bitmap allocations)
-                workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive, cameraId = cameraId)
+                workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive, cameraId = cameraId, sensorIso = sensorIso, faces = faces)
 
                 // 3. Apply Retro Date Stamp (draws in-place onto mutable workingBitmap)
                 if (tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
@@ -329,7 +341,8 @@ object ImageProcessor {
             val parallaxStrength = (0.032f + tuning.d3dStrengthOffset * 0.015f).coerceIn(0.018f, 0.055f)
             val threeDConfig = com.craftcam.app.threed.ThreeDConfig(
                 d3dParallaxStrength = parallaxStrength,
-                maxParallaxDisplacement = parallaxStrength
+                maxParallaxDisplacement = parallaxStrength,
+                grainIntensity = if (tuning.debugStageGrain) 0.18f * tuning.grainBoost * tuning.filterIntensity else 0f
             )
             val threeDProcessor = com.craftcam.app.threed.ThreeDPhotoProcessor(threeDConfig)
             val uri = threeDProcessor.processAndSaveThreeDPhoto(
@@ -524,7 +537,12 @@ object ImageProcessor {
         lensProfile: LensProfile = LensProfile.NORMAL,
         isFlashActive: Boolean = false,
         applyGrain: Boolean = true,
-        cameraId: String? = null
+        cameraId: String? = null,
+        stock: com.craftcam.app.camera.profile.CameleoCameraProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getProfileForPreset(preset),
+        grainSeed: Long = System.currentTimeMillis(),
+        observer: FilmStageObserver? = null,
+        sensorIso: Int = 100,
+        faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList()
     ): Bitmap {
         val width = source.width
         val height = source.height
@@ -533,7 +551,10 @@ object ImageProcessor {
         try {
             source.getPixels(pixels, 0, width, 0, 0, width, height)
 
-            val normMat = cameraId?.let { com.craftcam.app.color.DeviceCalibrationManager(context).resolveProfile(it).normalizationMatrix }
+            val film = stock.filmProfile
+            val v2 = film.lowerMidtoneStrength > 0f
+            // Both camera surfaces already carry ISP-rendered SDR color.
+            val normMat = cameraId?.takeUnless { v2 || film.id == "dfuns_negative_v1" }?.let { com.craftcam.app.color.DeviceCalibrationManager(context).resolveProfile(it).normalizationMatrix }
                 ?: com.craftcam.app.color.ColorMatrix3x3.IDENTITY
             val isIdentityNorm = normMat == com.craftcam.app.color.ColorMatrix3x3.IDENTITY
 
@@ -545,8 +566,174 @@ object ImageProcessor {
             val isCamcorder = preset.category == CameraCategory.CAMCORDER
             val isNatural = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
 
-            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
-            val film = unifiedProfile.filmProfile
+            val isCpm35 = preset.id == "disp_flash" || stock.id == "disposable_cpm35" || preset.id == "disp_cpm35" || preset.name.contains("CPM35", ignoreCase = true)
+            val isCcd = preset.id == "ccd_r" || stock.id == "ccd_digital" || preset.category == CameraCategory.CCD_DIGITAL || preset.id == "ccd_retro_compact"
+            val isDigicamTarget = (isCpm35 || isCcd) && !isNatural && !isCamcorder
+            val digicamModel = if (isCpm35) com.craftcam.app.color.digicam.DigicamModel.CPM35 else com.craftcam.app.color.digicam.DigicamModel.CCD
+
+            if (isDigicamTarget) {
+                val intensity = tuning.filterIntensity.coerceIn(0.0f, 1.0f)
+                val origCopy = if (tuning.debugDigicamStages) Bitmap.createBitmap(source) else null
+
+                // 1. Camera Lens Optical Transformations (Fisheye, Prism, Starburst, Barrel)
+                if (tuning.debugStageOptics) {
+                    if (lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W) {
+                        applyFisheyeCurvilinear(pixels, width, height, lensProfile)
+                    } else if (lensProfile.type == LensType.PRISM && lensProfile.prismDispersion > 0.01f) {
+                        applyPrismRefraction(pixels, width, height, lensProfile)
+                    } else if (lensProfile.type == LensType.STARBURST && lensProfile.starburstStrength > 0.01f) {
+                        applyStarburstDiffraction(pixels, width, height, lensProfile)
+                    } else {
+                        val barrelDist = preset.lens.barrelDistortion * intensity
+                        if (abs(barrelDist) > 0.001f) {
+                            applyBarrelDistortion(pixels, width, height, barrelDist)
+                        }
+                    }
+                }
+
+                // 2. Reference-Driven Digicam Color Engine (Illuminant estimation, partial AWB, hue-dependent red protection, S-curve, shadow tinting)
+                val colorEngine = com.craftcam.app.color.digicam.DigicamColorEngine()
+                val params = colorEngine.process(
+                    pixels = pixels,
+                    width = width,
+                    height = height,
+                    model = digicamModel,
+                    isFlashActive = isFlashActive,
+                    iso = sensorIso
+                )
+
+                // 2b. Skin Tone Intelligence Engine (Layers 1-4: multi-space probability, anatomical prior, camera-specific rendering)
+                if (tuning.skinToneIntelligenceEnabled) {
+                    val skinProfile = com.craftcam.app.color.skin.SkinToneProfileCatalog.getProfileForPreset(preset.id, preset.category)
+                    val skinEngine = com.craftcam.app.color.skin.SkinToneIntelligenceEngine()
+                    val skinResult = skinEngine.process(
+                        pixels = pixels,
+                        width = width,
+                        height = height,
+                        faces = faces,
+                        illuminant = params.illuminant,
+                        profile = skinProfile,
+                        isFlashActive = isFlashActive,
+                        iso = sensorIso
+                    )
+                    if (tuning.debugSkinToneStages) {
+                        com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(
+                            context = context,
+                            sourceBmp = origCopy ?: source,
+                            colorProb = skinResult.refinedSkinMask,
+                            spatialPrior = skinResult.refinedSkinMask,
+                            refinedMask = skinResult.refinedSkinMask,
+                            finalBmp = source,
+                            result = skinResult
+                        )
+                    }
+                }
+
+                val stagePwb = if (tuning.debugDigicamStages) {
+                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+                        setPixels(pixels, 0, width, 0, 0, width, height)
+                    }
+                } else null
+
+                // 3. Optical Highlight Scatter & Veiling Glare (warm golden glow around bright lights, no red film halation)
+                val opticalEngine = com.craftcam.app.processor.digicam.DigicamOpticalEngine()
+                if (tuning.debugStageHalation && intensity > 0.01f) {
+                    opticalEngine.applyHighlightScatter(
+                        pixels = pixels,
+                        width = width,
+                        height = height,
+                        scatterIntensity = params.opticalScatterIntensity * intensity
+                    )
+                }
+
+                // 4. Soft Digital Detail (subtle optical softness + legacy unsharp mask, avoiding halos)
+                if (tuning.debugStageOptics && intensity > 0.01f) {
+                    opticalEngine.applySoftDigitalDetail(
+                        pixels = pixels,
+                        width = width,
+                        height = height,
+                        softness = 0.12f * intensity,
+                        sharpening = 0.10f * intensity
+                    )
+                }
+
+                val stageOptical = if (tuning.debugDigicamStages) {
+                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+                        setPixels(pixels, 0, width, 0, 0, width, height)
+                    }
+                } else null
+
+                // 5. Optical Lens Vignette
+                val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0.0f, 1.0f)
+                val vigTotal = vigIntensity + lensProfile.vignetteStrength
+                if (vigTotal > 0.01f && tuning.debugStageVignette) {
+                    val vigMix = (vigTotal * 0.65f).coerceIn(0.0f, 0.55f)
+                    val cx = width * 0.5f
+                    val cy = height * 0.5f
+                    val maxD2 = cx * cx + cy * cy
+                    val rad = maxOf(0.72f, lens.vignetteRadius)
+                    val vigDenom = maxD2 * rad * rad
+                    for (y in 0 until height) {
+                        val dy = y - cy
+                        val dy2 = dy * dy
+                        val rowOffset = y * width
+                        for (x in 0 until width) {
+                            val dx = x - cx
+                            val d2 = dx * dx + dy2
+                            val vigFactor = (1.0f - (d2 / vigDenom) * vigMix).coerceIn(0.40f, 1.0f)
+                            val idx = rowOffset + x
+                            val p = pixels[idx]
+                            val r = (((p shr 16) and 0xFF) * vigFactor).toInt().coerceIn(0, 255)
+                            val g = (((p shr 8) and 0xFF) * vigFactor).toInt().coerceIn(0, 255)
+                            val b = ((p and 0xFF) * vigFactor).toInt().coerceIn(0, 255)
+                            pixels[idx] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                        }
+                    }
+                }
+
+                // 6. Physical Electronic CCD Sensor Noise (signal-dependent read + shot noise + chroma fluctuations)
+                val sensorEngine = com.craftcam.app.processor.digicam.DigicamSensorEngine()
+                if (tuning.debugStageGrain && applyGrain) {
+                    sensorEngine.applyElectronicNoise(
+                        pixels = pixels,
+                        width = width,
+                        height = height,
+                        iso = sensorIso,
+                        noiseMultiplier = params.noiseMultiplier * tuning.grainBoost,
+                        seed = grainSeed.toInt()
+                    )
+                }
+
+                val stageNoise = if (tuning.debugDigicamStages) {
+                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+                        setPixels(pixels, 0, width, 0, 0, width, height)
+                    }
+                } else null
+
+                // In-place update of source bitmap
+                source.setPixels(pixels, 0, width, 0, 0, width, height)
+
+                // 7. Developer diagnostics export if enabled
+                if (tuning.debugDigicamStages && origCopy != null) {
+                    com.craftcam.app.processor.digicam.DigicamDiagnostics.exportDebugStages(
+                        context = context,
+                        original = origCopy,
+                        illuminantName = params.illuminant.name,
+                        paramsString = "Model=$digicamModel, Gains=[${params.gains.joinToString()}], Contrast=${params.contrast}, Sat=${params.saturation}, RedBoost=${params.redSaturationBoost}, Scatter=${params.opticalScatterIntensity}, Noise=${params.noiseMultiplier}",
+                        stagePwb = stagePwb,
+                        stageOptical = stageOptical,
+                        stageNoise = stageNoise,
+                        finalBitmap = source
+                    )
+                    origCopy.recycle()
+                    stagePwb?.recycle()
+                    stageOptical?.recycle()
+                    stageNoise?.recycle()
+                }
+
+                return source
+            }
+
 
             // 1. Identify camera-specific 3D LUT (matches GLViewfinderRenderer priority)
             val canonicalLut = selectLutForPreset(preset.id)
@@ -598,14 +785,15 @@ object ImageProcessor {
             val rad = maxOf(0.72f, lens.vignetteRadius)
             val vigDenom = maxD2 * rad * rad
 
-            val resolvedGrain = GrainStage.resolve(preset, unifiedProfile.grainProfile, tuning, intensity)
+            val resolvedGrain = GrainStage.resolve(preset, stock.grainProfile, tuning, intensity)
             val grainData = if (applyGrain && resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
                 GrainStage.getOrLoadGrainPixels(context, resolvedGrain.assetPath)
             } else null
             val grainPixels: IntArray? = grainData?.first
             val gw = grainData?.second?.first ?: 1
             val gh = grainData?.second?.second ?: 1
-            val grainScale = resolvedGrain.scale.coerceIn(0.5f, 3.0f)
+            val printScale = if (film.id == "dfuns_negative_v1") minOf(width,height) / 1600f else 1f
+            val grainScale = (resolvedGrain.scale * printScale).coerceIn(0.5f, 3.0f)
             val grainStrength = resolvedGrain.effectiveIntensity * 1.35f
             val blendMode = resolvedGrain.blendMode
             val shadowStrength = resolvedGrain.shadowStrength
@@ -615,7 +803,7 @@ object ImageProcessor {
 
             // Anti-Tiling: Continuous coordinate transformation prevents grid repetition
             val antiTiling = if (grainPixels != null) {
-                GrainStage.computeAntiTilingTables(width, height, gw, gh, grainScale)
+                GrainStage.computeAntiTilingTables(width, height, gw, gh, grainScale, grainSeed)
             } else null
             val colBaseX = antiTiling?.colBaseX
             val colPhaseY = antiTiling?.colPhaseY
@@ -625,7 +813,7 @@ object ImageProcessor {
             val flipY = antiTiling?.flipY ?: false
 
             // ── Step 1b: Optical Lens Softness (Radial spherical aberration) ────
-            val effSoftness = preset.lens.softness * intensity
+            val effSoftness = if (v2 && !tuning.softLensDiffusion) 0f else preset.lens.softness * intensity
             if (effSoftness > 0.01f && tuning.debugStageOptics) {
                 applyOpticalSoftness(pixels, width, height, effSoftness)
             }
@@ -646,7 +834,7 @@ object ImageProcessor {
                 }
 
                 // ── Step 1d: Transverse Chromatic Aberration Parity ────
-                val baseCA = preset.lens.chromaticAberration * intensity
+                val baseCA = if (v2 && lensProfile.type == LensType.NORMAL) 0f else preset.lens.chromaticAberration * intensity
                 val effCA = when (lensProfile.type) {
                     LensType.FISHEYE_F -> maxOf(baseCA, 0.016f)
                     LensType.FISHEYE_W -> maxOf(baseCA, 0.008f)
@@ -659,19 +847,19 @@ object ImageProcessor {
             }
 
             // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
-            val secLutAsset = unifiedProfile.filmProfile.secondaryLutAssetPath
+            val secLutAsset = film.secondaryLutAssetPath
             val lutB = if (!secLutAsset.isNullOrEmpty() && tuning.debugStageLut) getOrLoadLut(context, secLutAsset) else null
-            val dualLutMix = unifiedProfile.filmProfile.dualLutBlendFactor.coerceIn(0f, 1f)
+            val dualLutMix = film.dualLutBlendFactor.coerceIn(0f, 1f)
             val hasDualLut = lutB != null && dualLutMix > 0.001f
             val isPreLin = tuning.preLinearizationEnabled && tuning.debugStagePreLinearization && 
-                           unifiedProfile.filmProfile.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.CUSTOM_PRETRANSFORM
+                           film.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.CUSTOM_PRETRANSFORM
             val preLinStrength = tuning.preLinearizationStrength.coerceIn(0f, 1f)
             val stageLut = tuning.debugStageLut
             val stageToneCurve = tuning.debugStageToneCurve
             val stageVignette = tuning.debugStageVignette
             val stageGrain = tuning.debugStageGrain && applyGrain
-            val toeLift = unifiedProfile.filmProfile.toeLift * intensity
-            val shoulderClip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity
+            val toeLift = film.toeLift * intensity
+            val shoulderClip = 1.0f - (1.0f - film.shoulderClip) * intensity
             val hasToeOrShoulder = toeLift > 0.001f || shoulderClip < 0.999f
 
             // Pre-computed LUT and loop constants for blazing-fast 10x-20x throughput
@@ -680,16 +868,21 @@ object ImageProcessor {
                 if (isPreLin) {
                     val linVal = if (inVal <= 0.5f) (inVal * 2.0f).pow(1.25f) * 0.5f else 1.0f - ((1.0f - inVal) * 2.0f).pow(1.25f) * 0.5f
                     (inVal * (1f - preLinStrength) + linVal.coerceIn(0f, 1f) * preLinStrength).coerceIn(0f, 1f)
-                } else if (unifiedProfile.filmProfile.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.LINEAR) {
+                } else if (film.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.LINEAR) {
                     inVal.pow(2.2f).coerceIn(0f, 1f)
                 } else {
                     inVal
                 }
             }
 
+            // Eight-bit inputs have only 256 possible positions on each Hald axis.
+            val lutBase = IntArray(256) { (preLinLut[it] * 63f).toInt().coerceIn(0, 62) }
+            val lutFraction = FloatArray(256) { preLinLut[it] * 63f - lutBase[it] }
+            val sliceOffset = IntArray(64) { ((it shr 3) * 64 * 512) + ((it and 7) * 64) }
+
             val hasGamma = abs(effectiveGamma - 1.0f) > 0.01f
             val invGamma = if (hasGamma) 1.0f / effectiveGamma else 1.0f
-            val clarity = unifiedProfile.filmProfile.clarityStrength * intensity
+            val clarity = film.clarityStrength * intensity
             val hasClarity = abs(clarity) > 0.005f
             val clarityBoost = 1.0f + clarity * 0.18f
             val clarityOffset = -clarity * 0.18f * 0.5f
@@ -699,442 +892,481 @@ object ImageProcessor {
             val invKnee = if (hasRollOff) 1f / knee else 0f
 
             val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
-            val chunkSize = (totalPixels + numCores - 1) / numCores
+            val rowsPerWorker = (height + numCores - 1) / numCores
 
             coroutineScope {
                 (0 until numCores).map { coreIndex ->
                     async(Dispatchers.Default) {
-                        val start = coreIndex * chunkSize
-                        val end = minOf(totalPixels, start + chunkSize)
+                        val startRow = coreIndex * rowsPerWorker
+                        val endRow = minOf(height, startRow + rowsPerWorker)
+                        for (pxY in startRow until endRow) {
+                            val row = pxY * width
+                            val scanlineFactor = if (isCamcorder) {
+                                val scanline = (sin(pxY.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
+                                0.90f + 0.10f * scanline
+                            } else 1f
+                            for (pxX in 0 until width) {
+                                val i = row + pxX
+                                val px = pixels[i]
+                                val ri = (px shr 16) and 0xFF
+                                val gi = (px shr 8) and 0xFF
+                                val bi = px and 0xFF
 
-                        for (i in start until end) {
-                        val px = pixels[i]
-                        val ri = (px shr 16) and 0xFF
-                        val gi = (px shr 8) and 0xFF
-                        val bi = px and 0xFF
+                                var r: Float
+                                var g: Float
+                                var b: Float
 
-                        var r: Float
-                        var g: Float
-                        var b: Float
+                                if (lut != null && stageLut) {
+                                    val nr: Int
+                                    val ng: Int
+                                    val nb: Int
+                                    if (!isIdentityNorm) {
+                                        nr = (normMat.m00 * ri + normMat.m01 * gi + normMat.m02 * bi).toInt().coerceIn(0, 255)
+                                        ng = (normMat.m10 * ri + normMat.m11 * gi + normMat.m12 * bi).toInt().coerceIn(0, 255)
+                                        nb = (normMat.m20 * ri + normMat.m21 * gi + normMat.m22 * bi).toInt().coerceIn(0, 255)
+                                    } else {
+                                        nr = ri
+                                        ng = gi
+                                        nb = bi
+                                    }
+                                    observer?.pixel("conditioned", i, preLinLut[nr], preLinLut[ng], preLinLut[nb])
+                                    val r0 = lutBase[nr]
+                                    val r1 = r0 + 1
+                                    val greenRow = lutBase[ng] * 512
+                                    val blueSlice = lutBase[nb]
+                                    val rx = lutFraction[nr]
+                                    val gy = lutFraction[ng]
+                                    val bz = lutFraction[nb]
+                                    val row0_0 = sliceOffset[blueSlice] + greenRow
+                                    val row0_1 = row0_0 + 512
+                                    val row1_0 = sliceOffset[blueSlice + 1] + greenRow
+                                    val row1_1 = row1_0 + 512
 
-                        if (lut != null && stageLut) {
-                            val inR: Float
-                            val inG: Float
-                            val inB: Float
-                            if (!isIdentityNorm) {
-                                val nr = (normMat.m00 * ri + normMat.m01 * gi + normMat.m02 * bi).toInt().coerceIn(0, 255)
-                                val ng = (normMat.m10 * ri + normMat.m11 * gi + normMat.m12 * bi).toInt().coerceIn(0, 255)
-                                val nb = (normMat.m20 * ri + normMat.m21 * gi + normMat.m22 * bi).toInt().coerceIn(0, 255)
-                                inR = preLinLut[nr]
-                                inG = preLinLut[ng]
-                                inB = preLinLut[nb]
-                            } else {
-                                inR = preLinLut[ri]
-                                inG = preLinLut[gi]
-                                inB = preLinLut[bi]
-                            }
+                                    val c000 = lut[row0_0 + r0]
+                                    val c100 = lut[row0_0 + r1]
+                                    val c010 = lut[row0_1 + r0]
+                                    val c110 = lut[row0_1 + r1]
+                                    val c001 = lut[row1_0 + r0]
+                                    val c101 = lut[row1_0 + r1]
+                                    val c011 = lut[row1_1 + r0]
+                                    val c111 = lut[row1_1 + r1]
 
-                            val rf = inR * 63.0f
-                            val gf = inG * 63.0f
-                            val bf = inB * 63.0f
+                                    val r00 = ((c000 shr 16) and 0xFF) * (1f - rx) + ((c100 shr 16) and 0xFF) * rx
+                                    val r10 = ((c010 shr 16) and 0xFF) * (1f - rx) + ((c110 shr 16) and 0xFF) * rx
+                                    val r01 = ((c001 shr 16) and 0xFF) * (1f - rx) + ((c101 shr 16) and 0xFF) * rx
+                                    val r11 = ((c011 shr 16) and 0xFF) * (1f - rx) + ((c111 shr 16) and 0xFF) * rx
+                                    val r0_y = r00 * (1f - gy) + r10 * gy
+                                    val r1_y = r01 * (1f - gy) + r11 * gy
+                                    var sampledR = (r0_y * (1f - bz) + r1_y * bz) * (1.0f / 255.0f)
 
-                            val r0 = rf.toInt().coerceIn(0, 62)
-                            val r1 = r0 + 1
-                            val rx = rf - r0
+                                    val g00 = ((c000 shr 8) and 0xFF) * (1f - rx) + ((c100 shr 8) and 0xFF) * rx
+                                    val g10 = ((c010 shr 8) and 0xFF) * (1f - rx) + ((c110 shr 8) and 0xFF) * rx
+                                    val g01 = ((c001 shr 8) and 0xFF) * (1f - rx) + ((c101 shr 8) and 0xFF) * rx
+                                    val g11 = ((c011 shr 8) and 0xFF) * (1f - rx) + ((c111 shr 8) and 0xFF) * rx
+                                    val g0_y = g00 * (1f - gy) + g10 * gy
+                                    val g1_y = g01 * (1f - gy) + g11 * gy
+                                    var sampledG = (g0_y * (1f - bz) + g1_y * bz) * (1.0f / 255.0f)
 
-                            val g0 = gf.toInt().coerceIn(0, 62)
-                            val g1 = g0 + 1
-                            val gy = gf - g0
+                                    val b00 = (c000 and 0xFF) * (1f - rx) + (c100 and 0xFF) * rx
+                                    val b10 = (c010 and 0xFF) * (1f - rx) + (c110 and 0xFF) * rx
+                                    val b01 = (c001 and 0xFF) * (1f - rx) + (c101 and 0xFF) * rx
+                                    val b11 = (c011 and 0xFF) * (1f - rx) + (c111 and 0xFF) * rx
+                                    val b0_y = b00 * (1f - gy) + b10 * gy
+                                    val b1_y = b01 * (1f - gy) + b11 * gy
+                                    var sampledB = (b0_y * (1f - bz) + b1_y * bz) * (1.0f / 255.0f)
 
-                            val b0 = bf.toInt().coerceIn(0, 62)
-                            val b1 = b0 + 1
-                            val bz = bf - b0
+                                    if (hasDualLut) {
+                                        val nonNullLutB = lutB!!
+                                        val b000 = nonNullLutB[row0_0 + r0]
+                                        val b100 = nonNullLutB[row0_0 + r1]
+                                        val b010 = nonNullLutB[row0_1 + r0]
+                                        val b110 = nonNullLutB[row0_1 + r1]
+                                        val b001 = nonNullLutB[row1_0 + r0]
+                                        val b101 = nonNullLutB[row1_0 + r1]
+                                        val b011 = nonNullLutB[row1_1 + r0]
+                                        val b111 = nonNullLutB[row1_1 + r1]
 
-                            val tX0 = (b0 and 7) shl 6
-                            val tY0 = (b0 shr 3) shl 6
-                            val tX1 = (b1 and 7) shl 6
-                            val tY1 = (b1 shr 3) shl 6
+                                        val br00 = ((b000 shr 16) and 0xFF) * (1f - rx) + ((b100 shr 16) and 0xFF) * rx
+                                        val br10 = ((b010 shr 16) and 0xFF) * (1f - rx) + ((b110 shr 16) and 0xFF) * rx
+                                        val br01 = ((b001 shr 16) and 0xFF) * (1f - rx) + ((b101 shr 16) and 0xFF) * rx
+                                        val br11 = ((b011 shr 16) and 0xFF) * (1f - rx) + ((b111 shr 16) and 0xFF) * rx
+                                        val br_out = ((br00 * (1f - gy) + br10 * gy) * (1f - bz) + (br01 * (1f - gy) + br11 * gy) * bz) * (1.0f / 255.0f)
 
-                            val row0_0 = (tY0 + g0) * 512 + tX0
-                            val row0_1 = (tY0 + g1) * 512 + tX0
-                            val row1_0 = (tY1 + g0) * 512 + tX1
-                            val row1_1 = (tY1 + g1) * 512 + tX1
+                                        val bg00 = ((b000 shr 8) and 0xFF) * (1f - rx) + ((b100 shr 8) and 0xFF) * rx
+                                        val bg10 = ((b010 shr 8) and 0xFF) * (1f - rx) + ((b110 shr 8) and 0xFF) * rx
+                                        val bg01 = ((b001 shr 8) and 0xFF) * (1f - rx) + ((b101 shr 8) and 0xFF) * rx
+                                        val bg11 = ((b011 shr 8) and 0xFF) * (1f - rx) + ((b111 shr 8) and 0xFF) * rx
+                                        val bg_out = ((bg00 * (1f - gy) + bg10 * gy) * (1f - bz) + (bg01 * (1f - gy) + bg11 * gy) * bz) * (1.0f / 255.0f)
 
-                            val c000 = lut[row0_0 + r0]
-                            val c100 = lut[row0_0 + r1]
-                            val c010 = lut[row0_1 + r0]
-                            val c110 = lut[row0_1 + r1]
-                            val c001 = lut[row1_0 + r0]
-                            val c101 = lut[row1_0 + r1]
-                            val c011 = lut[row1_1 + r0]
-                            val c111 = lut[row1_1 + r1]
+                                        val bb00 = (b000 and 0xFF) * (1f - rx) + (b100 and 0xFF) * rx
+                                        val bb10 = (b010 and 0xFF) * (1f - rx) + (b110 and 0xFF) * rx
+                                        val bb01 = (b001 and 0xFF) * (1f - rx) + (b101 and 0xFF) * rx
+                                        val bb11 = (b011 and 0xFF) * (1f - rx) + (b111 and 0xFF) * rx
+                                        val bb_out = ((bb00 * (1f - gy) + bb10 * gy) * (1f - bz) + (bb01 * (1f - gy) + bb11 * gy) * bz) * (1.0f / 255.0f)
 
-                            val r00 = ((c000 shr 16) and 0xFF) * (1f - rx) + ((c100 shr 16) and 0xFF) * rx
-                            val r10 = ((c010 shr 16) and 0xFF) * (1f - rx) + ((c110 shr 16) and 0xFF) * rx
-                            val r01 = ((c001 shr 16) and 0xFF) * (1f - rx) + ((c101 shr 16) and 0xFF) * rx
-                            val r11 = ((c011 shr 16) and 0xFF) * (1f - rx) + ((c111 shr 16) and 0xFF) * rx
-                            val r0_y = r00 * (1f - gy) + r10 * gy
-                            val r1_y = r01 * (1f - gy) + r11 * gy
-                            var sampledR = (r0_y * (1f - bz) + r1_y * bz) * (1.0f / 255.0f)
+                                        sampledR = sampledR * (1f - dualLutMix) + br_out * dualLutMix
+                                        sampledG = sampledG * (1f - dualLutMix) + bg_out * dualLutMix
+                                        sampledB = sampledB * (1f - dualLutMix) + bb_out * dualLutMix
+                                    }
 
-                            val g00 = ((c000 shr 8) and 0xFF) * (1f - rx) + ((c100 shr 8) and 0xFF) * rx
-                            val g10 = ((c010 shr 8) and 0xFF) * (1f - rx) + ((c110 shr 8) and 0xFF) * rx
-                            val g01 = ((c001 shr 8) and 0xFF) * (1f - rx) + ((c101 shr 8) and 0xFF) * rx
-                            val g11 = ((c011 shr 8) and 0xFF) * (1f - rx) + ((c111 shr 8) and 0xFF) * rx
-                            val g0_y = g00 * (1f - gy) + g10 * gy
-                            val g1_y = g01 * (1f - gy) + g11 * gy
-                            var sampledG = (g0_y * (1f - bz) + g1_y * bz) * (1.0f / 255.0f)
-
-                            val b00 = (c000 and 0xFF) * (1f - rx) + (c100 and 0xFF) * rx
-                            val b10 = (c010 and 0xFF) * (1f - rx) + (c110 and 0xFF) * rx
-                            val b01 = (c001 and 0xFF) * (1f - rx) + (c101 and 0xFF) * rx
-                            val b11 = (c011 and 0xFF) * (1f - rx) + (c111 and 0xFF) * rx
-                            val b0_y = b00 * (1f - gy) + b10 * gy
-                            val b1_y = b01 * (1f - gy) + b11 * gy
-                            var sampledB = (b0_y * (1f - bz) + b1_y * bz) * (1.0f / 255.0f)
-
-                            if (hasDualLut) {
-                                val nonNullLutB = lutB!!
-                                val b000 = nonNullLutB[row0_0 + r0]
-                                val b100 = nonNullLutB[row0_0 + r1]
-                                val b010 = nonNullLutB[row0_1 + r0]
-                                val b110 = nonNullLutB[row0_1 + r1]
-                                val b001 = nonNullLutB[row1_0 + r0]
-                                val b101 = nonNullLutB[row1_0 + r1]
-                                val b011 = nonNullLutB[row1_1 + r0]
-                                val b111 = nonNullLutB[row1_1 + r1]
-
-                                val br00 = ((b000 shr 16) and 0xFF) * (1f - rx) + ((b100 shr 16) and 0xFF) * rx
-                                val br10 = ((b010 shr 16) and 0xFF) * (1f - rx) + ((b110 shr 16) and 0xFF) * rx
-                                val br01 = ((b001 shr 16) and 0xFF) * (1f - rx) + ((b101 shr 16) and 0xFF) * rx
-                                val br11 = ((b011 shr 16) and 0xFF) * (1f - rx) + ((b111 shr 16) and 0xFF) * rx
-                                val br_out = ((br00 * (1f - gy) + br10 * gy) * (1f - bz) + (br01 * (1f - gy) + br11 * gy) * bz) * (1.0f / 255.0f)
-
-                                val bg00 = ((b000 shr 8) and 0xFF) * (1f - rx) + ((b100 shr 8) and 0xFF) * rx
-                                val bg10 = ((b010 shr 8) and 0xFF) * (1f - rx) + ((b110 shr 8) and 0xFF) * rx
-                                val bg01 = ((b001 shr 8) and 0xFF) * (1f - rx) + ((b101 shr 8) and 0xFF) * rx
-                                val bg11 = ((b011 shr 8) and 0xFF) * (1f - rx) + ((b111 shr 8) and 0xFF) * rx
-                                val bg_out = ((bg00 * (1f - gy) + bg10 * gy) * (1f - bz) + (bg01 * (1f - gy) + bg11 * gy) * bz) * (1.0f / 255.0f)
-
-                                val bb00 = (b000 and 0xFF) * (1f - rx) + (b100 and 0xFF) * rx
-                                val bb10 = (b010 and 0xFF) * (1f - rx) + (b110 and 0xFF) * rx
-                                val bb01 = (b001 and 0xFF) * (1f - rx) + (b101 and 0xFF) * rx
-                                val bb11 = (b011 and 0xFF) * (1f - rx) + (b111 and 0xFF) * rx
-                                val bb_out = ((bb00 * (1f - gy) + bb10 * gy) * (1f - bz) + (bb01 * (1f - gy) + bb11 * gy) * bz) * (1.0f / 255.0f)
-
-                                sampledR = sampledR * (1f - dualLutMix) + br_out * dualLutMix
-                                sampledG = sampledG * (1f - dualLutMix) + bg_out * dualLutMix
-                                sampledB = sampledB * (1f - dualLutMix) + bb_out * dualLutMix
-                            }
-
-                            if (intensity < 0.999f) {
-                                val origR = ri * (1.0f / 255.0f)
-                                val origG = gi * (1.0f / 255.0f)
-                                val origB = bi * (1.0f / 255.0f)
-                                r = origR * (1.0f - intensity) + sampledR * intensity
-                                g = origG * (1.0f - intensity) + sampledG * intensity
-                                b = origB * (1.0f - intensity) + sampledB * intensity
-                            } else {
-                                r = sampledR
-                                g = sampledG
-                                b = sampledB
-                            }
-                        } else {
-                            r = ri / 255.0f
-                            g = gi / 255.0f
-                            b = bi / 255.0f
-                        }
-
-                        // A. Preset & User Temperature / Tint (Warm/Cool Shift)
-                        if (abs(effectiveTemp) > 0.001f) {
-                            r += 0.10f * effectiveTemp
-                            b -= 0.10f * effectiveTemp
-                        }
-                        if (abs(effectiveTint) > 0.001f) {
-                            g += 0.06f * effectiveTint
-                            r -= 0.03f * effectiveTint
-                            b -= 0.03f * effectiveTint
-                        }
-
-                        if (stageToneCurve) {
-                            var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            if (!isNatural) {
-                                val sLift = intensity * 0.035f * (1.0f - curLuma.coerceIn(0f, 1f)) * (1.0f - curLuma.coerceIn(0f, 1f))
-                                r += sLift
-                                g += sLift
-                                b += sLift
-                                curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            }
-
-                            // B. Preset & User Contrast
-                            if (abs(effectiveContrast - 1.0f) > 0.01f) {
-                                val pivot = 0.26f
-                                r = (r - pivot) * effectiveContrast + pivot
-                                g = (g - pivot) * effectiveContrast + pivot
-                                b = (b - pivot) * effectiveContrast + pivot
-                            }
-
-                            // B2. Authentic Midtone Clarity (from DAZZ Camera Engine)
-                            if (hasClarity) {
-                                r = (r * clarityBoost + clarityOffset).coerceIn(0f, 1f)
-                                g = (g * clarityBoost + clarityOffset).coerceIn(0f, 1f)
-                                b = (b * clarityBoost + clarityOffset).coerceIn(0f, 1f)
-                            }
-
-                            // C. Preset & User Saturation with Smart Vibrance Protection
-                            curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            if (abs(effectiveSat - 1.0f) > 0.01f) {
-                                val lr = 0.2126f
-                                val lg = 0.7152f
-                                val lb = 0.0722f
-                                val sr = (1.0f - effectiveSat) * lr
-                                val sg = (1.0f - effectiveSat) * lg
-                                val sb = (1.0f - effectiveSat) * lb
-                                val vibR = (r * (sr + effectiveSat) + g * sg + b * sb).coerceIn(0f, 1f)
-                                val vibG = (r * sr + g * (sg + effectiveSat) + b * sb).coerceIn(0f, 1f)
-                                val vibB = (r * sr + g * sg + b * (sb + effectiveSat)).coerceIn(0f, 1f)
-
-                                val linR = curLuma + effectiveSat * (r - curLuma)
-                                val linG = curLuma + effectiveSat * (g - curLuma)
-                                val linB = curLuma + effectiveSat * (b - curLuma)
-
-                                val skinProt = unifiedProfile.filmProfile.skinProtection.coerceIn(0f, 1f)
-                                r = linR * (1.0f - skinProt) + vibR * skinProt
-                                g = linG * (1.0f - skinProt) + vibG * skinProt
-                                b = linB * (1.0f - skinProt) + vibB * skinProt
-                                curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            }
-
-                            // D. Gamma Curve
-                            if (hasGamma) {
-                                r = r.coerceAtLeast(0.0f).pow(invGamma)
-                                g = g.coerceAtLeast(0.0f).pow(invGamma)
-                                b = b.coerceAtLeast(0.0f).pow(invGamma)
-                                curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            }
-
-                            // E. Shadow Tint
-                            val shadowWeight = (1.0f - curLuma * 3.0f).coerceIn(0.0f, 1.0f)
-                            r += shadowR * shadowWeight
-                            g += shadowG * shadowWeight
-                            b += shadowB * shadowWeight
-
-                            // F. Filmic Highlight Rolloff & Desaturating Shoulder (Ratio-Preserving)
-                            if (hasRollOff) {
-                                val maxC = maxOf(r, maxOf(g, b))
-                                if (maxC > rollOff) {
-                                    val rolledMax = com.craftcam.app.camera.profile.compressFilmHighlight(maxC, rollOff)
-                                    val scale = rolledMax / maxC
-                                    r *= scale
-                                    g *= scale
-                                    b *= scale
+                                    if (intensity < 0.999f) {
+                                        val origR = ri * (1.0f / 255.0f)
+                                        val origG = gi * (1.0f / 255.0f)
+                                        val origB = bi * (1.0f / 255.0f)
+                                        r = origR * (1.0f - intensity) + sampledR * intensity
+                                        g = origG * (1.0f - intensity) + sampledG * intensity
+                                        b = origB * (1.0f - intensity) + sampledB * intensity
+                                    } else {
+                                        r = sampledR
+                                        g = sampledG
+                                        b = sampledB
+                                    }
+                                } else {
+                                    r = ri / 255.0f
+                                    g = gi / 255.0f
+                                    b = bi / 255.0f
                                 }
-                                curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
 
-                                val highOver = maxOf(0.0f, curLuma - rollOff) * invKnee
-                                val desat = highOver.coerceIn(0f, 1f) * 0.45f
-                                r = r * (1.0f - desat) + curLuma * desat
-                                g = g * (1.0f - desat) + curLuma * desat
-                                b = b * (1.0f - desat) + curLuma * desat
-                            }
+                                observer?.pixel("lut", i, r, g, b)
+                                // A. Preset & User Temperature / Tint (Warm/Cool Shift)
+                                if (abs(effectiveTemp) > 0.001f) {
+                                    r += 0.10f * effectiveTemp
+                                    b -= 0.10f * effectiveTemp
+                                }
+                                if (abs(effectiveTint) > 0.001f) {
+                                    g += 0.06f * effectiveTint
+                                    r -= 0.03f * effectiveTint
+                                    b -= 0.03f * effectiveTint
+                                }
 
-                            // F2. Lifted Toe & Shoulder Compression (Lightroom Film Profile Parity)
-                            if (hasToeOrShoulder) {
-                                r = (toeLift + r.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
-                                g = (toeLift + g.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
-                                b = (toeLift + b.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
-                            }
+                                observer?.pixel("white-balance", i, r, g, b)
+                                if (stageToneCurve) {
+                                    var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    if (!isNatural) {
+                                        val sLift = intensity * 0.035f * (1.0f - curLuma.coerceIn(0f, 1f)) * (1.0f - curLuma.coerceIn(0f, 1f))
+                                        r += sLift
+                                        g += sLift
+                                        b += sLift
+                                        curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    }
 
-                            // G. Film Fade (Lifted blacks)
-                            if (effectiveFade > 0.001f) {
-                                r = r * (1.0f - effectiveFade) + effectiveFade
-                                g = g * (1.0f - effectiveFade) + effectiveFade
-                                b = b * (1.0f - effectiveFade) + effectiveFade
-                            }
-                        }
+                                    observer?.pixel("toe", i, r, g, b)
+                                    // B. Preset & User Contrast
+                                    if (abs(effectiveContrast - 1.0f) > 0.01f) {
+                                        val pivot = 0.26f
+                                        r = (r - pivot) * effectiveContrast + pivot
+                                        g = (g - pivot) * effectiveContrast + pivot
+                                        b = (b - pivot) * effectiveContrast + pivot
+                                    }
 
-                        // Flattering Skin Tone Radiance (Dazz Cam HighPassSkinSmoothing parity)
-                        if (r > g && g > b && r > 0.22f && r < 0.90f) {
-                            val skinFactor = ((r - b) * 2.2f).coerceIn(0.0f, 1.0f)
-                            val midLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b)
-                            val peachWeight = (1.0f - abs(midLuma - 0.55f) * 2.2f).coerceIn(0.0f, 1.0f) * skinFactor
-                            r = (r + 0.025f * peachWeight).coerceIn(0f, 1f)
-                            g = (g + 0.010f * peachWeight).coerceIn(0f, 1f)
-                        }
+                                    observer?.pixel("contrast", i, r, g, b)
+                                    if (v2) {
+                                        val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                        val lift = com.craftcam.app.camera.profile.lowerMidtoneLift(luma, film.lowerMidtoneStrength) * intensity
+                                        r += lift
+                                        g += lift
+                                        b += lift
+                                    }
 
-                        val pxX = i % width
-                        val pxY = i / width
+                                    // B2. Authentic Midtone Clarity (from DAZZ Camera Engine)
+                                    if (hasClarity) {
+                                        r = (r * clarityBoost + clarityOffset).coerceIn(0f, 1f)
+                                        g = (g * clarityBoost + clarityOffset).coerceIn(0f, 1f)
+                                        b = (b * clarityBoost + clarityOffset).coerceIn(0f, 1f)
+                                    }
 
-                        // Camcorder CRT scanline modulation
-                        if (isCamcorder) {
-                            val scanline = (sin(pxY.toFloat() / height * 600.0 * PI) * 0.5 + 0.5).toFloat()
-                            val sf = 0.90f + 0.10f * scanline
-                            r *= sf; g *= sf; b *= sf
-                        }
+                                    observer?.pixel("midtone", i, r, g, b)
+                                    // C. Preset & User Saturation with Smart Vibrance Protection
+                                    curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    if (v2) {
+                                        r = curLuma + effectiveSat * (r - curLuma)
+                                        g = curLuma + effectiveSat * (g - curLuma)
+                                        b = curLuma + effectiveSat * (b - curLuma)
+                                    } else if (abs(effectiveSat - 1.0f) > 0.01f) {
+                                        val lr = 0.2126f
+                                        val lg = 0.7152f
+                                        val lb = 0.0722f
+                                        val sr = (1.0f - effectiveSat) * lr
+                                        val sg = (1.0f - effectiveSat) * lg
+                                        val sb = (1.0f - effectiveSat) * lb
+                                        val vibR = (r * (sr + effectiveSat) + g * sg + b * sb).coerceIn(0f, 1f)
+                                        val vibG = (r * sr + g * (sg + effectiveSat) + b * sb).coerceIn(0f, 1f)
+                                        val vibB = (r * sr + g * sg + b * (sb + effectiveSat)).coerceIn(0f, 1f)
 
-                        // Fused Optical Cosine Fourth Lens Vignette
-                        if (hasVig && stageVignette) {
-                            val dx = pxX - cx
-                            val dy = pxY - cy
-                            val rn2 = (dx * dx + dy * dy) / vigDenom
-                            val cos4Vig = 1.0f / ((1.0f + rn2 * 0.45f) * (1.0f + rn2 * 0.45f))
-                            val v = (1.0f - vigMix + vigMix * cos4Vig).coerceIn(0.50f, 1.0f)
-                            r *= v; g *= v; b *= v
-                        }
+                                        val linR = curLuma + effectiveSat * (r - curLuma)
+                                        val linG = curLuma + effectiveSat * (g - curLuma)
+                                        val linB = curLuma + effectiveSat * (b - curLuma)
 
-                        // Camera Lens Optical Modulations (ND filter & Color Flash)
-                        if (lensProfile.type == LensType.ND && lensProfile.ndTransmissionFactor < 0.99f) {
-                            r *= lensProfile.ndTransmissionFactor
-                            g *= lensProfile.ndTransmissionFactor
-                            b *= lensProfile.ndTransmissionFactor
-                        }
-                        if (lensProfile.type == LensType.COLOR_FLASH && isFlashActive) {
-                            val (tr, tg, tb) = lensProfile.colorFlashTint.rgb
-                            r = (r * 0.30f + (r * tr * 1.30f) * 0.70f).coerceIn(0f, 1f)
-                            g = (g * 0.30f + (g * tg * 1.30f) * 0.70f).coerceIn(0f, 1f)
-                            b = (b * 0.30f + (b * tb * 1.30f) * 0.70f).coerceIn(0f, 1f)
-                        }
+                                        val skinProt = film.skinProtection.coerceIn(0f, 1f)
+                                        r = linR * (1.0f - skinProt) + vibR * skinProt
+                                        g = linG * (1.0f - skinProt) + vibG * skinProt
+                                        b = linB * (1.0f - skinProt) + vibB * skinProt
+                                        curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    }
 
-                        // Fused Multi-Tone Film Halide Grain with Anti-Tiling, Dye Cloud Separation & S-Curve Weighting
-                        if (stageGrain && grainPixels != null && colBaseX != null && rowBaseY != null && rowPhaseX != null && colPhaseY != null) {
-                            var gx = (colBaseX[pxX] + rowPhaseX[pxY]) % gw
-                            if (gx < 0) gx += gw
-                            if (flipX) gx = gw - 1 - gx
+                                    // D. Gamma Curve
+                                    if (hasGamma) {
+                                        r = r.coerceAtLeast(0.0f).pow(invGamma)
+                                        g = g.coerceAtLeast(0.0f).pow(invGamma)
+                                        b = b.coerceAtLeast(0.0f).pow(invGamma)
+                                        curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    }
 
-                            var gy = (rowBaseY[pxY] + colPhaseY[pxX]) % gh
-                            if (gy < 0) gy += gh
-                            if (flipY) gy = gh - 1 - gy
+                                    observer?.pixel("saturation-gamma", i, r, g, b)
+                                    // E. Shadow Tint
+                                    val shadowWeight = (1.0f - curLuma * 3.0f).coerceIn(0.0f, 1.0f)
+                                    r += shadowR * shadowWeight
+                                    g += shadowG * shadowWeight
+                                    b += shadowB * shadowWeight
 
-                            val gp = grainPixels[gy * gw + gx]
-                            val rG = gp shr 16 and 0xFF
-                            val gG = gp shr 8 and 0xFF
-                            val bG = gp and 0xFF
-                            val rawLuma = rG * 0.299f + gG * 0.587f + bG * 0.114f
-                            // Normalize and amplify scanned halide density variation from low-contrast 8-bit scan
-                            val gl = (((rawLuma - 128f) * (1.0f / 128f)) * 4.5f).coerceIn(-1.0f, 1.0f)
-                            val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    observer?.pixel("shadow-tint", i, r, g, b)
+                                    // F. Filmic Highlight Rolloff & Desaturating Shoulder (Ratio-Preserving)
+                                    if (hasRollOff) {
+                                        val maxC = maxOf(r, maxOf(g, b))
+                                        if (maxC > rollOff) {
+                                            val rolledMax = com.craftcam.app.camera.profile.compressFilmHighlight(maxC, rollOff)
+                                            val scale = rolledMax / maxC
+                                            r *= scale
+                                            g *= scale
+                                            b *= scale
+                                        }
+                                        curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+
+                                        val highOver = maxOf(0.0f, curLuma - rollOff) * invKnee
+                                        val desat = highOver.coerceIn(0f, 1f) * 0.45f
+                                        r = r * (1.0f - desat) + curLuma * desat
+                                        g = g * (1.0f - desat) + curLuma * desat
+                                        b = b * (1.0f - desat) + curLuma * desat
+                                    }
+
+                                    observer?.pixel("shoulder", i, r, g, b)
+                                    // F2. Lifted Toe & Shoulder Compression (Lightroom Film Profile Parity)
+                                    if (hasToeOrShoulder) {
+                                        r = (toeLift + r.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
+                                        g = (toeLift + g.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
+                                        b = (toeLift + b.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
+                                    }
+
+                                    // G. Film Fade (Lifted blacks)
+                                    if (effectiveFade > 0.001f) {
+                                        r = r * (1.0f - effectiveFade) + effectiveFade
+                                        g = g * (1.0f - effectiveFade) + effectiveFade
+                                        b = b * (1.0f - effectiveFade) + effectiveFade
+                                    }
+                                }
+
+                                observer?.pixel("fade", i, r, g, b)
+                                // Flattering Skin Tone Radiance (Dazz Cam HighPassSkinSmoothing parity)
+                                if (!v2 && r > g && g > b && r > 0.22f && r < 0.90f) {
+                                    val skinFactor = ((r - b) * 2.2f).coerceIn(0.0f, 1.0f)
+                                    val midLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b)
+                                    val peachWeight = (1.0f - abs(midLuma - 0.55f) * 2.2f).coerceIn(0.0f, 1.0f) * skinFactor
+                                    r = (r + 0.025f * peachWeight).coerceIn(0f, 1f)
+                                    g = (g + 0.010f * peachWeight).coerceIn(0f, 1f)
+                                }
+
+                                // Camcorder CRT scanline modulation
+                                if (isCamcorder) {
+                                    r *= scanlineFactor
+                                    g *= scanlineFactor
+                                    b *= scanlineFactor
+                                }
+
+                                // Fused Optical Cosine Fourth Lens Vignette
+                                if (hasVig && stageVignette) {
+                                    val dx = pxX - cx
+                                    val dy = pxY - cy
+                                    val rn2 = (dx * dx + dy * dy) / vigDenom
+                                    val cos4Vig = 1.0f / ((1.0f + rn2 * 0.45f) * (1.0f + rn2 * 0.45f))
+                                    val v = (1.0f - vigMix + vigMix * cos4Vig).coerceIn(0.50f, 1.0f)
+                                    r *= v; g *= v; b *= v
+                                }
+
+                                // Camera Lens Optical Modulations (ND filter & Color Flash)
+                                if (lensProfile.type == LensType.ND && lensProfile.ndTransmissionFactor < 0.99f) {
+                                    r *= lensProfile.ndTransmissionFactor
+                                    g *= lensProfile.ndTransmissionFactor
+                                    b *= lensProfile.ndTransmissionFactor
+                                }
+                                if (lensProfile.type == LensType.COLOR_FLASH && isFlashActive) {
+                                    val (tr, tg, tb) = lensProfile.colorFlashTint.rgb
+                                    r = (r * 0.30f + (r * tr * 1.30f) * 0.70f).coerceIn(0f, 1f)
+                                    g = (g * 0.30f + (g * tg * 1.30f) * 0.70f).coerceIn(0f, 1f)
+                                    b = (b * 0.30f + (b * tb * 1.30f) * 0.70f).coerceIn(0f, 1f)
+                                }
+
+                                observer?.pixel("vignette", i, r, g, b)
+                                // Fused Multi-Tone Film Halide Grain with Anti-Tiling, Dye Cloud Separation & S-Curve Weighting
+                                if (stageGrain && grainPixels != null && colBaseX != null && rowBaseY != null && rowPhaseX != null && colPhaseY != null) {
+                                    var gx = (colBaseX[pxX] + rowPhaseX[pxY]) % gw
+                                    if (gx < 0) gx += gw
+                                    if (flipX) gx = gw - 1 - gx
+
+                                    var gy = (rowBaseY[pxY] + colPhaseY[pxX]) % gh
+                                    if (gy < 0) gy += gh
+                                    if (flipY) gy = gh - 1 - gy
+
+                                    val gp = grainPixels[gy * gw + gx]
+                                    val rG = gp shr 16 and 0xFF
+                                    val gG = gp shr 8 and 0xFF
+                                    val bG = gp and 0xFF
+                                    val rawLuma = rG * 0.299f + gG * 0.587f + bG * 0.114f
+                                    // Normalize and amplify scanned halide density variation from low-contrast 8-bit scan
+                                    val gl = (((rawLuma - 128f) * (1.0f / 128f)) * 4.5f).coerceIn(-1.0f, 1.0f)
+                                    val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                             
-                            // Luminance-Aware Grain Mask (Smoothstep response in shadows and highlights)
-                            val shadowT = (postLuma / 0.35f).coerceIn(0.0f, 1.0f)
-                            val shadowMask = shadowT * shadowT * (3.0f - 2.0f * shadowT)
-                            val highlightT = ((postLuma - 0.65f) / 0.35f).coerceIn(0.0f, 1.0f)
-                            val highlightMask = 1.0f - (highlightT * highlightT * (3.0f - 2.0f * highlightT))
-                            var grainWeight = (shadowStrength + (1.0f - shadowStrength) * shadowMask) * (highlightStrength + (1.0f - highlightStrength) * highlightMask)
+                                    // Luminance-Aware Grain Mask (Smoothstep response in shadows and highlights)
+                                    val shadowT = (postLuma / 0.35f).coerceIn(0.0f, 1.0f)
+                                    val shadowMask = shadowT * shadowT * (3.0f - 2.0f * shadowT)
+                                    val highlightT = ((postLuma - 0.65f) / 0.35f).coerceIn(0.0f, 1.0f)
+                                    val highlightMask = 1.0f - (highlightT * highlightT * (3.0f - 2.0f * highlightT))
+                                    var grainWeight = (shadowStrength + (1.0f - shadowStrength) * shadowMask) * (highlightStrength + (1.0f - highlightStrength) * highlightMask)
 
-                            // Parabolic midtone weighting: M(L) = 4L(1-L)
-                            if (resolvedGrain.luminanceWeightingEnabled && resolvedGrain.luminanceWeightingPower > 0.01f) {
-                                val midParabola = (4.0f * postLuma.coerceIn(0f, 1f) * (1.0f - postLuma.coerceIn(0f, 1f))).coerceIn(0f, 1f)
-                                val lumaMod = (1.0f - resolvedGrain.luminanceWeightingPower) + midParabola * resolvedGrain.luminanceWeightingPower
-                                grainWeight *= lumaMod
-                            }
-
-                            // Flattering skin protection: gently attenuate grain on smooth skin
-                            if (r > g && g > b && r > 0.25f && r < 0.90f) {
-                                val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
-                                grainWeight *= (1.0f - 0.30f * skinWeight)
-                            }
-
-                            // Blend Mode Selection (OVERLAY, SCREEN, MULTIPLY, NORMAL)
-                            when (blendMode) {
-                                GrainBlendMode.SCREEN -> {
-                                    // SCREEN mode for push-processed / low-light film grain emulsion lift
-                                    val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
-                                    val screenFactor = grainStrength * grainWeight * 0.85f
-                                    if (preset.grain.isColorNoise) {
-                                        val rNorm = ((((rG - 128f) * (1.0f / 128f) * 3.5f + 1.0f) * 0.5f)).coerceIn(0f, 1f)
-                                        val bNorm = ((((bG - 128f) * (1.0f / 128f) * 3.5f + 1.0f) * 0.5f)).coerceIn(0f, 1f)
-                                        r = 1.0f - (1.0f - r) * (1.0f - rNorm * screenFactor)
-                                        g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
-                                        b = 1.0f - (1.0f - b) * (1.0f - bNorm * screenFactor)
-                                    } else {
-                                        r = 1.0f - (1.0f - r) * (1.0f - grainNorm * screenFactor)
-                                        g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
-                                        b = 1.0f - (1.0f - b) * (1.0f - grainNorm * screenFactor)
+                                    // Parabolic midtone weighting: M(L) = 4L(1-L)
+                                    if (resolvedGrain.luminanceWeightingEnabled && resolvedGrain.luminanceWeightingPower > 0.01f) {
+                                        val midParabola = (4.0f * postLuma.coerceIn(0f, 1f) * (1.0f - postLuma.coerceIn(0f, 1f))).coerceIn(0f, 1f)
+                                        val lumaMod = (1.0f - resolvedGrain.luminanceWeightingPower) + midParabola * resolvedGrain.luminanceWeightingPower
+                                        grainWeight *= lumaMod
                                     }
-                                }
-                                GrainBlendMode.MULTIPLY -> {
-                                    // MULTIPLY mode for negative exposure printing
-                                    val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
-                                    val multFactor = grainStrength * grainWeight * 0.85f
-                                    val grainMult = 1.0f - (1.0f - grainNorm) * multFactor
-                                    r *= grainMult
-                                    g *= grainMult
-                                    b *= grainMult
-                                }
-                                GrainBlendMode.NORMAL -> {
-                                    // NORMAL mode for gentle alpha overlay
-                                    val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
-                                    val normFactor = grainStrength * grainWeight * 0.45f
-                                    r = r * (1.0f - normFactor) + grainNorm * normFactor
-                                    g = g * (1.0f - normFactor) + grainNorm * normFactor
-                                    b = b * (1.0f - normFactor) + grainNorm * normFactor
-                                }
-                                GrainBlendMode.OVERLAY -> {
-                                    // OVERLAY mode for standard photographic chemical halide modulation
-                                    val deltaG = gl * grainStrength * grainWeight
-                                    val deltaR = gl * (grainStrength * 1.08f) * grainWeight
-                                    val deltaB = gl * (grainStrength * 0.92f) * grainWeight
 
-                                    if (preset.grain.isColorNoise) {
-                                        val rChroma = (((rG - 128f) * (1.0f / 128f)) * 3.5f).coerceIn(-1.0f, 1.0f) * grainStrength * grainWeight * 0.40f
-                                        val bChroma = (((bG - 128f) * (1.0f / 128f)) * 3.5f).coerceIn(-1.0f, 1.0f) * grainStrength * grainWeight * 0.40f
-                                        r += deltaR + rChroma
-                                        g += deltaG
-                                        b += deltaB + bChroma
-                                    } else {
-                                        val dyeCloud = gl * 0.12f * grainStrength * grainWeight
-                                        r += deltaR + dyeCloud
-                                        g += deltaG
-                                        b += deltaB - dyeCloud
+                                    // Flattering skin protection: gently attenuate grain on smooth skin
+                                    if (r > g && g > b && r > 0.25f && r < 0.90f) {
+                                        val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
+                                        grainWeight *= (1.0f - 0.30f * skinWeight)
                                     }
-                                }
-                            }
 
-                            // Optional subtle hybrid procedural micro-halide (Section 14)
-                            if (useHybridProcedural) {
-                                val hCoord = (pxX * 12.9898f + pxY * 78.233f) % 3.14159f
-                                val pNoise = (kotlin.math.sin(hCoord) * 43758.5453f).let { it - kotlin.math.floor(it) - 0.5f }
-                                val pDelta = pNoise * grainStrength * grainWeight * (proceduralIntensity.coerceIn(0.0f, 1.0f))
-                                r += pDelta
-                                g += pDelta
-                                b += pDelta
+                                    // Blend Mode Selection (OVERLAY, SCREEN, MULTIPLY, NORMAL)
+                                    when (blendMode) {
+                                        GrainBlendMode.SCREEN -> {
+                                            // SCREEN mode for push-processed / low-light film grain emulsion lift
+                                            val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                            val screenFactor = grainStrength * grainWeight * 0.85f
+                                            if (preset.grain.isColorNoise) {
+                                                val rNorm = ((((rG - 128f) * (1.0f / 128f) * 3.5f + 1.0f) * 0.5f)).coerceIn(0f, 1f)
+                                                val bNorm = ((((bG - 128f) * (1.0f / 128f) * 3.5f + 1.0f) * 0.5f)).coerceIn(0f, 1f)
+                                                r = 1.0f - (1.0f - r) * (1.0f - rNorm * screenFactor)
+                                                g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
+                                                b = 1.0f - (1.0f - b) * (1.0f - bNorm * screenFactor)
+                                            } else {
+                                                r = 1.0f - (1.0f - r) * (1.0f - grainNorm * screenFactor)
+                                                g = 1.0f - (1.0f - g) * (1.0f - grainNorm * screenFactor)
+                                                b = 1.0f - (1.0f - b) * (1.0f - grainNorm * screenFactor)
+                                            }
+                                        }
+                                        GrainBlendMode.MULTIPLY -> {
+                                            // MULTIPLY mode for negative exposure printing
+                                            val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                            val multFactor = grainStrength * grainWeight * 0.85f
+                                            val grainMult = 1.0f - (1.0f - grainNorm) * multFactor
+                                            r *= grainMult
+                                            g *= grainMult
+                                            b *= grainMult
+                                        }
+                                        GrainBlendMode.NORMAL -> {
+                                            // NORMAL mode for gentle alpha overlay
+                                            val grainNorm = ((gl + 1.0f) * 0.5f).coerceIn(0.0f, 1.0f)
+                                            val normFactor = grainStrength * grainWeight * 0.45f
+                                            r = r * (1.0f - normFactor) + grainNorm * normFactor
+                                            g = g * (1.0f - normFactor) + grainNorm * normFactor
+                                            b = b * (1.0f - normFactor) + grainNorm * normFactor
+                                        }
+                                        GrainBlendMode.OVERLAY -> {
+                                            // OVERLAY mode for standard photographic chemical halide modulation
+                                            val deltaG = gl * grainStrength * grainWeight
+                                            val deltaR = gl * (grainStrength * 1.08f) * grainWeight
+                                            val deltaB = gl * (grainStrength * 0.92f) * grainWeight
+
+                                            if (preset.grain.isColorNoise) {
+                                                val rChroma = (((rG - 128f) * (1.0f / 128f)) * 3.5f).coerceIn(-1.0f, 1.0f) * grainStrength * grainWeight * 0.40f
+                                                val bChroma = (((bG - 128f) * (1.0f / 128f)) * 3.5f).coerceIn(-1.0f, 1.0f) * grainStrength * grainWeight * 0.40f
+                                                r += deltaR + rChroma
+                                                g += deltaG
+                                                b += deltaB + bChroma
+                                            } else {
+                                                val dyeCloud = gl * 0.12f * grainStrength * grainWeight
+                                                r += deltaR + dyeCloud
+                                                g += deltaG
+                                                b += deltaB - dyeCloud
+                                            }
+                                        }
+                                    }
+
+                                    // Optional subtle hybrid procedural micro-halide (Section 14)
+                                    if (useHybridProcedural) {
+                                        val hCoord = (pxX * 12.9898f + pxY * 78.233f) % 3.14159f
+                                        val pNoise = (kotlin.math.sin(hCoord) * 43758.5453f).let { it - kotlin.math.floor(it) - 0.5f }
+                                        val pDelta = pNoise * grainStrength * grainWeight * (proceduralIntensity.coerceIn(0.0f, 1.0f))
+                                        r += pDelta
+                                        g += pDelta
+                                        b += pDelta
+                                    }
+                                } else if (stageGrain && proceduralIntensity > 0.01f) {
+                                    val hCoord = (pxX * 12.9898f + pxY * 78.233f) % 3.14159f
+                                    val pNoise = (kotlin.math.sin(hCoord) * 43758.5453f).let { it - kotlin.math.floor(it) - 0.5f }
+                                    val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                    val shadowT = (postLuma / 0.35f).coerceIn(0.0f, 1.0f)
+                                    val shadowMask = shadowT * shadowT * (3.0f - 2.0f * shadowT)
+                                    val highlightT = ((postLuma - 0.65f) / 0.35f).coerceIn(0.0f, 1.0f)
+                                    val highlightMask = 1.0f - (highlightT * highlightT * (3.0f - 2.0f * highlightT))
+                                    var grainWeight = (shadowStrength + (1.0f - shadowStrength) * shadowMask) * (highlightStrength + (1.0f - highlightStrength) * highlightMask)
+                                    if (resolvedGrain.luminanceWeightingEnabled && resolvedGrain.luminanceWeightingPower > 0.01f) {
+                                        val midParabola = (4.0f * postLuma.coerceIn(0f, 1f) * (1.0f - postLuma.coerceIn(0f, 1f))).coerceIn(0f, 1f)
+                                        val lumaMod = (1.0f - resolvedGrain.luminanceWeightingPower) + midParabola * resolvedGrain.luminanceWeightingPower
+                                        grainWeight *= lumaMod
+                                    }
+                                    if (r > g && g > b && r > 0.25f && r < 0.90f) {
+                                        val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
+                                        grainWeight *= (1.0f - 0.30f * skinWeight)
+                                    }
+                                    val pDelta = pNoise * proceduralIntensity * grainWeight * 0.45f
+                                    r += pDelta
+                                    g += pDelta
+                                    b += pDelta
+                                }
+
+                                observer?.pixel("grain", i, r, g, b)
+                                val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                                val ig2 = (g.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                                val ib2 = (b.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                                pixels[i] = (0xFF shl 24) or (ir2 shl 16) or (ig2 shl 8) or ib2
                             }
-                        } else if (stageGrain && proceduralIntensity > 0.01f) {
-                            val hCoord = (pxX * 12.9898f + pxY * 78.233f) % 3.14159f
-                            val pNoise = (kotlin.math.sin(hCoord) * 43758.5453f).let { it - kotlin.math.floor(it) - 0.5f }
-                            val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            val shadowT = (postLuma / 0.35f).coerceIn(0.0f, 1.0f)
-                            val shadowMask = shadowT * shadowT * (3.0f - 2.0f * shadowT)
-                            val highlightT = ((postLuma - 0.65f) / 0.35f).coerceIn(0.0f, 1.0f)
-                            val highlightMask = 1.0f - (highlightT * highlightT * (3.0f - 2.0f * highlightT))
-                            var grainWeight = (shadowStrength + (1.0f - shadowStrength) * shadowMask) * (highlightStrength + (1.0f - highlightStrength) * highlightMask)
-                            if (resolvedGrain.luminanceWeightingEnabled && resolvedGrain.luminanceWeightingPower > 0.01f) {
-                                val midParabola = (4.0f * postLuma.coerceIn(0f, 1f) * (1.0f - postLuma.coerceIn(0f, 1f))).coerceIn(0f, 1f)
-                                val lumaMod = (1.0f - resolvedGrain.luminanceWeightingPower) + midParabola * resolvedGrain.luminanceWeightingPower
-                                grainWeight *= lumaMod
-                            }
-                            if (r > g && g > b && r > 0.25f && r < 0.90f) {
-                                val skinWeight = ((r - b) * 2.0f).coerceIn(0.0f, 1.0f)
-                                grainWeight *= (1.0f - 0.30f * skinWeight)
-                            }
-                            val pDelta = pNoise * proceduralIntensity * grainWeight * 0.45f
-                            r += pDelta
-                            g += pDelta
-                            b += pDelta
                         }
-
-                        val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-                        val ig2 = (g.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-                        val ib2 = (b.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-                        pixels[i] = (0xFF shl 24) or (ir2 shl 16) or (ig2 shl 8) or ib2
                     }
-                }
-            }.awaitAll()
-        }
+                }.awaitAll()
+            }
 
             // ── Step 2b: Optical Starburst Diffraction Rays ────
             if (lensProfile.type == LensType.STARBURST && lensProfile.starburstStrength > 0.01f) {
                 applyStarburstDiffraction(pixels, width, height, lensProfile)
+            }
+
+            // ── Step 2c: Skin Tone Intelligence Engine for Film Presets ────
+            if (!isDigicamTarget && !isNatural && !isCamcorder && tuning.skinToneIntelligenceEnabled) {
+                val skinProfile = com.craftcam.app.color.skin.SkinToneProfileCatalog.getProfileForPreset(preset.id, preset.category)
+                val skinIlluminant = if (isFlashActive) com.craftcam.app.color.digicam.DigicamIlluminant.GOLDEN_DIRECT_FLASH
+                else com.craftcam.app.color.digicam.DigicamColorEngine().estimateIlluminant(pixels, width, height, isFlashActive, sensorIso)
+                val skinEngine = com.craftcam.app.color.skin.SkinToneIntelligenceEngine()
+                val skinResult = skinEngine.process(
+                    pixels = pixels,
+                    width = width,
+                    height = height,
+                    faces = faces,
+                    illuminant = skinIlluminant,
+                    profile = skinProfile,
+                    isFlashActive = isFlashActive,
+                    iso = sensorIso
+                )
+                if (tuning.debugSkinToneStages) {
+                    com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(
+                        context = context,
+                        sourceBmp = source,
+                        colorProb = skinResult.refinedSkinMask,
+                        spatialPrior = skinResult.refinedSkinMask,
+                        refinedMask = skinResult.refinedSkinMask,
+                        finalBmp = source,
+                        result = skinResult
+                    )
+                }
             }
 
             // In-place update of source bitmap (eliminates 48.8MB result Bitmap allocation)
@@ -1145,16 +1377,16 @@ object ImageProcessor {
 
             // 4a. Authentic Optical Halation (Photochemical Highlight Bloom)
             val halationActive = tuning.debugStageHalation && tuning.halationEnabled && 
-                                 (halation?.enabled == true || unifiedProfile.filmProfile.halationThreshold < 0.99f) && 
+                                 (halation?.enabled == true || film.halationThreshold < 0.99f) &&
                                  intensity > 0.01f
             if (halationActive) {
-                val halationThresh = halation?.threshold ?: unifiedProfile.filmProfile.halationThreshold
-                val halationInt = (halation?.intensity ?: unifiedProfile.filmProfile.halationIntensity) * intensity
+                val halationThresh = halation?.threshold ?: film.halationThreshold
+                val halationInt = (halation?.intensity ?: film.halationIntensity) * intensity
                 applyAuthenticHalation(
                     pixels, width, height, canvas, halationThresh, halationInt,
-                    unifiedProfile.filmProfile.halationColorTintR,
-                    unifiedProfile.filmProfile.halationColorTintG,
-                    unifiedProfile.filmProfile.halationColorTintB
+                    film.halationColorTintR,
+                    film.halationColorTintG,
+                    film.halationColorTintB
                 )
             }
 
@@ -1507,7 +1739,7 @@ object ImageProcessor {
                                     continue
                                 }
                                 val rn = rPhys / rBubble
-                                val rDistNorm = rn * (0.36f + 0.64f * rn * rn)
+                                val rDistNorm = rn * (0.70f + 0.30f * rn * rn)
                                 val rDistPhys = rDistNorm * rBubble
 
                                 val invR = if (rPhys > 0.0001f) 1.0f / rPhys else 0.0f
@@ -1534,7 +1766,7 @@ object ImageProcessor {
                             } else {
                                 // FISHEYE_W (Full Frame)
                                 val rn = (rPhys / rCorner).coerceIn(0f, 1f)
-                                val rDistNorm = rn * (0.55f + 0.45f * rn * rn)
+                                val rDistNorm = rn * (0.80f + 0.20f * rn * rn)
                                 val rDistPhys = rDistNorm * rCorner
 
                                 val invR = if (rPhys > 0.0001f) 1.0f / rPhys else 0.0f
@@ -1907,7 +2139,7 @@ object ImageProcessor {
         "analog_soft_film", "analog_ct2f", "ct2f" -> "lut_ct2f.png"
         "analog_vintage_color", "analog_dexp", "dexp", "d exp" -> "lut_dexp.png"
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
-        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_ccd_flash.png"
+        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_dfuns_v1.png"
         "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
         "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
         "disp_classic", "disp_golf", "golf" -> "lut_disp_classic.png"
@@ -1997,7 +2229,6 @@ object ImageProcessor {
 
     private fun selectFlashForPreset(presetId: String): String? = when (presetId) {
         "disp_flash", "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "flash_01.jpg"
-        "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "overlay_flashc.jpg"
         else                      -> null
     }
 
@@ -2012,6 +2243,17 @@ object ImageProcessor {
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+    private fun photoExportLimit(highResolution: Boolean, width: Int, height: Int,
+                                preset: CameraPreset, filmMode: Boolean): Int {
+        if (!highResolution) return 2048
+        val longest = maxOf(width, height)
+        if (longest <= 4096 || !filmMode || preset.id != "analog_fxn_r") return 4096
+        // Allow room for source, rotated image, optional negative, pixel array and optical scratch.
+        val runtime = Runtime.getRuntime()
+        val available = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+        return if (width.toLong() * height * 24L < available) longest else 4096
+    }
+
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
         try {
             return image.toBitmap()
@@ -2057,7 +2299,8 @@ object ImageProcessor {
         lensProfile: LensProfile = LensProfile.NORMAL
     ): Uri? = withContext(Dispatchers.Default) {
         val appSettings = AppSettingsStore.get(context).current
-        val maxExportDim = if (appSettings.highResolutionExport) 4096 else 2048
+        val maxExportDim = photoExportLimit(appSettings.highResolutionExport, sourceBitmap.width,
+            sourceBitmap.height, preset, true)
         val srcW = sourceBitmap.width
         val srcH = sourceBitmap.height
         val scale = if (srcW > maxExportDim || srcH > maxExportDim) {

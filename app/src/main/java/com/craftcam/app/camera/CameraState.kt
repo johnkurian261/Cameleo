@@ -57,7 +57,11 @@ data class UserTuningConfig(
     val debugStageGrain: Boolean = true,
     val debugStageHalation: Boolean = true,
     val debugStageOptics: Boolean = true,
-    val debugStageVignette: Boolean = true
+    val debugStageVignette: Boolean = true,
+    val dfunsStrictExposure: Boolean = false,
+    val debugDigicamStages: Boolean = false,
+    val skinToneIntelligenceEnabled: Boolean = true,
+    val debugSkinToneStages: Boolean = false
 )
 
 data class CameraUIState(
@@ -121,4 +125,10 @@ data class CameraUIState(
 ) {
     val availableLenses: List<CameraLens>
         get() = if (lensFacing == CameraSelector.LENS_FACING_FRONT) frontLenses else rearLenses
+}
+
+internal fun nextFlashMode(mode: Int): Int = when (mode) {
+    ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_ON
+    ImageCapture.FLASH_MODE_ON -> ImageCapture.FLASH_MODE_AUTO
+    else -> ImageCapture.FLASH_MODE_OFF
 }
