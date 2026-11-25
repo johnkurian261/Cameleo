@@ -232,7 +232,6 @@ fun ViewfinderScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
                         .aspectRatio(3f / 4f)
                         .clip(RoundedCornerShape(20.dp))
                         .background(Color.Black)
@@ -340,27 +339,11 @@ fun ViewfinderScreen(
 
                     // Developing 3D Wigglegram Overlay
                     if (uiState.threeDProgressMessage != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0x99000000)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0xCC1A1C22))
-                                    .border(1.dp, Color(0x5500E5FF), RoundedCornerShape(16.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(36.dp),
-                                    color = Color(0xFF00E5FF),
-                                    strokeWidth = 3.dp
-                                )
-                            }
-                        }
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center).size(36.dp),
+                            color = Color.White,
+                            strokeWidth = 3.dp
+                        )
                     }
                 }
             }
@@ -393,11 +376,11 @@ fun ViewfinderScreen(
                     .padding(bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // ── Expanded Temperature & Brightness Controls + Compact Pill ───────
+                // ── Expanded temperature and brightness controls ───────
                 CameraExposureTemperatureControls(
                     modifier = Modifier.fillMaxWidth(),
                     temperatureState = TemperatureState(
-                        isAuto = uiState.isAwbAuto,
+                        isAuto = false,
                         kelvin = uiState.kelvin,
                         minKelvin = uiState.minKelvin,
                         maxKelvin = uiState.maxKelvin,
@@ -415,8 +398,8 @@ fun ViewfinderScreen(
                     onTemperatureChange = { newKelvin ->
                         cameraManager.setKelvin(newKelvin)
                     },
-                    onTemperatureAuto = {
-                        cameraManager.setAutoWhiteBalance()
+                    onTemperatureReset = {
+                        cameraManager.setKelvin(5500)
                     },
                     onExposureChange = { newIdx ->
                         cameraManager.setExposureIndex(newIdx)
@@ -437,14 +420,10 @@ fun ViewfinderScreen(
                     flashMode = uiState.flashMode,
                     timerSeconds = uiState.timerSeconds,
                     showGrid = uiState.showGrid,
-                    isTuned = !uiState.isAwbAuto || uiState.tuning.temperatureOffset != 0f || activeQuickControlMode == QuickControlMode.TEMPERATURE,
+                    isTuned = uiState.kelvin != 5500 || uiState.tuning.temperatureOffset != 0f || activeQuickControlMode == QuickControlMode.TEMPERATURE,
                     engineMode = uiState.engineMode,
                     onFlashCycle = {
-                        val nextMode = when (uiState.flashMode) {
-                            ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
-                            ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
-                            else -> ImageCapture.FLASH_MODE_OFF
-                        }
+                        val nextMode = com.craftcam.app.camera.nextFlashMode(uiState.flashMode)
                         cameraManager.setFlashMode(nextMode)
                     },
                     onToggleExposure = {

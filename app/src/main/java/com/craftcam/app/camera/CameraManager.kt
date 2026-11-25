@@ -1322,16 +1322,12 @@ class CameraManager(private val context: Context) {
         applyCamera2Wb(isAuto = false, kelvin = clamped)
     }
 
+    fun resetKelvin() {
+        setKelvin(5500)
+    }
+
     fun setAutoWhiteBalance() {
-        _uiState.update {
-            it.copy(
-                kelvin = 5500,
-                isAwbAuto = true,
-                tuning = it.tuning.copy(temperatureOffset = 0f)
-            )
-        }
-        glRenderer?.updateTuning(_uiState.value.tuning)
-        applyCamera2Wb(isAuto = true, kelvin = 5500)
+        resetKelvin()
     }
 
     private fun applyCamera2Wb(isAuto: Boolean, kelvin: Int) {

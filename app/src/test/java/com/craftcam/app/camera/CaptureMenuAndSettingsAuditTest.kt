@@ -25,19 +25,13 @@ class CaptureMenuAndSettingsAuditTest {
     fun testFlashStateCycling() {
         var currentFlash = ImageCapture.FLASH_MODE_OFF
 
-        fun cycleFlash(mode: Int): Int = when (mode) {
-            ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
-            ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
-            else -> ImageCapture.FLASH_MODE_OFF
-        }
-
-        currentFlash = cycleFlash(currentFlash)
-        assertEquals(ImageCapture.FLASH_MODE_AUTO, currentFlash)
-
-        currentFlash = cycleFlash(currentFlash)
+        currentFlash = nextFlashMode(currentFlash)
         assertEquals(ImageCapture.FLASH_MODE_ON, currentFlash)
 
-        currentFlash = cycleFlash(currentFlash)
+        currentFlash = nextFlashMode(currentFlash)
+        assertEquals(ImageCapture.FLASH_MODE_AUTO, currentFlash)
+
+        currentFlash = nextFlashMode(currentFlash)
         assertEquals(ImageCapture.FLASH_MODE_OFF, currentFlash)
     }
 
@@ -172,25 +166,26 @@ class CaptureMenuAndSettingsAuditTest {
     @Test
     fun testTemperatureAndAwbStateMachine() {
         val defaultTemp = TemperatureState()
-        assertTrue(defaultTemp.isAuto)
+        assertFalse(defaultTemp.isAuto)
+        assertTrue(defaultTemp.isDefault)
         assertEquals(5500, defaultTemp.kelvin)
         assertEquals(2500, defaultTemp.minKelvin)
         assertEquals(9500, defaultTemp.maxKelvin)
 
-        // Manual Kelvin adjustment switches isAuto to false
+        // Manual Kelvin adjustment updates kelvin
         fun updateKelvin(state: TemperatureState, newKelvin: Int): TemperatureState {
             val clamped = newKelvin.coerceIn(state.minKelvin, state.maxKelvin)
-            return state.copy(isAuto = false, kelvin = clamped)
+            return state.copy(kelvin = clamped)
         }
 
         val manualTemp = updateKelvin(defaultTemp, 9400)
-        assertFalse(manualTemp.isAuto)
+        assertFalse(manualTemp.isDefault)
         assertEquals(9400, manualTemp.kelvin)
 
-        // Auto White Balance toggle resets isAuto to true
-        val resetAuto = manualTemp.copy(isAuto = true)
-        assertTrue(resetAuto.isAuto)
-        assertEquals(9400, resetAuto.kelvin) // Kelvin remains preserved
+        // Reset to 5500K daylight baseline
+        val resetTemp = manualTemp.copy(kelvin = 5500)
+        assertTrue(resetTemp.isDefault)
+        assertEquals(5500, resetTemp.kelvin)
 
         // Clamping bounds
         val overMax = updateKelvin(defaultTemp, 12000)
