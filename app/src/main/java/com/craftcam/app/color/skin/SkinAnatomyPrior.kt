@@ -11,15 +11,25 @@ import kotlin.math.*
  * primary weakness of colour-based skin detection: false positives on background objects
  * (wooden furniture, teak floors, terracotta walls, leather jackets, food, and clothing).
  *
- * Anatomical Rules:
+ * Anatomical Proportions & Rules:
  * 1. Facial Core: Confirmed face bounds have 100% spatial confidence.
- * 2. Neck & Collarbone: Extends vertically below the face (0.85× face height).
- * 3. Shoulders & Arms: Extends laterally and downward with smooth gaussian decay.
+ * 2. Neck & Collarbone: Extends vertically below the face (0.70× face height).
+ * 3. Torso & Upper Arms: Extends laterally and downward with smooth decay.
  * 4. Ambient Background: Suppressed by ~80% when humans are present in the scene.
- * 5. Headless / Body-Only Fallback: When no faces are detected (e.g. photos of hands or legs),
- *    the spatial prior safely falls back to neutral 1.0 (pure color probability mode).
+ * 5. Conservative Headless Fallback: When no faces are detected (e.g. photos of hands or objects),
+ *    the spatial prior returns a conservative baseline (0.50f) rather than a naive 1.0f,
+ *    preventing background wood and amber rooms from receiving 100% spatial confidence.
+ * 6. High-Confidence Skin Protection: Pixels with very high multi-space color probability (c > 0.65f)
+ *    on arms and hands retain protective coverage even outside the facial bounding box.
  */
 class SkinAnatomyPrior {
+
+    companion object {
+        private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+            val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0.0f, 1.0f)
+            return t * t * (3.0f - 2.0f * t)
+        }
+    }
 
     /**
      * Generates a spatial confidence prior map [0.0f, 1.0f] for [width] x [height].
@@ -39,13 +49,27 @@ class SkinAnatomyPrior {
         val total = width * height
         val prior = FloatArray(total)
 
-        // If no faces are detected in the frame, return uniform 1.0 (headless / hands-only fallback)
+        // Conservative Headless Fallback:
+        // When no faces are detected (e.g. headless photos, arms/legs, or still life),
+        // use a conservative baseline (~0.50) with subtle center weighting,
+        // rather than 1.0 everywhere which allowed background wood to pass unchecked.
         if (faces.isEmpty()) {
-            prior.fill(1.0f)
+            val invW = if (width > 1) 1.0f / (width - 1) else 1.0f
+            val invH = if (height > 1) 1.0f / (height - 1) else 1.0f
+            for (y in 0 until height) {
+                val ny = y * invH - 0.5f
+                val row = y * width
+                for (x in 0 until width) {
+                    val nx = x * invW - 0.5f
+                    val distFromCenter = sqrt(nx * nx + ny * ny) * 1.414f // [0.0, 1.0]
+                    // Center-weighted conservative prior in [0.45, 0.55]
+                    prior[row + x] = (0.55f - distFromCenter * 0.10f).coerceIn(0.40f, 0.55f)
+                }
+            }
             return prior
         }
 
-        val baseAmbient = (1.0f - backgroundSuppression).coerceIn(0.10f, 0.50f)
+        val baseAmbient = (1.0f - backgroundSuppression).coerceIn(0.10f, 0.40f)
         prior.fill(baseAmbient)
 
         // Pure coordinate box independent of Android framework stubs for JVM unit test parity
@@ -142,6 +166,8 @@ class SkinAnatomyPrior {
 
     /**
      * Confidence-aware fusion combining color probability with anatomical spatial prior.
+     * High-confidence skin pixels (c > 0.65f) are granted self-supporting spatial confidence
+     * to protect hands and arms while firmly suppressing background objects.
      */
     fun fuseConfidence(
         colorProb: FloatArray,
@@ -151,7 +177,6 @@ class SkinAnatomyPrior {
     ): FloatArray {
         val total = colorProb.size
         val fused = FloatArray(total)
-        val wSum = wSpatial + wColor
 
         for (i in 0 until total) {
             val c = colorProb[i]
@@ -163,8 +188,12 @@ class SkinAnatomyPrior {
                 continue
             }
 
+            // High color confidence boost on hands/arms outside core facial zones
+            val highConfidenceBoost = smoothstep(0.60f, 0.85f, c) * 0.55f
+            val effSpatial = max(s, highConfidenceBoost)
+
             // High spatial confidence strongly gates color probability to reject background wood/walls
-            fused[i] = (c * s * 1.15f).coerceIn(0.0f, 1.0f)
+            fused[i] = (c * effSpatial * 1.15f).coerceIn(0.0f, 1.0f)
         }
 
         return fused

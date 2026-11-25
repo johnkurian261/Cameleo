@@ -7,11 +7,11 @@ import com.craftcam.app.model.CameraCategory
  * Camera-profile-specific skin tone response and protection configuration (Layer 4).
  *
  * Each camera profile reproduces human skin according to its authentic historical/photographic identity:
- * - D FUNS: Disposable 35mm film negative response, warm flash highlights, exposure-dependent saturation.
- * - CPM35: Golden early digital compact, rich amber warmth, soft optical detail, rich lower-midtones.
+ * - D FUNS: Disposable 35mm film negative response, warm flash highlights, organic exposure falloff.
+ * - CPM35: Golden early digital compact, rich amber warmth, soft optical detail, deep contrast shadows.
  * - CCD: 2000s pocket digicam, golden daylight skin, high flash contrast, yellow-green artificial tolerance.
  * - FXNR: Fine 35mm film dye clouds, pastel highlights, gentle contrast, natural teals.
- * - NATURAL: Unfiltered reference multi-complexion fidelity across Fitzpatrick Types I through VI.
+ * - NATURAL: Unfiltered reference multi-complexion fidelity across all human complexions.
  */
 data class SkinToneProfile(
     val id: String,
@@ -24,7 +24,7 @@ data class SkinToneProfile(
     /** Warm golden skin tint gain multipliers [R, G, B] applied proportionally to skin confidence. */
     val skinGains: FloatArray = floatArrayOf(1.0f, 1.0f, 1.0f),
 
-    /** Lower-midtone lift specifically for human skin (prevents harsh facial shadows). */
+    /** Restrained lower-midtone lift specifically for human skin (prevents harsh facial shadows without flattening contrast). */
     val skinMidtoneLift: Float = 0.0f,
 
     /** Highlight rolloff knee for skin highlights (prevents specular blowout on foreheads and cheeks). */
@@ -65,8 +65,8 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 2.0f, // Subtle warm golden-amber film shift
         skinGains = floatArrayOf(1.06f, 0.98f, 0.90f),
-        skinMidtoneLift = 0.035f,
-        skinHighlightKnee = 0.82f,
+        skinMidtoneLift = 0.020f, // Restrained to preserve natural disposable flash shadow falloff
+        skinHighlightKnee = 0.84f,
         maxSkinSaturation = 0.68f,
         textureDampening = 0.25f // Preserves organic film grain while preventing excessive noise on faces
     )
@@ -74,7 +74,7 @@ object SkinToneProfileCatalog {
     /**
      * CPM35: Golden early digital compact.
      * Reference-calibrated against Refs 1, 2, 3, 6:
-     * Golden illuminated skin, amber tungsten retention, rich lower-midtones, soft optical detail.
+     * Golden illuminated skin, amber tungsten retention, deep contrast shadows, soft optical detail.
      */
     val CPM35 = SkinToneProfile(
         id = "skin_cpm35",
@@ -89,8 +89,8 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 3.5f, // Radiant golden-amber cast matching references
         skinGains = floatArrayOf(1.08f, 0.97f, 0.86f),
-        skinMidtoneLift = 0.045f,
-        skinHighlightKnee = 0.80f,
+        skinMidtoneLift = 0.018f, // Restrained to preserve deep shadows and authentic digicam punch
+        skinHighlightKnee = 0.82f,
         maxSkinSaturation = 0.70f,
         textureDampening = 0.20f
     )
@@ -113,7 +113,7 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 1.0f, // Balanced clean golden daylight
         skinGains = floatArrayOf(1.03f, 1.00f, 0.94f),
-        skinMidtoneLift = 0.020f,
+        skinMidtoneLift = 0.010f, // Preserves authentic digital highlight clipping and direct flash punch
         skinHighlightKnee = 0.88f,
         maxSkinSaturation = 0.66f,
         textureDampening = 0.15f
@@ -136,7 +136,7 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 0.5f,
         skinGains = floatArrayOf(1.02f, 0.99f, 0.96f),
-        skinMidtoneLift = 0.025f,
+        skinMidtoneLift = 0.015f,
         skinHighlightKnee = 0.86f,
         maxSkinSaturation = 0.64f,
         textureDampening = 0.22f
@@ -144,7 +144,7 @@ object SkinToneProfileCatalog {
 
     /**
      * NATURAL: Reference flagship computational photography.
-     * Strict multi-complexion neutral fidelity across Fitzpatrick Types I to VI.
+     * Strict multi-complexion neutral fidelity across all human complexions.
      */
     val NATURAL = SkinToneProfile(
         id = "skin_natural",
@@ -159,7 +159,7 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 0.0f,
         skinGains = floatArrayOf(1.00f, 1.00f, 1.00f),
-        skinMidtoneLift = 0.015f,
+        skinMidtoneLift = 0.008f,
         skinHighlightKnee = 0.90f,
         maxSkinSaturation = 0.62f,
         textureDampening = 0.35f

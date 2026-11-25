@@ -2,6 +2,7 @@ package com.craftcam.app.portrait
 
 import android.graphics.Bitmap
 import android.graphics.PointF
+import android.graphics.Rect
 import android.graphics.RectF
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.params.Face
@@ -18,6 +19,9 @@ interface LocalFaceDetector {
 /**
  * Hardware-accelerated Face Detector powered by Camera2 HAL ISP metadata.
  * Runs directly on the camera sensor chip at 60 FPS with zero extra CPU or battery overhead.
+ *
+ * Handles sensor active-array coordinate mapping, crop-region scaling (digital zoom/aspect crops),
+ * sensor orientation (0, 90, 180, 270 degrees), and front-camera mirroring.
  */
 object HardwareFaceDetector : LocalFaceDetector {
     private const val TAG = "HardwareFaceDetector"
@@ -26,13 +30,15 @@ object HardwareFaceDetector : LocalFaceDetector {
 
     /**
      * Ingests hardware face metadata from Camera2's [CaptureResult.STATISTICS_FACES].
-     * Maps sensor pixel coordinates into normalized [0.0f, 1.0f] upright space.
+     * Maps sensor active array coordinates into normalized [0.0f, 1.0f] upright display space,
+     * accounting for [CaptureResult.SCALER_CROP_REGION] when digital crop/zoom is active.
      */
     fun updateFromCaptureResult(
         result: CaptureResult,
         sensorWidth: Int,
         sensorHeight: Int,
-        sensorRotation: Int = 90
+        sensorRotation: Int = 90,
+        isFrontFacing: Boolean = false
     ) {
         val faces: Array<Face>? = result.get(CaptureResult.STATISTICS_FACES)
         if (faces == null || faces.isEmpty()) {
@@ -42,31 +48,54 @@ object HardwareFaceDetector : LocalFaceDetector {
             return
         }
 
+        // Active crop region (if present, coordinates are relative to this crop box)
+        val cropRegion: Rect? = result.get(CaptureResult.SCALER_CROP_REGION)
+        val cropLeft = cropRegion?.left?.toFloat() ?: 0.0f
+        val cropTop = cropRegion?.top?.toFloat() ?: 0.0f
+        val cropW = (cropRegion?.width()?.toFloat() ?: sensorWidth.toFloat()).coerceAtLeast(1.0f)
+        val cropH = (cropRegion?.height()?.toFloat() ?: sensorHeight.toFloat()).coerceAtLeast(1.0f)
+
         val mapped = ArrayList<FaceRegion>(faces.size)
-        val sw = sensorWidth.toFloat().coerceAtLeast(1.0f)
-        val sh = sensorHeight.toFloat().coerceAtLeast(1.0f)
 
         for (face in faces) {
             val bounds = face.bounds
-            // Normalize sensor bounds
-            val leftNorm = (bounds.left / sw).coerceIn(0.0f, 1.0f)
-            val topNorm = (bounds.top / sh).coerceIn(0.0f, 1.0f)
-            val rightNorm = (bounds.right / sw).coerceIn(0.0f, 1.0f)
-            val bottomNorm = (bounds.bottom / sh).coerceIn(0.0f, 1.0f)
 
-            // Convert to upright display coordinates if sensor is rotated
-            val normRect = if (sensorRotation == 90) {
-                RectF(topNorm, 1.0f - rightNorm, bottomNorm, 1.0f - leftNorm)
-            } else if (sensorRotation == 270) {
-                RectF(1.0f - bottomNorm, leftNorm, 1.0f - topNorm, rightNorm)
-            } else {
-                RectF(leftNorm, topNorm, rightNorm, bottomNorm)
+            // Map sensor coordinate into [0.0, 1.0] relative to active crop viewport
+            val relLeft = ((bounds.left.toFloat() - cropLeft) / cropW).coerceIn(0.0f, 1.0f)
+            val relTop = ((bounds.top.toFloat() - cropTop) / cropH).coerceIn(0.0f, 1.0f)
+            val relRight = ((bounds.right.toFloat() - cropLeft) / cropW).coerceIn(0.0f, 1.0f)
+            val relBottom = ((bounds.bottom.toFloat() - cropTop) / cropH).coerceIn(0.0f, 1.0f)
+
+            // Convert to upright display coordinates according to sensor orientation
+            var normRect = when (sensorRotation) {
+                90 -> RectF(relTop, 1.0f - relRight, relBottom, 1.0f - relLeft)
+                180 -> RectF(1.0f - relRight, 1.0f - relBottom, 1.0f - relLeft, 1.0f - relTop)
+                270 -> RectF(1.0f - relBottom, relLeft, 1.0f - relTop, relRight)
+                else -> RectF(relLeft, relTop, relRight, relBottom)
+            }
+
+            // Apply horizontal mirror flip for front-facing camera in preview/selfie mode
+            if (isFrontFacing) {
+                normRect = RectF(1.0f - normRect.right, normRect.top, 1.0f - normRect.left, normRect.bottom)
             }
 
             // Extract optional landmarks if available
-            val leftEye = face.leftEyePosition?.let { PointF(it.x / sw, it.y / sh) }
-            val rightEye = face.rightEyePosition?.let { PointF(it.x / sw, it.y / sh) }
-            val mouth = face.mouthPosition?.let { PointF(it.x / sw, it.y / sh) }
+            fun mapPoint(pt: android.graphics.Point?): PointF? {
+                if (pt == null) return null
+                val px = ((pt.x.toFloat() - cropLeft) / cropW).coerceIn(0.0f, 1.0f)
+                val py = ((pt.y.toFloat() - cropTop) / cropH).coerceIn(0.0f, 1.0f)
+                val upright = when (sensorRotation) {
+                    90 -> PointF(py, 1.0f - px)
+                    180 -> PointF(1.0f - px, 1.0f - py)
+                    270 -> PointF(1.0f - py, px)
+                    else -> PointF(px, py)
+                }
+                return if (isFrontFacing) PointF(1.0f - upright.x, upright.y) else upright
+            }
+
+            val leftEye = mapPoint(face.leftEyePosition)
+            val rightEye = mapPoint(face.rightEyePosition)
+            val mouth = mapPoint(face.mouthPosition)
 
             val confidence = (face.score.coerceIn(1, 100) / 100.0f)
 

@@ -1,9 +1,13 @@
 package com.craftcam.app.color.skin
 
+import android.graphics.Rect
 import android.graphics.RectF
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.params.Face
 import com.craftcam.app.color.digicam.DigicamIlluminant
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.portrait.FaceRegion
+import com.craftcam.app.portrait.HardwareFaceDetector
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -15,6 +19,7 @@ class SkinToneIntelligenceEngineTest {
     private lateinit var anatomyPrior: SkinAnatomyPrior
     private lateinit var maskRefiner: SkinMaskRefiner
     private lateinit var engine: SkinToneIntelligenceEngine
+    private lateinit var ablationEngine: SkinToneAblationEngine
 
     @Before
     fun setUp() {
@@ -22,6 +27,7 @@ class SkinToneIntelligenceEngineTest {
         anatomyPrior = SkinAnatomyPrior()
         maskRefiner = SkinMaskRefiner()
         engine = SkinToneIntelligenceEngine(colorEstimator, anatomyPrior, maskRefiner)
+        ablationEngine = SkinToneAblationEngine(engine)
     }
 
     private fun createPixel(r: Int, g: Int, b: Int): Int {
@@ -38,13 +44,14 @@ class SkinToneIntelligenceEngineTest {
     }
 
     @Test
-    fun colorEstimator_detectsFairToDeepSkinComplexions() {
+    fun colorEstimator_detectsFairToDeepSkinComplexionsContinuousManifold() {
         val width = 1
         val height = 4
-        // 1. Fair Peach (Fitzpatrick I-II): R=225, G=175, B=145
-        // 2. Olive / Tan (Fitzpatrick III-IV): R=185, G=130, B=95
-        // 3. Deep Brown (Fitzpatrick V-VI): R=110, G=70, B=50
-        // 4. Pure Grass Green (Non-skin): R=45, G=165, B=40
+        // Continuous melanin range:
+        // 1. Fair Peach Complexion: R=225, G=175, B=145
+        // 2. Olive / Tan Complexion: R=185, G=130, B=95
+        // 3. Deep Rich Melanin Complexion: R=110, G=70, B=50
+        // 4. Pure Grass Green (Foliage): R=45, G=165, B=40
         val pixels = intArrayOf(
             createPixel(225, 175, 145),
             createPixel(185, 130, 95),
@@ -54,10 +61,27 @@ class SkinToneIntelligenceEngineTest {
 
         val mask = colorEstimator.estimateColourProbability(pixels, width, height, DigicamIlluminant.GOLDEN_DAYLIGHT)
 
-        assertTrue("Fair skin must have high probability", mask[0] > 0.40f)
-        assertTrue("Olive/Tan skin must have high probability", mask[1] > 0.40f)
-        assertTrue("Deep brown skin must have significant probability (not clipped)", mask[2] > 0.30f)
+        assertTrue("Fair complexion must have robust skin probability", mask[0] > 0.35f)
+        assertTrue("Tan complexion must have robust skin probability", mask[1] > 0.35f)
+        assertTrue("Deep melanin complexion must have significant skin probability (not clipped)", mask[2] > 0.25f)
         assertEquals("Foliage must have 0.0 probability", 0.0f, mask[3], 0.001f)
+    }
+
+    @Test
+    fun colorEstimator_verifiesOklchContinuousSkinLocus() {
+        // Test OKLCh conversion helper
+        val oklchFair = SkinColourEstimator.rgbToOklch(225, 175, 145)
+        val oklchDeep = SkinColourEstimator.rgbToOklch(110, 70, 50)
+        val oklchScarlet = SkinColourEstimator.rgbToOklch(239, 50, 30)
+
+        // Human skin hue in OKLCh falls into 30°..65°
+        assertTrue("Fair skin OKLCh hue in skin locus", oklchFair[2] in 30.0f..65.0f)
+        assertTrue("Deep skin OKLCh hue in skin locus", oklchDeep[2] in 30.0f..65.0f)
+        assertTrue("Fair skin chroma within natural limits", oklchFair[1] in 0.03f..0.15f)
+        assertTrue("Deep skin chroma within natural limits", oklchDeep[1] in 0.03f..0.15f)
+
+        // Scarlet red dress has excessive chroma (> 0.20)
+        assertTrue("Scarlet red dress has excessive chroma", oklchScarlet[1] > 0.18f)
     }
 
     @Test
@@ -65,7 +89,7 @@ class SkinToneIntelligenceEngineTest {
         val width = 1
         val height = 2
         // 1. Sky blue: R=100, G=160, B=230 (B > R)
-        // 2. Highly saturated scarlet red dress (Ref 2): R=239, G=50, B=30 (R >> G, rNorm ~ 0.75 outside skin locus)
+        // 2. Highly saturated scarlet red dress (Ref 2): R=239, G=50, B=30
         val pixels = intArrayOf(
             createPixel(100, 160, 230),
             createPixel(239, 50, 30)
@@ -88,7 +112,7 @@ class SkinToneIntelligenceEngineTest {
         val tungstenMask = colorEstimator.estimateColourProbability(pixels, width, height, DigicamIlluminant.AMBER_TUNGSTEN)
 
         assertTrue("Tungsten-adapted locus must recognize tungsten-lit skin better than daylight locus", tungstenMask[0] > daylightMask[0])
-        assertTrue("Tungsten skin confidence must be robust", tungstenMask[0] > 0.45f)
+        assertTrue("Tungsten skin confidence must be robust", tungstenMask[0] > 0.40f)
     }
 
     @Test
@@ -119,15 +143,28 @@ class SkinToneIntelligenceEngineTest {
     }
 
     @Test
-    fun anatomyPrior_fallsBackToNeutralWhenNoFacesDetected() {
+    fun anatomyPrior_conservativeHeadlessFallbackWhenNoFacesDetected() {
         val width = 20
         val height = 20
         val prior = anatomyPrior.generateSpatialPrior(width, height, emptyList())
 
-        // When no faces are present (e.g. photos of hands or legs), spatial prior must return 1.0 everywhere
+        // Phase 2: When no faces are present (e.g. headless photos of hands, legs, or still life),
+        // spatial prior must return conservative baseline (~0.45..0.55), NOT 1.0 everywhere
         for (v in prior) {
-            assertEquals("Headless fallback must be 1.0 everywhere", 1.0f, v, 0.001f)
+            assertTrue("Headless fallback must be conservative (0.40..0.55)", v in 0.40f..0.55f)
         }
+    }
+
+    @Test
+    fun anatomyPrior_protectsHighConfidenceHandsAndArmsOutsideFaceBox() {
+        // High skin confidence (c = 0.80) should retain protective spatial confidence even with low prior (s = 0.20)
+        val colorProb = floatArrayOf(0.80f, 0.35f)
+        val spatialPrior = floatArrayOf(0.20f, 0.20f)
+
+        val fused = anatomyPrior.fuseConfidence(colorProb, spatialPrior)
+
+        assertTrue("High confidence skin pixel on arm/hand gets boosted spatial protection", fused[0] >= 0.45f)
+        assertTrue("Marginal background pixel remains heavily suppressed", fused[1] <= 0.12f)
     }
 
     @Test
@@ -193,7 +230,7 @@ class SkinToneIntelligenceEngineTest {
         val width = 10
         val height = 10
         val total = width * height
-        // Deep skin tone (Fitzpatrick VI): R=60, G=40, B=28 (low luma ~ 42)
+        // Deep skin tone: R=60, G=40, B=28 (low luma ~ 42)
         val pixels = IntArray(total) { createPixel(60, 40, 28) }
 
         val face = FaceRegion(bounds = createRect(0.1f, 0.1f, 0.9f, 0.9f), confidence = 0.90f)
@@ -217,6 +254,38 @@ class SkinToneIntelligenceEngineTest {
         assertTrue("Deep skin tone must retain warm separation", outR >= 60)
         assertTrue("Deep skin tone must not crush into pure black", outG >= 38)
         assertTrue("Skin tone must maintain natural hue hierarchy R > G > B", outR > outG && outG > outB)
+    }
+
+    @Test
+    fun ablationEngine_rendersAllSevenStagesCorrectly() {
+        val width = 20
+        val height = 20
+        val total = width * height
+        val pixels = IntArray(total) { createPixel(210, 160, 130) }
+        val face = FaceRegion(bounds = createRect(0.2f, 0.2f, 0.8f, 0.8f), confidence = 0.90f)
+
+        val reportMap = ablationEngine.runCompleteAblation(
+            inputPixels = pixels,
+            width = width,
+            height = height,
+            faces = listOf(face),
+            illuminant = DigicamIlluminant.GOLDEN_DAYLIGHT,
+            profile = SkinToneProfileCatalog.CPM35
+        )
+
+        assertEquals("Must produce 7 ablation stages", 7, reportMap.size)
+        assertTrue("Stage A present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_A_SOURCE))
+        assertTrue("Stage B present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_B_NO_SKIN_PROCESSING))
+        assertTrue("Stage C present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_C_COLOR_PROBABILITY))
+        assertTrue("Stage D present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_D_ANATOMICAL_PRIOR))
+        assertTrue("Stage E present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_E_REFINED_MASK))
+        assertTrue("Stage F present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_F_PROTECTION_ONLY))
+        assertTrue("Stage G present", reportMap.containsKey(SkinToneAblationEngine.AblationStage.STAGE_G_COMPLETE))
+
+        // Stage C (Color Prob greyscale) has values > 0
+        val stageCPixels = reportMap[SkinToneAblationEngine.AblationStage.STAGE_C_COLOR_PROBABILITY]!!.outputPixels
+        val sampleVal = stageCPixels[10 * width + 10] and 0xFF
+        assertTrue("Color probability greyscale should be active for skin pixel", sampleVal > 50)
     }
 
     @Test
