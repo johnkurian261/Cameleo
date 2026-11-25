@@ -621,7 +621,12 @@ class CameraManager(private val context: Context) {
     }
 
     fun setFilmColorProfileIndex(index: Int) {
-        updateTuning { it.copy(filmColorProfileIndex = index.coerceIn(0, 3)) }
+        val maxIdx = com.craftcam.app.color.profile.DazzColorProfileCatalog.PROFILES.size - 1
+        updateTuning { it.copy(filmColorProfileIndex = index.coerceIn(0, maxIdx)) }
+    }
+
+    fun resetFilmColorProfile() {
+        setFilmColorProfileIndex(1)
     }
 
     fun selectLensAccessory(lensType: LensType) {

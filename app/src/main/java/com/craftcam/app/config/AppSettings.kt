@@ -164,11 +164,9 @@ fun View.performCameleoHaptic(
 }
 
 /**
- * Film emulsion color profile offsets matching the Collection sheet swatches:
- * 0 = 03 G (Warm golden matte film)
- * 1 = C400 (Balanced daylight print film - default neutral)
- * 2 = 07 FF (Cool cyan-green cinematic emulsion)
- * 3 = 19 P (Deep punchy twilight indigo/magenta cast)
+ * Film emulsion color profile offsets matching the Collection sheet swatches.
+ * Resolves to [com.craftcam.app.color.profile.DazzColorProfileCatalog] containing all 10 authentic
+ * Dazz Cam film profiles (03 G, C400, 07 FF, 19 P, 19 P2, 19 M, 22 M, EG200, FX33, FXN2).
  */
 data class FilmColorProfileAdjustment(
     val tempDelta: Float,
@@ -178,34 +176,6 @@ data class FilmColorProfileAdjustment(
     val satMult: Float
 )
 
-fun filmColorProfileAdjustment(index: Int): FilmColorProfileAdjustment = when (index) {
-    0 -> FilmColorProfileAdjustment(
-        tempDelta = 0.07f,
-        tintDelta = -0.02f,
-        fadeDelta = 0.03f,
-        contrastMult = 0.95f,
-        satMult = 1.00f
-    )
-    2 -> FilmColorProfileAdjustment(
-        tempDelta = -0.05f,
-        tintDelta = -0.05f,
-        fadeDelta = 0.02f,
-        contrastMult = 1.00f,
-        satMult = 1.04f
-    )
-    3 -> FilmColorProfileAdjustment(
-        tempDelta = -0.08f,
-        tintDelta = 0.07f,
-        fadeDelta = 0.00f,
-        contrastMult = 1.06f,
-        satMult = 1.05f
-    )
-    else -> FilmColorProfileAdjustment(
-        tempDelta = 0.00f,
-        tintDelta = 0.00f,
-        fadeDelta = 0.00f,
-        contrastMult = 1.00f,
-        satMult = 1.00f
-    )
-}
+fun filmColorProfileAdjustment(index: Int): FilmColorProfileAdjustment =
+    com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(index).adjustment
 

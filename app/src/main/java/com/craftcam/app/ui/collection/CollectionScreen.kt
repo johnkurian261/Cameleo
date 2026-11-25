@@ -19,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,8 +68,11 @@ import com.craftcam.app.ui.theme.*
 @Composable
 fun CollectionScreen(
     currentPreset: CameraPreset,
+    filmControlsAvailable: Boolean,
     selectedLens: LensProfile = LensProfile.NORMAL,
     frameEnabled: Boolean = true,
+    strictExposure: Boolean = false,
+    onStrictExposure: (Boolean) -> Unit = {},
     grainEnabled: Boolean = true,
     colorProfileIndex: Int = 1,
     onSelectPreset: (CameraPreset) -> Unit,
@@ -83,6 +88,9 @@ fun CollectionScreen(
     var selectedPresetState by remember(currentPreset.id) { mutableStateOf(currentPreset) }
     var selectedCategory by remember { mutableStateOf<CameraCategory?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
+    var managingCameras by remember { mutableStateOf(false) }
+    val preferences = remember(context) { context.getSharedPreferences("camera_shelf", android.content.Context.MODE_PRIVATE) }
+    var hidden by remember { mutableStateOf(preferences.getStringSet("hidden", emptySet()).orEmpty().toSet()) }
     var showSampleViewer by remember { mutableStateOf(false) }
     var showBottomSheet by remember { mutableStateOf(false) }
     var bottomSheetTab by remember { mutableStateOf(BottomSheetType.COLOR_PROFILE) }
@@ -109,6 +117,10 @@ fun CollectionScreen(
         } else {
             PresetCatalog.allPresets
         }
+    }
+
+    val shelf = remember(allAvailablePresets, hidden, currentPreset.id) {
+        allAvailablePresets.filter { it.id == currentPreset.id || it.id !in hidden }
     }
 
     // Resolves authentic sample images for the selected preset
@@ -204,7 +216,8 @@ fun CollectionScreen(
                     IconButton(
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            showCategoryMenu = !showCategoryMenu
+                            showCategoryMenu = false
+                            managingCameras = true
                         },
                         modifier = Modifier
                             .size(34.dp)
@@ -213,7 +226,7 @@ fun CollectionScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Menu,
-                            contentDescription = "Category Filter",
+                            contentDescription = "Manage cameras",
                             tint = Color.White,
                             modifier = Modifier.size(16.dp)
                         )
@@ -236,7 +249,7 @@ fun CollectionScreen(
                 ) {
                     item {
                         CategoryTabPill(
-                            title = "ALL (${allAvailablePresets.size})",
+                            title = "ALL (${shelf.size})",
                             isSelected = selectedCategory == null,
                             onClick = {
                                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -245,8 +258,8 @@ fun CollectionScreen(
                             }
                         )
                     }
-                    items(visibleCategories) { cat ->
-                        val count = allAvailablePresets.count { it.category == cat }
+                    items(visibleCategories.filter { cat -> shelf.any { it.category == cat } }) { cat ->
+                        val count = shelf.count { it.category == cat }
                         CategoryTabPill(
                             title = "${cat.displayName.uppercase()} ($count)",
                             isSelected = selectedCategory == cat,
@@ -278,8 +291,8 @@ fun CollectionScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 items(categoriesToDisplay, key = { it.name }) { category ->
-                    val presetsInCategory = remember(category, allAvailablePresets) {
-                        allAvailablePresets.filter { it.category == category }
+                    val presetsInCategory = remember(category, shelf) {
+                        shelf.filter { it.category == category }
                     }
 
                     if (presetsInCategory.isNotEmpty()) {
@@ -331,6 +344,7 @@ fun CollectionScreen(
                                         },
                                         onConfirm = {
                                             view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                                            onSelectPreset(preset)
                                             onNavigateBack()
                                         }
                                     )
@@ -351,7 +365,6 @@ fun CollectionScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Color Profile Button (3 RGB rings)
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -364,7 +377,9 @@ fun CollectionScreen(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                ColorProfileRingsIcon(modifier = Modifier.size(24.dp))
+                ColorProfileRingsIcon(modifier = Modifier.size(24.dp).semantics {
+                    contentDescription = "Colour profiles and grain"
+                })
             }
 
             // Frame / Lenses Button
@@ -404,6 +419,36 @@ fun CollectionScreen(
             }
         }
 
+        if (managingCameras) {
+            AlertDialog(
+                onDismissRequest = { managingCameras = false },
+                title = { Text("Manage cameras") },
+                text = {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                        items(allAvailablePresets, key = { it.id }) { preset ->
+                            val active = preset.id == currentPreset.id
+                            val shown = active || preset.id !in hidden
+                            Row(Modifier.fillMaxWidth().clickable(enabled = !active) {
+                                hidden = if (shown) hidden + preset.id else hidden - preset.id
+                                preferences.edit().putStringSet("hidden", hidden).apply()
+                            }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(preset.name)
+                                    if (active) Text("Current camera", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Checkbox(checked = shown, onCheckedChange = null, enabled = !active)
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { managingCameras = false }) { Text("Done") } },
+                dismissButton = { TextButton(onClick = {
+                    hidden = emptySet()
+                    preferences.edit().remove("hidden").apply()
+                }) { Text("Show all") } }
+            )
+        }
+
         // ==================== 5. FULL-SCREEN SAMPLE PHOTOS VIEWER ====================
         if (showSampleViewer) {
             SamplePhotosViewer(
@@ -419,8 +464,11 @@ fun CollectionScreen(
                 preset = selectedPresetState,
                 activeLensType = activeLensType,
                 initialTab = bottomSheetTab,
+                filmControlsAvailable = filmControlsAvailable,
                 selectedColorProfileIndex = selectedColorProfileIndex,
                 frameEnabled = activeFrameEnabled,
+                strictExposure = strictExposure,
+                onStrictExposure = onStrictExposure,
                 grainEnabled = activeGrainEnabled,
                 onSelectColorProfile = { index ->
                     selectedColorProfileIndex = index
@@ -784,8 +832,11 @@ private fun ColorProfileAndLensSheet(
     preset: CameraPreset,
     activeLensType: LensType,
     initialTab: BottomSheetType,
+    filmControlsAvailable: Boolean,
     selectedColorProfileIndex: Int,
     frameEnabled: Boolean,
+    strictExposure: Boolean,
+    onStrictExposure: (Boolean) -> Unit,
     grainEnabled: Boolean,
     onSelectColorProfile: (Int) -> Unit,
     onToggleFrame: (Boolean) -> Unit,
@@ -838,69 +889,60 @@ private fun ColorProfileAndLensSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (initialTab == BottomSheetType.COLOR_PROFILE) {
-                // ==================== COLOR PROFILE TAB (Images 2 & 5) ====================
-                Text(
-                    text = "Color Profile",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                // ==================== COLOR PROFILE TAB (Dazz Cam Color Scheme) ====================
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (filmControlsAvailable) "Color profile" else "Color profile · Film cameras",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (selectedColorProfileIndex != 1) {
+                        Text(
+                            text = "Reset",
+                            color = Color(0xFF8E8E93),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onSelectColorProfile(1) // Reset to C400 default
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Film Profile Swatches Row (03 G, C400, 07 FF, 19 P)
-                Row(
+                // Scrollable Film Profile Swatches Row (03 G, C400, 07 FF, 19 P, 19 P2, 19 M, 22 M, EG200, FX33, FXN2)
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    ColorProfileCard(
-                        label = "03 G",
-                        topColor = Color(0xFF8D6E63),
-                        bodyColor = Color(0xFF3E2723),
-                        isSelected = selectedColorProfileIndex == 0,
-                        hasRainbow = false,
-                        onClick = { onSelectColorProfile(0) }
-                    )
-                    ColorProfileCard(
-                        label = "C400",
-                        topColor = Color.White,
-                        bodyColor = Color(0xFF00C853),
-                        isSelected = selectedColorProfileIndex == 1,
-                        hasRainbow = true,
-                        onClick = { onSelectColorProfile(1) }
-                    )
-                    ColorProfileCard(
-                        label = "07 FF",
-                        topColor = Color(0xFF80DEEA),
-                        bodyColor = Color(0xFF00796B),
-                        isSelected = selectedColorProfileIndex == 2,
-                        hasRainbow = false,
-                        onClick = { onSelectColorProfile(2) }
-                    )
-                    ColorProfileCard(
-                        label = "19 P",
-                        topColor = Color(0xFFD1C4E9),
-                        bodyColor = Color(0xFF4A148C),
-                        isSelected = selectedColorProfileIndex == 3,
-                        hasRainbow = false,
-                        onClick = { onSelectColorProfile(3) }
-                    )
+                    items(com.craftcam.app.color.profile.DazzColorProfileCatalog.PROFILES) { profile ->
+                        ColorProfileCard(
+                            label = profile.displayName,
+                            topColor = profile.topColor,
+                            bodyColor = profile.bodyColor,
+                            isSelected = selectedColorProfileIndex == profile.index,
+                            hasRainbow = profile.hasRainbow,
+                            onClick = { onSelectColorProfile(profile.index) }
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                val description = when (selectedColorProfileIndex) {
-                    0 -> "Warm daylight motion picture film with rich gold/amber tones, lifted shadows, and gentle vintage halation."
-                    1 -> "Daylight-balanced motion picture film, with vibrant color rendering based on scans from a standard film scanner."
-                    2 -> "Fine-grain negative emulsion with pastel greens, clean teals, and natural portrait skin tones."
-                    3 -> "High-speed tungsten-balanced film with distinctive violet night glow, punchy saturation, and moody contrast."
-                    else -> preset.description.ifEmpty {
-                        "Daylight-balanced motion picture film, with vibrant color rendering based on scans from a standard film scanner."
-                    }
-                }
+                val selectedProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(selectedColorProfileIndex)
 
                 Text(
-                    text = description,
+                    text = selectedProfile.description,
                     color = Color(0xFF8E8E93),
                     fontSize = 11.5.sp,
                     lineHeight = 16.sp,
@@ -916,6 +958,16 @@ private fun ColorProfileAndLensSheet(
                         .background(Color(0xFF26272C))
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+
+                if (preset.id == "ccd_flash") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Fixed film exposure", color = Color.White)
+                            Text("RAW stills in ambient light", color = Color.LightGray, fontSize = 12.sp)
+                        }
+                        Switch(checked = strictExposure, onCheckedChange = onStrictExposure)
+                    }
+                }
 
                 // Section 2: Frame & Grain Options (Images 2 & 5)
                 Row(
@@ -965,6 +1017,7 @@ private fun ColorProfileAndLensSheet(
                             // Off Option (circle with diagonal slash ⊘)
                             OptionToggleBox(
                                 isSelected = !grainEnabled,
+                                label = "Grain off",
                                 onClick = { onToggleGrain(false) }
                             ) {
                                 DisabledSlashIcon(modifier = Modifier.size(24.dp))
@@ -973,6 +1026,7 @@ private fun ColorProfileAndLensSheet(
                             // On Option (Grain texture preview)
                             OptionToggleBox(
                                 isSelected = grainEnabled,
+                                label = "Grain on",
                                 onClick = { onToggleGrain(true) }
                             ) {
                                 GrainThumbnail()
@@ -1139,12 +1193,14 @@ private fun GrainThumbnail(modifier: Modifier = Modifier) {
 private fun OptionToggleBox(
     isSelected: Boolean,
     onClick: () -> Unit,
+    label: String? = null,
     content: @Composable () -> Unit
 ) {
     val view = LocalView.current
     Box(
         modifier = Modifier
             .size(62.dp)
+            .semantics { if (label != null) contentDescription = label }
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF222328))
             .border(
