@@ -48,6 +48,21 @@ object ImageProcessor {
     private val grainPixelsCache = mutableMapOf<String, Pair<IntArray, Pair<Int, Int>>>()
     private val processingSemaphore = kotlinx.coroutines.sync.Semaphore(1)
 
+    /**
+     * Reclaims memory by clearing cached LUT tables and texture bitmaps.
+     * Called by MainActivity.onTrimMemory during memory pressure.
+     */
+    fun clearCaches() {
+        synchronized(lutCache) { lutCache.clear() }
+        synchronized(textureCache) {
+            for (bmp in textureCache.values) {
+                try { if (bmp?.isRecycled == false) bmp.recycle() } catch (_: Throwable) {}
+            }
+            textureCache.clear()
+        }
+        synchronized(grainPixelsCache) { grainPixelsCache.clear() }
+    }
+
     // ─── Main Processing & Saving Pipeline ──────────────────────────────────
     suspend fun processAndSaveImage(
         context: Context,
@@ -462,6 +477,10 @@ object ImageProcessor {
                         val pixels = IntArray(512 * 512)
                         lut512.getPixels(pixels, 0, 512, 0, 0, 512, 512)
                         lutCache[lutFileName] = pixels
+                        if (lut512 != bmp) {
+                            try { lut512.recycle() } catch (_: Throwable) {}
+                        }
+                        try { bmp.recycle() } catch (_: Throwable) {}
                         Log.d(TAG, "Cached 3D LUT: $lutFileName (512x512)")
                         pixels
                     } else null
@@ -923,6 +942,7 @@ object ImageProcessor {
 
             val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
             val rowsPerWorker = (height + numCores - 1) / numCores
+            val hasObserver = observer != null
 
             coroutineScope {
                 (0 until numCores).map { coreIndex ->
@@ -959,7 +979,7 @@ object ImageProcessor {
                                         ng = gi
                                         nb = bi
                                     }
-                                    observer?.pixel("conditioned", i, preLinLut[nr], preLinLut[ng], preLinLut[nb])
+                                    if (hasObserver) observer?.pixel("conditioned", i, preLinLut[nr], preLinLut[ng], preLinLut[nb])
                                     val r0 = lutBase[nr]
                                     val r1 = r0 + 1
                                     val greenRow = lutBase[ng] * 512
@@ -1057,7 +1077,7 @@ object ImageProcessor {
                                     b = bi / 255.0f
                                 }
 
-                                observer?.pixel("lut", i, r, g, b)
+                                if (hasObserver) observer?.pixel("lut", i, r, g, b)
                                 // A. Preset & User Temperature / Tint (Warm/Cool Shift)
                                 if (abs(effectiveTemp) > 0.001f) {
                                     r += 0.10f * effectiveTemp
@@ -1069,7 +1089,7 @@ object ImageProcessor {
                                     b -= 0.03f * effectiveTint
                                 }
 
-                                observer?.pixel("white-balance", i, r, g, b)
+                                if (hasObserver) observer?.pixel("white-balance", i, r, g, b)
                                 if (stageToneCurve) {
                                     var curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                                     if (!isNatural) {
@@ -1080,7 +1100,7 @@ object ImageProcessor {
                                         curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                                     }
 
-                                    observer?.pixel("toe", i, r, g, b)
+                                    if (hasObserver) observer?.pixel("toe", i, r, g, b)
                                     // B. Preset & User Contrast
                                     if (abs(effectiveContrast - 1.0f) > 0.01f) {
                                         val pivot = 0.26f
@@ -1089,7 +1109,7 @@ object ImageProcessor {
                                         b = (b - pivot) * effectiveContrast + pivot
                                     }
 
-                                    observer?.pixel("contrast", i, r, g, b)
+                                    if (hasObserver) observer?.pixel("contrast", i, r, g, b)
                                     if (v2) {
                                         val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                                         val lift = com.craftcam.app.camera.profile.lowerMidtoneLift(luma, film.lowerMidtoneStrength) * intensity
@@ -1105,7 +1125,7 @@ object ImageProcessor {
                                         b = (b * clarityBoost + clarityOffset).coerceIn(0f, 1f)
                                     }
 
-                                    observer?.pixel("midtone", i, r, g, b)
+                                    if (hasObserver) observer?.pixel("midtone", i, r, g, b)
                                     // C. Preset & User Saturation with Smart Vibrance Protection
                                     curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                                     if (v2) {
@@ -1142,14 +1162,14 @@ object ImageProcessor {
                                         curLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
                                     }
 
-                                    observer?.pixel("saturation-gamma", i, r, g, b)
+                                    if (hasObserver) observer?.pixel("saturation-gamma", i, r, g, b)
                                     // E. Shadow Tint
                                     val shadowWeight = (1.0f - curLuma * 3.0f).coerceIn(0.0f, 1.0f)
                                     r += shadowR * shadowWeight
                                     g += shadowG * shadowWeight
                                     b += shadowB * shadowWeight
 
-                                    observer?.pixel("shadow-tint", i, r, g, b)
+                                    if (hasObserver) observer?.pixel("shadow-tint", i, r, g, b)
                                     // F. Filmic Highlight Rolloff & Desaturating Shoulder (Ratio-Preserving)
                                     if (hasRollOff) {
                                         val maxC = maxOf(r, maxOf(g, b))
@@ -1169,7 +1189,7 @@ object ImageProcessor {
                                         b = b * (1.0f - desat) + curLuma * desat
                                     }
 
-                                    observer?.pixel("shoulder", i, r, g, b)
+                                    if (hasObserver) observer?.pixel("shoulder", i, r, g, b)
                                     // F2. Lifted Toe & Shoulder Compression (Lightroom Film Profile Parity)
                                     if (hasToeOrShoulder) {
                                         r = (toeLift + r.coerceIn(0f, 1f) * (shoulderClip - toeLift)).coerceIn(0f, 1f)
@@ -1185,7 +1205,7 @@ object ImageProcessor {
                                     }
                                 }
 
-                                observer?.pixel("fade", i, r, g, b)
+                                if (hasObserver) observer?.pixel("fade", i, r, g, b)
                                 // Flattering Skin Tone Radiance (Dazz Cam HighPassSkinSmoothing parity)
                                 if (!v2 && r > g && g > b && r > 0.22f && r < 0.90f) {
                                     val skinFactor = ((r - b) * 2.2f).coerceIn(0.0f, 1.0f)
@@ -1225,7 +1245,7 @@ object ImageProcessor {
                                     b = (b * 0.30f + (b * tb * 1.30f) * 0.70f).coerceIn(0f, 1f)
                                 }
 
-                                observer?.pixel("vignette", i, r, g, b)
+                                if (hasObserver) observer?.pixel("vignette", i, r, g, b)
                                 // Fused Multi-Tone Film Halide Grain with Anti-Tiling, Dye Cloud Separation & S-Curve Weighting
                                 if (stageGrain && grainPixels != null && colBaseX != null && rowBaseY != null && rowPhaseX != null && colPhaseY != null) {
                                     var gx = (colBaseX[pxX] + rowPhaseX[pxY]) % gw
@@ -1354,7 +1374,7 @@ object ImageProcessor {
                                     b += pDelta
                                 }
 
-                                observer?.pixel("grain", i, r, g, b)
+                                if (hasObserver) observer?.pixel("grain", i, r, g, b)
                                 val ir2 = (r.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                                 val ig2 = (g.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                                 val ib2 = (b.coerceIn(0.0f, 1.0f) * 255.0f).toInt()

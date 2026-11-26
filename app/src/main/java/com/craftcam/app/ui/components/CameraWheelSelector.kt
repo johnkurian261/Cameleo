@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
@@ -202,8 +203,11 @@ fun CameraWheelSelector(
                                 y = arcOffsetY.roundToInt()
                             )
                         }
-                        .scale(scale)
-                        .alpha(alpha)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            this.alpha = alpha
+                        }
                         .width(78.dp)
                         .height(90.dp)
                         .clip(RoundedCornerShape(12.dp))

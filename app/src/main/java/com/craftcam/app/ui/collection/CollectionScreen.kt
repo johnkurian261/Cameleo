@@ -127,6 +127,10 @@ fun CollectionScreen(
         allAvailablePresets.filter { it.id == currentPreset.id || it.id !in hidden }
     }
 
+    val activeCategories = remember(visibleCategories, shelf) {
+        visibleCategories.filter { cat -> shelf.any { it.category == cat } }
+    }
+
     // Resolves authentic sample images for the selected preset
     val currentSampleResIds = remember(selectedPresetState.id) {
         resolveSampleResIds(context, selectedPresetState)
@@ -262,7 +266,7 @@ fun CollectionScreen(
                             }
                         )
                     }
-                    items(visibleCategories.filter { cat -> shelf.any { it.category == cat } }) { cat ->
+                    items(activeCategories, key = { it.name }) { cat ->
                         val count = shelf.count { it.category == cat }
                         CategoryTabPill(
                             title = "${cat.displayName.uppercase()} ($count)",
@@ -941,7 +945,7 @@ private fun ColorProfileAndLensSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(supportedProfiles) { profile ->
+                    items(supportedProfiles, key = { it.id }) { profile ->
                         val thumbRes = remember(profile.thumbnailDrawableName) {
                             context.resources.getIdentifier(profile.thumbnailDrawableName, "drawable", context.packageName)
                         }
@@ -1069,7 +1073,7 @@ private fun ColorProfileAndLensSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(supportedLenses) { lensType ->
+                    items(supportedLenses, key = { it.name }) { lensType ->
                         val isMounted = activeLensType == lensType
 
                         Box(

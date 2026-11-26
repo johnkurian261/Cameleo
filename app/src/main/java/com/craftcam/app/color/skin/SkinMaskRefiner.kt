@@ -36,7 +36,7 @@ class SkinMaskRefiner {
         if (total == 0 || fusedMask.isEmpty()) return fusedMask
 
         val radius = max(2, (minOf(width, height) * featherRadiusFrac).toInt())
-        val refined = FloatArray(total)
+        val refined = com.craftcam.app.processor.FloatArrayPool.acquire(total)
         val temp = com.craftcam.app.processor.FloatArrayPool.acquire(total)
 
         val windowSize = 2 * radius + 1

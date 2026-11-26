@@ -126,6 +126,7 @@ class MainActivity : ComponentActivity() {
             com.craftcam.app.processor.BitmapPool.clear()
             com.craftcam.app.processor.IntArrayPool.clear()
             com.craftcam.app.processor.FloatArrayPool.clear()
+            com.craftcam.app.processor.ImageProcessor.clearCaches()
         }
     }
 
@@ -135,6 +136,7 @@ class MainActivity : ComponentActivity() {
         com.craftcam.app.processor.BitmapPool.clear()
         com.craftcam.app.processor.IntArrayPool.clear()
         com.craftcam.app.processor.FloatArrayPool.clear()
+        com.craftcam.app.processor.ImageProcessor.clearCaches()
     }
 }
 
