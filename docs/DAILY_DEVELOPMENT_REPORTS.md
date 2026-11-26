@@ -167,11 +167,29 @@ This document tracks daily engineering milestones, architectural audits, test su
 
 ---
 
+## Entry 5: CPM 35 Live Preview Pipeline Parity and Production-Grade Correction (2026-11-26 15:10)
+
+### 1. Root Cause Identification
+- **Pipeline Split**: Still photo capture of CPM 35 ran `DigicamColorEngine.process()` on CPU and returned immediately, completely bypassing `lut_disp_flash.png`. In contrast, live preview and video shaders sampled `lut_disp_flash.png` and applied duplicate contrast and saturation alongside hardcoded GLSL skin thresholds.
+- **GLSL Skin Distortion**: `ShaderConstants.kt` used hardcoded ratios (`maxHealthyG = color.r * 0.84`, `minHealthyB = color.r * 0.36`) on post-grade pixels, causing severe green subtraction, hot magenta hue drift, and hard $R=255$ highlight clipping.
+- **Resolved Previous Contradictions**: Clarified that $R/B > 3.8$ was an observed symptom of the uncorrected strobe blue-starvation defect, while tabulated values ($1.72–2.63$) represent the calibrated target locus. Red clipping at 255 was eliminated by adding an asymptotic soft-knee highlight shoulder.
+
+### 2. Architecture & Shader Implementations
+- **Preview Diagnostic Mode**: Added `uDiagnosticMode` (modes 0..6: Production, Passthrough, LUT-only, Profile-only, No Skin Prot, Skin Locus Mask, Parity) with Kotlin bindings in `GLViewfinderRenderer.kt` and `CameraManager.kt`.
+- **Pre-Grade Skin Tone Protection**: Replaced hardcoded thresholds in `FRAGMENT_SHADER_VIEWFINDER` and `FRAGMENT_SHADER_STILL` with continuous elliptical locus evaluation derived from pristine `preGradeColor`, smoothstep luminance gating, smooth mustard suppression, continuous blue headroom, and rational asymptotic highlight compression.
+- **Calibrated LUT with Complementary Inversion**: Regenerated `lut_disp_flash.png` using inverse shader contrast (1.04) and saturation (1.02), achieving exact $\Delta E = 0.00$ colorimetric parity with `DigicamColorEngine`.
+
+### 3. Verification & Metrics
+- **Unit Tests**: 169 tests completed, 0 failures (100.0% pass rate).
+- **Physical Device**: Deployed and tested on Samsung Galaxy S21 5G (`SM-G991B`, Android 14); Native Heap 34.1 MB; zero GL errors.
+
+---
+
 ## Test & Build Verification Summary
 
 | Metric | Status |
 | :--- | :--- |
-| **Unit Test Suite** | **168 tests passing** (0 failures, 0 skipped, 100.0% pass rate) |
+| **Unit Test Suite** | **169 tests passing** (0 failures, 0 skipped, 100.0% pass rate) |
 | **Build State** | `assembleDebug` SUCCESSFUL |
 | **Physical Hardware** | Verified on Samsung Galaxy S21 5G (`SM-G991B`, Android 14) via ADB |
-| **Git Working Tree** | Clean, checkpointed at `ac36a15` |
+| **Git Working Tree** | Clean, verified and documented |

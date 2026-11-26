@@ -169,6 +169,16 @@ uniform bool uZebraEnabled;
 uniform float uZebraThreshold;
 uniform float uZebraTime;
 
+// Preview Pipeline Diagnostic Mode
+// 0 = Production normal
+// 1 = Passthrough (Raw Camera Feed, zero effects)
+// 2 = LUT Only (Bypasses adjustments & skin protection)
+// 3 = Profile Adjustments Only (Bypasses LUT)
+// 4 = Combined LUT + Profile (Skin protection bypassed)
+// 5 = Skin Protection Mask Visualization
+// 6 = Complete CPM 35 / Production Rendering
+uniform int uDiagnosticMode;
+
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
     vec2 p = mod(coord, 1024.0) + vec2(fract(seed * 1.6180339887), fract(seed * 1.4142135623)) * 64.0;
@@ -327,6 +337,33 @@ void main() {
     }
 
     vec3 color = srcColor.rgb;
+    vec3 preGradeColor = color;
+
+    // Diagnostic Mode 1: Passthrough (Raw Camera Feed, zero effects)
+    if (uDiagnosticMode == 1) {
+        fragColor = vec4(preGradeColor, 1.0);
+        return;
+    }
+
+    // Pre-grade normalized chromaticity & continuous physiological skin locus (derived from uncorrupted camera input)
+    float preRgbSum = max(0.0001, preGradeColor.r + preGradeColor.g + preGradeColor.b);
+    float preNormR = preGradeColor.r / preRgbSum;
+    float preNormG = preGradeColor.g / preRgbSum;
+    float preLuma = dot(preGradeColor, vec3(0.2126, 0.7152, 0.0722));
+
+    // Elliptical skin locus in normalized chromaticity (major axis along melanin line: theta = -0.42 rad)
+    // Center: (0.42, 0.32), Axis U (melanin shift): 0.080, Axis V (erythema / blood shift): 0.038
+    float dr = preNormR - 0.42;
+    float dg = preNormG - 0.32;
+    float uDist = dr * 0.913 - dg * 0.408;
+    float vDist = dr * 0.408 + dg * 0.913;
+    float skinDistSq = (uDist * uDist) / (0.080 * 0.080) + (vDist * vDist) / (0.038 * 0.038);
+    float isSkinProb = exp(-0.5 * skinDistSq);
+
+    // Continuous luminance gating: avoids crushed dark shadows (<0.08) and specular highlights (>0.85)
+    float lumaGate = smoothstep(0.08, 0.20, preLuma) * (1.0 - smoothstep(0.85, 0.98, preLuma));
+    float rawSkinWeight = isSkinProb * lumaGate;
+    float skinWeight = clamp(rawSkinWeight * uSkinProtection, 0.0, 1.0);
 
     // 2-D3D. Live Viewfinder Stability:
     // D3D stereoscopy is synthesized upon capture as an authentic multi-frame wigglegram.
@@ -411,7 +448,9 @@ void main() {
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
     // 2d. Photochemical 3D Film Emulsion LUT with Dual-LUT Crossfading (Section 7)
-    if (uLutEnabled && uDebugStageLut) {
+    if (uDiagnosticMode == 3) {
+        // Mode 3: Profile Adjustments Only (Bypasses LUT)
+    } else if (uLutEnabled && uDebugStageLut) {
         vec3 lutInput = color;
         if (uLutInputSpace == 1) { // LINEAR
             lutInput = pow(max(lutInput, vec3(0.0)), vec3(2.2));
@@ -436,6 +475,12 @@ void main() {
             }
         }
         color = mix(color, lutColor, clamp(uFilterIntensity, 0.0, 1.0));
+    }
+
+    // Diagnostic Mode 2: LUT Only (Bypasses profile adjustments and skin protection)
+    if (uDiagnosticMode == 2) {
+        fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+        return;
     }
 
     // 2e. CAMELEO Natural Mode Processing
@@ -527,41 +572,39 @@ void main() {
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
 
-        // 5b. Authentic Photographic Skin Tone Protection (Live Viewfinder)
-        if (uSkinProtection > 0.01) {
-            float yVal = dot(color, vec3(0.299, 0.587, 0.114));
-            float cbVal = dot(color, vec3(-0.1687, -0.3313, 0.5000)) + 0.5;
-            float crVal = dot(color, vec3(0.5000, -0.4187, -0.0813)) + 0.5;
-            
-            // Calibrated physiological skin locus (YCbCr + normalized chromaticity)
-            float dCb = (cbVal - 0.40) / 0.09;
-            float dCr = (crVal - 0.59) / 0.10;
-            float isSkin = exp(-0.5 * (dCb * dCb + dCr * dCr));
-            
-            float rgbSum = max(0.001, color.r + color.g + color.b);
-            float rNorm = color.r / rgbSum;
-            float gNorm = color.g / rgbSum;
-            bool validChroma = (rNorm >= 0.33 && rNorm <= 0.60) && (gNorm >= 0.24 && gNorm <= 0.40);
-            bool validOrder = (color.r >= color.g * 0.90) && (color.g >= color.b * 0.75);
-            bool validLuma = (yVal > 0.12 && yVal < 0.96);
-            
-            if (validChroma && validOrder && validLuma && isSkin > 0.10) {
-                float skinWeight = clamp(isSkin * uSkinProtection, 0.0, 1.0);
-                
-                // Guard against excessive yellow chroma (mustard hue, where G approaches R)
-                float maxHealthyG = color.r * 0.84;
-                if (color.g > maxHealthyG) {
-                    float excessG = color.g - maxHealthyG;
-                    color.g -= excessG * skinWeight * 0.80;
-                    color.r += excessG * skinWeight * 0.15; // Healthy blood perfusion (+a*)
-                }
-                // Guard against blue channel starvation (preserves radiant translucent skin)
-                float minHealthyB = color.r * 0.36;
-                if (color.b < minHealthyB) {
-                    color.b += (minHealthyB - color.b) * skinWeight * 0.70;
-                }
-                luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        // 5b. Authentic Photographic Skin Tone Protection (Redesigned Continuous Chromaticity Preservation)
+        // Diagnostic Mode 4: Combined LUT + Profile (Skin protection bypassed)
+        // Diagnostic Mode 5: Skin Protection Mask Visualization
+        if (uDiagnosticMode == 5) {
+            fragColor = vec4(vec3(skinWeight), 1.0);
+            return;
+        }
+
+        if (skinWeight > 0.001 && uDiagnosticMode != 4) {
+            // 1. Smooth Mustard / Excess Yellow-Green Suppression (Prevents sickly green-yellow cast)
+            float postRgbSum = max(0.0001, color.r + color.g + color.b);
+            float postNormG = color.g / postRgbSum;
+            float mustardExcess = smoothstep(0.33, 0.38, postNormG);
+            if (mustardExcess > 0.0) {
+                float targetG = postRgbSum * 0.315;
+                color.g = mix(color.g, targetG, mustardExcess * skinWeight * 0.75);
             }
+
+            // 2. Continuous Blue Headroom Preservation (Prevents plastic yellowing under direct flash/tungsten)
+            float minBlue = color.r * 0.30;
+            if (color.b < minBlue) {
+                color.b += (minBlue - color.b) * skinWeight * 0.60;
+            }
+
+            // 3. Asymptotic Soft-Knee Highlight Compression (Prevents hard R=255 clipping on skin highlights)
+            if (color.r > 0.82) {
+                float knee = 0.82;
+                float excess = color.r - knee;
+                float headroom = 1.0 - knee;
+                float compressedR = knee + headroom * (excess / (excess + headroom * 0.50));
+                color.r = mix(color.r, compressedR, skinWeight);
+            }
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
 
         // 6. Gamma Response
@@ -880,6 +923,16 @@ uniform bool uZebraEnabled;
 uniform float uZebraThreshold;
 uniform float uZebraTime;
 
+// Preview Pipeline Diagnostic Mode
+// 0 = Production normal
+// 1 = Passthrough (Raw Camera Feed, zero effects)
+// 2 = LUT Only (Bypasses adjustments & skin protection)
+// 3 = Profile Adjustments Only (Bypasses LUT)
+// 4 = Combined LUT + Profile (Skin protection bypassed)
+// 5 = Skin Protection Mask Visualization
+// 6 = Complete CPM 35 / Production Rendering
+uniform int uDiagnosticMode;
+
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
     vec2 p = mod(coord, 1024.0) + vec2(fract(seed * 1.6180339887), fract(seed * 1.4142135623)) * 64.0;
@@ -1029,6 +1082,33 @@ void main() {
     }
 
     vec3 color = srcColor.rgb;
+    vec3 preGradeColor = color;
+
+    // Diagnostic Mode 1: Passthrough (Raw Camera Feed, zero effects)
+    if (uDiagnosticMode == 1) {
+        fragColor = vec4(preGradeColor, 1.0);
+        return;
+    }
+
+    // Pre-grade normalized chromaticity & continuous physiological skin locus (derived from uncorrupted camera input)
+    float preRgbSum = max(0.0001, preGradeColor.r + preGradeColor.g + preGradeColor.b);
+    float preNormR = preGradeColor.r / preRgbSum;
+    float preNormG = preGradeColor.g / preRgbSum;
+    float preLuma = dot(preGradeColor, vec3(0.2126, 0.7152, 0.0722));
+
+    // Elliptical skin locus in normalized chromaticity (major axis along melanin line: theta = -0.42 rad)
+    // Center: (0.42, 0.32), Axis U (melanin shift): 0.080, Axis V (erythema / blood shift): 0.038
+    float dr = preNormR - 0.42;
+    float dg = preNormG - 0.32;
+    float uDist = dr * 0.913 - dg * 0.408;
+    float vDist = dr * 0.408 + dg * 0.913;
+    float skinDistSq = (uDist * uDist) / (0.080 * 0.080) + (vDist * vDist) / (0.038 * 0.038);
+    float isSkinProb = exp(-0.5 * skinDistSq);
+
+    // Continuous luminance gating: avoids crushed dark shadows (<0.08) and specular highlights (>0.85)
+    float lumaGate = smoothstep(0.08, 0.20, preLuma) * (1.0 - smoothstep(0.85, 0.98, preLuma));
+    float rawSkinWeight = isSkinProb * lumaGate;
+    float skinWeight = clamp(rawSkinWeight * uSkinProtection, 0.0, 1.0);
 
     // 2-D3D. Stable D3D video/preview (zero UV stretching).
 
@@ -1108,7 +1188,9 @@ void main() {
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
     // 2d. Photochemical 3D Film Emulsion LUT with Dual-LUT Crossfading (Section 7)
-    if (uLutEnabled && uDebugStageLut) {
+    if (uDiagnosticMode == 3) {
+        // Mode 3: Profile Adjustments Only (Bypasses LUT)
+    } else if (uLutEnabled && uDebugStageLut) {
         vec3 lutInput = color;
         if (uLutInputSpace == 1) { // LINEAR
             lutInput = pow(max(lutInput, vec3(0.0)), vec3(2.2));
@@ -1133,6 +1215,12 @@ void main() {
             }
         }
         color = mix(color, lutColor, clamp(uFilterIntensity, 0.0, 1.0));
+    }
+
+    // Diagnostic Mode 2: LUT Only (Bypasses profile adjustments and skin protection)
+    if (uDiagnosticMode == 2) {
+        fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+        return;
     }
 
     // 2e. CAMELEO Natural Mode Processing
@@ -1220,41 +1308,39 @@ void main() {
             luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
 
-        // 5b. Authentic Photographic Skin Tone Protection (Live Video Viewfinder)
-        if (uSkinProtection > 0.01) {
-            float yVal = dot(color, vec3(0.299, 0.587, 0.114));
-            float cbVal = dot(color, vec3(-0.1687, -0.3313, 0.5000)) + 0.5;
-            float crVal = dot(color, vec3(0.5000, -0.4187, -0.0813)) + 0.5;
-            
-            // Calibrated physiological skin locus (YCbCr + normalized chromaticity)
-            float dCb = (cbVal - 0.40) / 0.09;
-            float dCr = (crVal - 0.59) / 0.10;
-            float isSkin = exp(-0.5 * (dCb * dCb + dCr * dCr));
-            
-            float rgbSum = max(0.001, color.r + color.g + color.b);
-            float rNorm = color.r / rgbSum;
-            float gNorm = color.g / rgbSum;
-            bool validChroma = (rNorm >= 0.33 && rNorm <= 0.60) && (gNorm >= 0.24 && gNorm <= 0.40);
-            bool validOrder = (color.r >= color.g * 0.90) && (color.g >= color.b * 0.75);
-            bool validLuma = (yVal > 0.12 && yVal < 0.96);
-            
-            if (validChroma && validOrder && validLuma && isSkin > 0.10) {
-                float skinWeight = clamp(isSkin * uSkinProtection, 0.0, 1.0);
-                
-                // Guard against excessive yellow chroma (mustard hue, where G approaches R)
-                float maxHealthyG = color.r * 0.84;
-                if (color.g > maxHealthyG) {
-                    float excessG = color.g - maxHealthyG;
-                    color.g -= excessG * skinWeight * 0.80;
-                    color.r += excessG * skinWeight * 0.15; // Healthy blood perfusion (+a*)
-                }
-                // Guard against blue channel starvation (preserves radiant translucent skin)
-                float minHealthyB = color.r * 0.36;
-                if (color.b < minHealthyB) {
-                    color.b += (minHealthyB - color.b) * skinWeight * 0.70;
-                }
-                luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        // 5b. Authentic Photographic Skin Tone Protection (Redesigned Continuous Chromaticity Preservation)
+        // Diagnostic Mode 4: Combined LUT + Profile (Skin protection bypassed)
+        // Diagnostic Mode 5: Skin Protection Mask Visualization
+        if (uDiagnosticMode == 5) {
+            fragColor = vec4(vec3(skinWeight), 1.0);
+            return;
+        }
+
+        if (skinWeight > 0.001 && uDiagnosticMode != 4) {
+            // 1. Smooth Mustard / Excess Yellow-Green Suppression (Prevents sickly green-yellow cast)
+            float postRgbSum = max(0.0001, color.r + color.g + color.b);
+            float postNormG = color.g / postRgbSum;
+            float mustardExcess = smoothstep(0.33, 0.38, postNormG);
+            if (mustardExcess > 0.0) {
+                float targetG = postRgbSum * 0.315;
+                color.g = mix(color.g, targetG, mustardExcess * skinWeight * 0.75);
             }
+
+            // 2. Continuous Blue Headroom Preservation (Prevents plastic yellowing under direct flash/tungsten)
+            float minBlue = color.r * 0.30;
+            if (color.b < minBlue) {
+                color.b += (minBlue - color.b) * skinWeight * 0.60;
+            }
+
+            // 3. Asymptotic Soft-Knee Highlight Compression (Prevents hard R=255 clipping on skin highlights)
+            if (color.r > 0.82) {
+                float knee = 0.82;
+                float excess = color.r - knee;
+                float headroom = 1.0 - knee;
+                float compressedR = knee + headroom * (excess / (excess + headroom * 0.50));
+                color.r = mix(color.r, compressedR, skinWeight);
+            }
+            luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         }
 
         // 6. Gamma

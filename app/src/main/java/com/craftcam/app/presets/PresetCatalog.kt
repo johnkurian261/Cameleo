@@ -416,8 +416,8 @@ object PresetCatalog {
                 saturation = 1.02f,
                 temperature = 0.0f,
                 tint = 0.0f,
-                fade = 0.02f,
-                highlightRollOff = 0.88f
+                fade = 0.0f,
+                highlightRollOff = 0.94f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.20f, scale = 0.85f, assetPath = "", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.35f, highlightStrength = 0.12f),
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.84f, chromaticAberration = 0.006f, softness = 0.10f),

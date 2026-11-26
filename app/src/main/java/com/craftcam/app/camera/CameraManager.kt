@@ -289,6 +289,15 @@ class CameraManager(private val context: Context) {
         glRenderer?.onFrameAvailableListener = {
             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
         }
+
+    fun setPreviewDiagnosticMode(mode: Int) {
+        glRenderer?.diagnosticMode = mode.coerceIn(0, 6)
+        glRenderer?.requestRenderSafe()
+    }
+
+    fun getPreviewDiagnosticMode(): Int {
+        return glRenderer?.diagnosticMode ?: 0
+    }
         glRenderer?.setMirrorFrontPreview(AppSettingsStore.get(context).current.mirrorFrontCamera)
         glRenderer?.updatePreset(currentPreset)
         glRenderer?.updateTuning(_uiState.value.tuning)

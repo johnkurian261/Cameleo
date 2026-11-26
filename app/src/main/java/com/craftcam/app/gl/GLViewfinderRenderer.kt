@@ -131,6 +131,7 @@ class GLViewfinderRenderer(
     private var uLowerMidtoneStrengthLoc = -1
     private var uClarityStrengthLoc = -1
     private var uSkinProtectionLoc = -1
+    private var uDiagnosticModeLoc = -1
     private var uLutEnabledLoc = -1
     private var uFilterIntensityLoc = -1
     private var uNaturalModeEnabledLoc = -1
@@ -189,6 +190,9 @@ class GLViewfinderRenderer(
 
     @Volatile
     private var isLensFlashActive: Boolean = false
+
+    @Volatile
+    var diagnosticMode: Int = 0
 
     fun updateLensProfile(profile: LensProfile, isFlashActive: Boolean) {
         currentLensProfile = profile
@@ -864,6 +868,7 @@ class GLViewfinderRenderer(
         uLowerMidtoneStrengthLoc = GLES30.glGetUniformLocation(programId, "uLowerMidtoneStrength")
         uClarityStrengthLoc = GLES30.glGetUniformLocation(programId, "uClarityStrength")
         uSkinProtectionLoc = GLES30.glGetUniformLocation(programId, "uSkinProtection")
+        uDiagnosticModeLoc = GLES30.glGetUniformLocation(programId, "uDiagnosticMode")
         uLutEnabledLoc = GLES30.glGetUniformLocation(programId, "uLutEnabled")
         uFilterIntensityLoc = GLES30.glGetUniformLocation(programId, "uFilterIntensity")
         uNaturalModeEnabledLoc = GLES30.glGetUniformLocation(programId, "uNaturalModeEnabled")
@@ -1076,6 +1081,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uLowerMidtoneStrengthLoc, 0f)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
+            if (uDiagnosticModeLoc != -1) GLES30.glUniform1i(uDiagnosticModeLoc, diagnosticMode)
             if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
             if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, 0)
             GLES30.glUniform3f(uShadowTintLoc, 0f, 0f, 0f)
@@ -1199,6 +1205,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uLowerMidtoneStrengthLoc, 0f)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
+            if (uDiagnosticModeLoc != -1) GLES30.glUniform1i(uDiagnosticModeLoc, diagnosticMode)
             if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, 0)
             GLES30.glUniform3f(uShadowTintLoc, 0f, 0f, 0f)
             GLES30.glUniform1f(uGammaLoc, 1.0f)
@@ -1387,6 +1394,7 @@ class GLViewfinderRenderer(
                 val skinProt = if (isMono) 0.0f else unifiedProfile.filmProfile.skinProtection
                 GLES30.glUniform1f(uSkinProtectionLoc, skinProt)
             }
+            if (uDiagnosticModeLoc != -1) GLES30.glUniform1i(uDiagnosticModeLoc, diagnosticMode)
 
             val isPerformanceThrottled = frameMetrics.isThrottled
 

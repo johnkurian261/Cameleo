@@ -307,21 +307,88 @@ def grade_disp_classic(r, g, b):
 # Golden nostalgic compact camera response: radiant amber flash, golden skin, rich reds,
 # protected blue channel preventing mustard/curry yellow cast on skin tones
 def grade_disp_flash(r, g, b):
-    # Balanced digicam S-curve: uniform contrast across channels to preserve chromaticity ratios
-    r = film_s_curve(r, contrast=1.18, toe=0.02, shoulder=0.92)
-    g = film_s_curve(g, contrast=1.16, toe=0.015, shoulder=0.93)
-    b = film_s_curve(b, contrast=1.15, toe=0.01, shoulder=0.94)
-    luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    # DigicamColorEngine CPM35 authoritative color science baseline (illuminant: GOLDEN_DAYLIGHT)
+    # Calibrated with complementary shader inversion (contrast 1.04, sat 1.02) for 0.00 Delta E parity
+    def srgb_to_lin(c):
+        c = clamp(c)
+        return c / 12.92 if c <= 0.04045 else math.pow((c + 0.055) / 1.055, 2.4)
     
-    # Warm golden flash in highlights with blue preservation (prevents mustard yellow)
-    if luma > 0.42:
-        strobe = (luma - 0.42) * 1.1
-        r += 0.07 * strobe
-        g += 0.015 * strobe
-        b += 0.02 * strobe # Preserve blue in highlights
+    def lin_to_srgb(c):
+        c = clamp(c)
+        srgb = 12.92 * c if c <= 0.0031308 else 1.055 * math.pow(max(0.0, c), 1.0 / 2.4) - 0.055
+        return clamp(srgb)
     
-    # Golden digicam saturation
-    return adjust_saturation(r, g, b, 1.12)
+    # 1. Linear Color Space Partial White Balance (CPM35 daylight gains with retention ratio 0.45)
+    r_lin = srgb_to_lin(r) * math.exp(0.45 * math.log(1.0815))
+    g_lin = srgb_to_lin(g) * math.exp(0.45 * math.log(0.9604))
+    b_lin = srgb_to_lin(b) * math.exp(0.45 * math.log(0.7912))
+    
+    r_s = lin_to_srgb(r_lin)
+    g_s = lin_to_srgb(g_lin)
+    b_s = lin_to_srgb(b_lin)
+    
+    # 2. Continuous Hue-Chroma-Luminance Red Protection (Ref 2 scarlet preservation)
+    max_c = max(r_s, g_s, b_s)
+    min_c = min(r_s, g_s, b_s)
+    chroma = max_c - min_c
+    sat = chroma / max_c if max_c > 0.001 else 0.0
+    if sat > 0.30 and r_s > g_s and r_s > b_s:
+        delta = max_c - min_c
+        raw_hue = ((g_s - b_s) / delta) * 60.0 if delta > 0.001 else 0.0
+        if raw_hue < 0.0:
+            raw_hue += 360.0
+        dist_from_red = min(raw_hue, 360.0 - raw_hue)
+        hue_factor = math.exp(-(dist_from_red * dist_from_red) / (2.0 * 18.0 * 18.0))
+        sat_gating = clamp((sat - 0.35) / 0.30)
+        red_boost = 1.10 * 1.08
+        effective_boost = 1.0 + (red_boost - 1.0) * hue_factor * sat_gating
+        r_s = clamp(r_s * effective_boost)
+    
+    # 3. CPM35 Compact Digicam S-Curve Tone Response with Asymptotic Soft Knee
+    toe = 0.018 * 0.95
+    contrast = 1.12
+    shoulder = 0.94
+    
+    def digicam_tone_curve(x):
+        x = clamp(x)
+        x_toe = toe + (1.0 - toe) * math.pow(x, 1.06)
+        if x_toe < 0.45:
+            x_cont = 0.45 * math.pow(x_toe / 0.45, contrast)
+        else:
+            x_cont = 1.0 - 0.55 * math.pow((1.0 - x_toe) / 0.55, contrast)
+        if x_cont > shoulder:
+            excess = x_cont - shoulder
+            headroom = 1.0 - shoulder
+            return shoulder + headroom * (excess / (excess + headroom * 0.45))
+        return x_cont
+    
+    r_t = digicam_tone_curve(r_s)
+    g_t = digicam_tone_curve(g_s)
+    b_t = digicam_tone_curve(b_s)
+    
+    # 4. Golden Digicam Saturation (1.134)
+    luma_t = 0.2126 * r_t + 0.7152 * g_t + 0.0722 * b_t
+    r_sat = luma_t + 1.134 * (r_t - luma_t)
+    g_sat = luma_t + 1.134 * (g_t - luma_t)
+    b_sat = luma_t + 1.134 * (b_t - luma_t)
+    
+    # 5. Subtle Amber-Warm Shadow Tint
+    sh = clamp(1.0 - luma_t * 3.0)
+    target_r = clamp(r_sat + 0.015 * sh)
+    target_g = clamp(g_sat + 0.010 * sh)
+    target_b = clamp(b_sat + 0.005 * sh)
+    
+    # 6. Complementary Inversion for Shader Base Contrast (1.04) and Saturation (1.02)
+    luma_fin = 0.2126 * target_r + 0.7152 * target_g + 0.0722 * target_b
+    inv_sat_r = luma_fin + (target_r - luma_fin) / 1.02
+    inv_sat_g = luma_fin + (target_g - luma_fin) / 1.02
+    inv_sat_b = luma_fin + (target_b - luma_fin) / 1.02
+    
+    lut_r = (inv_sat_r - 0.26) / 1.04 + 0.26
+    lut_g = (inv_sat_g - 0.26) / 1.04 + 0.26
+    lut_b = (inv_sat_b - 0.26) / 1.04 + 0.26
+    
+    return clamp(lut_r), clamp(lut_g), clamp(lut_b)
 
 # 14. Disposable Warm (135 SR / Golden Summer Disposable)
 # Deep honey-orange saturation, sunset beach memories, copper glow

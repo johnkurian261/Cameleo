@@ -126,6 +126,7 @@ class GPUVideoProcessor(
     private var uLowerMidtoneStrengthLoc = -1
     private var uClarityStrengthLoc = -1
     private var uSkinProtectionLoc = -1
+    private var uDiagnosticModeLoc = -1
     private var uToeLiftLoc = -1
     private var uShoulderClipLoc = -1
     private var uLensTypeLoc = -1
@@ -329,6 +330,7 @@ class GPUVideoProcessor(
         uLowerMidtoneStrengthLoc = GLES30.glGetUniformLocation(programId, "uLowerMidtoneStrength")
         uClarityStrengthLoc = GLES30.glGetUniformLocation(programId, "uClarityStrength")
         uSkinProtectionLoc = GLES30.glGetUniformLocation(programId, "uSkinProtection")
+        uDiagnosticModeLoc = GLES30.glGetUniformLocation(programId, "uDiagnosticMode")
         uToeLiftLoc = GLES30.glGetUniformLocation(programId, "uToeLift")
         uShoulderClipLoc = GLES30.glGetUniformLocation(programId, "uShoulderClip")
         uLensTypeLoc = GLES30.glGetUniformLocation(programId, "uLensType")
@@ -539,6 +541,7 @@ class GPUVideoProcessor(
             GLES30.glUniform1f(uLowerMidtoneStrengthLoc, unifiedProfile.filmProfile.lowerMidtoneStrength * intensity)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
+            if (uDiagnosticModeLoc != -1) GLES30.glUniform1i(uDiagnosticModeLoc, 0)
             if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, unifiedProfile.filmProfile.toeLift * intensity)
             if (uShoulderClipLoc != -1) {
                 val clip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity

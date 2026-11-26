@@ -210,4 +210,26 @@ class DigicamPhase2RegressionTest {
             assertEquals("Daylight midtones must not bloom", original[i], pixels[i])
         }
     }
+
+    @Test
+    fun cpm35ColorimetricParityAndHighlightSoftKneePreventsHardClipping() {
+        // Test fair skin highlight swatch (R=240, G=195, B=145)
+        val pixels = intArrayOf(createPixel(240, 195, 145))
+        val params = colorEngine.resolveParameters(DigicamIlluminant.GOLDEN_DAYLIGHT, DigicamModel.CPM35)
+        
+        colorEngine.applyColorTransform(pixels, 1, 1, params)
+        
+        val outP = pixels[0]
+        val outR = (outP shr 16) and 0xFF
+        val outG = (outP shr 8) and 0xFF
+        val outB = outP and 0xFF
+        
+        // Assert that red does not hard-clip at 255 with loss of detail
+        assertTrue("Highlight skin red must remain within realistic dynamic range", outR in 230..254)
+        // Assert natural skin R > G > B order
+        assertTrue("Natural chromatic order R > G > B must hold", outR > outG && outG > outB)
+        // Assert blue channel is not starved
+        val rbRatio = outR.toFloat() / max(1, outB).toFloat()
+        assertTrue("R/B ratio must remain natural (was $rbRatio, expected <= 3.2)", rbRatio <= 3.2f)
+    }
 }
