@@ -19,16 +19,8 @@ internal class DFunsCapture {
     }
 
     fun formats(id: String, c: C): List<Int> {
-        val map = c.get(C.SCALER_STREAM_CONFIGURATION_MAP)
-        val raw = c.get(C.REQUEST_AVAILABLE_CAPABILITIES)?.contains(C.REQUEST_AVAILABLE_CAPABILITIES_RAW) == true
-        val cfa = c.get(C.SENSOR_INFO_COLOR_FILTER_ARRANGEMENT)
-        val hasCalibration = cfa != null && cfa in 0..3 && c.get(C.SENSOR_BLACK_LEVEL_PATTERN) != null &&
-            c.get(C.SENSOR_INFO_WHITE_LEVEL) != null && c.availableCaptureResultKeys.containsAll(
-                listOf(R.COLOR_CORRECTION_GAINS, R.COLOR_CORRECTION_TRANSFORM))
-        val candidates = if (raw && hasCalibration) DFunsRaw.formats else emptyList()
-        return (candidates + ImageFormat.YUV_420_888).filter {
-            map?.outputFormats?.contains(it) == true && rejectedFormats[id]?.contains(it) != true
-        } + ImageFormat.JPEG
+        // High-reliability primary JPEG capture to eliminate Camera HAL stream rejection on the initial shot
+        return listOf(ImageFormat.JPEG)
     }
 
     fun <T> configure(ext: Camera2Interop.Extender<T>, c: C) {

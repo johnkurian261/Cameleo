@@ -2291,13 +2291,41 @@ object ImageProcessor {
         try {
             return image.toBitmap()
         } catch (e: Throwable) {
-            Log.w(TAG, "image.toBitmap() failed, falling back to planes buffer decode", e)
+            Log.w(TAG, "image.toBitmap() failed, falling back to buffer decode", e)
+        }
+        if (image.format == android.graphics.ImageFormat.JPEG) {
+            val buffer: ByteBuffer = image.planes[0].buffer
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?: throw IllegalStateException("Failed to decode JPEG ImageProxy to Bitmap")
+        } else if (image.format == android.graphics.ImageFormat.YUV_420_888) {
+            try {
+                val yBuffer = image.planes[0].buffer
+                val uBuffer = image.planes[1].buffer
+                val vBuffer = image.planes[2].buffer
+                val ySize = yBuffer.remaining()
+                val uSize = uBuffer.remaining()
+                val vSize = vBuffer.remaining()
+                val nv21 = ByteArray(ySize + uSize + vSize)
+                yBuffer.get(nv21, 0, ySize)
+                vBuffer.get(nv21, ySize, vSize)
+                uBuffer.get(nv21, ySize + vSize, uSize)
+                val yuvImage = android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, image.width, image.height, null)
+                val out = java.io.ByteArrayOutputStream()
+                yuvImage.compressToJpeg(android.graphics.Rect(0, 0, image.width, image.height), 100, out)
+                val jpegBytes = out.toByteArray()
+                return BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+                    ?: throw IllegalStateException("Failed to decode compressed YUV bytes to Bitmap")
+            } catch (t: Throwable) {
+                Log.e(TAG, "YuvImage fallback decode failed", t)
+            }
         }
         val buffer: ByteBuffer = image.planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            ?: throw IllegalStateException("Failed to decode ImageProxy to Bitmap")
+            ?: throw IllegalStateException("Failed to decode ImageProxy to Bitmap (format=${image.format})")
     }
 
     private fun cropToAspectRatio(bitmap: Bitmap, mode: AspectRatioMode): Bitmap {
