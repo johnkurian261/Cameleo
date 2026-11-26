@@ -51,7 +51,7 @@ object CameraProfileCompatibility {
         // ── Cinema / Motion Picture Film Stocks ──
         "analog_soft_film" to ProfilePolicy(isSupported = true, defaultProfileId = "19P"), // CT2F
         "ct2f" to ProfilePolicy(isSupported = true, defaultProfileId = "19P"),
-        "analog_warm_film" to ProfilePolicy(isSupported = true, defaultProfileId = "03G"),
+        "analog_warm_film" to ProfilePolicy(isSupported = true, defaultProfileId = "FX33"), // GR D legacy alias
         "analog_vintage_color" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"), // D EXP
         "dexp" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
         "analog_nt16" to ProfilePolicy(isSupported = true, defaultProfileId = "03G"),

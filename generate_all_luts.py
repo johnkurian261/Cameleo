@@ -623,42 +623,63 @@ def grade_ccd_r(r, g, b):
     return adjust_saturation(r, g, b, 1.30)
 
 # 25. GR D (Ricoh GR Digital 2005 8.1MP CCD Street Snap Camera)
-# High micro-contrast, deep clean black floor, punchy street primaries, crisp highlight retention
+# Authentic 2005 Ricoh GR Digital: 100% neutral gray axis preservation,
+# calibrated complementary tone curve (target 1.14 / shader 1.04),
+# pure black anchor, zero shadow crush, and selective CCD street primary color fidelity.
 def grade_ccd_grd(r, g, b):
-    # Distinctive GR street tonal curve: punchy midtones, true black anchor, clean digital highlight roll-off
-    r = film_s_curve(r, contrast=1.28, toe=0.005, shoulder=0.96)
-    g = film_s_curve(g, contrast=1.26, toe=0.005, shoulder=0.96)
-    b = film_s_curve(b, contrast=1.30, toe=0.005, shoulder=0.97)
-    luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    
-    # Deep, clean neutral shadow floor (true black, subtle slate coolness without muddy brown)
-    sh = clamp(1.0 - luma * 3.2)
-    r -= 0.02 * sh
-    g -= 0.01 * sh
-    b += 0.03 * sh
-    
-    # Crisp, punchy primary color fidelity (famous GR street snap color)
-    # Vibrant street reds (stop signs, brake lights, textiles)
-    if r > g and r > b:
-        r = clamp(r * 1.10)
-        g = clamp(g * 0.98)
-    # Crisp deep street blues (sky, denim)
-    if b > r:
-        b = clamp(b * 1.14)
-        g = clamp(g * 1.02)
-        r = clamp(r * 0.96)
-    # Rich foliage / architecture greens
-    if g > r and g > b:
-        g = clamp(g * 1.08)
-        b = clamp(b * 0.96)
+    # 1. Authentic Ricoh GR Digital (2005) Tone Curve
+    # Complementary contrast 1.10 (with shader contrast 1.04 -> effective 1.144)
+    # Identical curves for R, G, B ensures 100% neutral gray axis preservation
+    def gr_curve(x):
+        x = clamp(x)
+        if x < 0.5:
+            s = 0.5 * math.pow(2.0 * x, 1.10)
+        else:
+            s = 1.0 - 0.5 * math.pow(2.0 * (1.0 - x), 1.10)
+        if s > 0.94:
+            s = 0.94 + (s - 0.94) * 0.50
+        return s / 0.97
         
-    # Healthy peachy street skin tones
-    if r > g and g > b:
-        skin_factor = clamp(1.0 - abs(luma - 0.55) * 2.5)
-        r += 0.02 * skin_factor
-        g += 0.01 * skin_factor
+    r_c = clamp(gr_curve(r))
+    g_c = clamp(gr_curve(g))
+    b_c = clamp(gr_curve(b))
+    
+    luma = 0.2126 * r_c + 0.7152 * g_c + 0.0722 * b_c
+    chroma = max(r_c, g_c, b_c) - min(r_c, g_c, b_c)
+    
+    # 2. Strict Neutral Gray Axis Protection
+    # If chroma is near zero (neutral gray / monochrome / asphalt / concrete / clouds),
+    # strictly avoid any chromatic distortion or color drift.
+    if chroma > 0.015:
+        chroma_factor = clamp((chroma - 0.015) / 0.08)
         
-    return adjust_saturation(r, g, b, 1.10)
+        # 3. Authentic 2005 CCD Primary Color Separation
+        # A. Sky and Denim Blues: Deep, pure CCD blues without greenish cyan cast
+        if b_c > r_c and b_c > g_c:
+            blue_dominance = clamp((b_c - max(r_c, g_c)) * 2.5)
+            b_c = clamp(b_c * (1.0 + 0.06 * blue_dominance * chroma_factor))
+            g_c = clamp(g_c * (1.0 - 0.01 * blue_dominance * chroma_factor))
+            r_c = clamp(r_c * (1.0 - 0.02 * blue_dominance * chroma_factor))
+            
+        # B. Rich Urban Reds / Cadmium (traffic signs, tail lamps, bricks)
+        elif r_c > g_c and r_c > b_c:
+            if g_c > b_c and 0.20 < luma < 0.85 and (r_c - b_c) > 0.08:
+                skin_weight = clamp(1.0 - abs(luma - 0.55) * 2.5) * chroma_factor
+                r_c = clamp(r_c + 0.010 * skin_weight)
+                g_c = clamp(g_c + 0.006 * skin_weight)
+            else:
+                red_dominance = clamp((r_c - max(g_c, b_c)) * 2.0)
+                r_c = clamp(r_c * (1.0 + 0.05 * red_dominance * chroma_factor))
+                
+        # C. Foliage and Architectural Greens
+        elif g_c > r_c and g_c > b_c:
+            green_dominance = clamp((g_c - max(r_c, b_c)) * 2.0)
+            g_c = clamp(g_c * (1.0 + 0.03 * green_dominance * chroma_factor))
+            b_c = clamp(b_c * (1.0 - 0.02 * green_dominance * chroma_factor))
+
+    # 4. Subtle Global Saturation (complementary to shader 1.02)
+    r_out, g_out, b_out = adjust_saturation(r_c, g_c, b_c, 1.039)
+    return clamp(r_out), clamp(g_out), clamp(b_out)
 
 ALL_GRADES = {
     "lut_ccd_grd.png":             grade_ccd_grd,

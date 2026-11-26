@@ -48,8 +48,8 @@ class WhiteBalanceCalibrationTest {
                 assertFalse(wb.autoRecommended)
             }
 
-            // CCD R must use HYBRID_ILLUMINANT
-            if (preset.id in listOf("ccd_r", "ccd_y2k_digital", "analog_warm_film")) {
+            // CCD R and GR D must use HYBRID_ILLUMINANT
+            if (preset.id in listOf("ccd_r", "ccd_y2k_digital", "analog_warm_film", "ccd_grd")) {
                 assertEquals(WhiteBalancePolicy.HYBRID_ILLUMINANT, wb.policy)
                 assertTrue(wb.autoRecommended)
             }

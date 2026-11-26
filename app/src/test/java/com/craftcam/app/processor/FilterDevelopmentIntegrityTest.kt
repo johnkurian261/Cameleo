@@ -2,6 +2,7 @@ package com.craftcam.app.processor
 
 import android.graphics.Bitmap
 import com.craftcam.app.camera.profile.CameraProfileCatalog
+import com.craftcam.app.camera.profile.GrainMode
 import com.craftcam.app.color.digicam.DigicamIlluminant
 import com.craftcam.app.color.skin.SkinToneIntelligenceEngine
 import com.craftcam.app.color.skin.SkinToneProfileCatalog
@@ -37,15 +38,21 @@ class FilterDevelopmentIntegrityTest {
 
     @Test
     fun grdProfile_correctlyConfiguredWithLutAndCCDCharacteristics() {
-        val preset = PresetCatalog.getPresetById("analog_warm_film")
+        val preset = PresetCatalog.getPresetById("ccd_grd")
         assertNotNull(preset)
         assertEquals("GR D", preset.name)
+
+        val legacyPreset = PresetCatalog.getPresetById("analog_warm_film")
+        assertNotNull(legacyPreset)
+        assertEquals("GR D", legacyPreset.name)
 
         val profile = CameraProfileCatalog.getProfileForPreset(preset)
         assertNotNull(profile)
         assertEquals("GR D", profile.name)
         assertEquals("lut_ccd_grd.png", profile.filmProfile.lutAssetPath)
-        assertEquals("grains/grain_ccdr.jpg", profile.grainProfile.assetPath)
+        assertEquals(GrainMode.PROCEDURAL, profile.grainProfile.mode)
+        assertEquals("", profile.grainProfile.assetPath)
+        assertTrue(profile.grainProfile.isColorNoise)
     }
 
     @Test

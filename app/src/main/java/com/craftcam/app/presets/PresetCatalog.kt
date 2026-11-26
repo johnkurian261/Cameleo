@@ -254,7 +254,7 @@ object PresetCatalog {
         ),
 
         CameraPreset(
-            id = "analog_warm_film",
+            id = "ccd_grd",
             iconResName = "cam_grdr",
             name = "GR D",
             subtitle = "Ricoh GR Digital Snap",
@@ -262,18 +262,27 @@ object PresetCatalog {
             year = "2005",
             description = "Legendary 28mm wide street snap camera. High micro-contrast, sharp optical rendering, and deep, evocative shadow delineation.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.16f,
-                saturation = 1.08f,
-                temperature = 0.02f,
+                contrast = 1.04f,
+                saturation = 1.02f,
+                temperature = 0.00f,
                 tint = 0.00f,
                 fade = 0.00f,
-                highlightRollOff = 0.94f,
+                highlightRollOff = 0.95f,
                 shadowTintR = 0.00f,
                 shadowTintG = 0.00f,
-                shadowTintB = 0.01f
+                shadowTintB = 0.00f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.12f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_ccdr.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.22f, highlightStrength = 0.06f),
-            lens = LensConfig(vignetteIntensity = 0.18f, vignetteRadius = 0.88f, chromaticAberration = 0.002f),
+            grain = GrainConfig(
+                enabled = true,
+                intensity = 0.09f,
+                scale = 0.50f,
+                isColorNoise = true,
+                assetPath = "",
+                blendMode = GrainBlendMode.OVERLAY,
+                shadowStrength = 0.18f,
+                highlightStrength = 0.05f
+            ),
+            lens = LensConfig(vignetteIntensity = 0.16f, vignetteRadius = 0.88f, chromaticAberration = 0.002f),
             dust = DustConfig(enabled = false, assetPath = "", opacity = 0f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = false, style = DateStampStyle.DIGICAM_YELLOW_DATETIME, customYearOffset = -21),
@@ -1062,8 +1071,8 @@ object PresetCatalog {
                 return allPresets.find { it.id == "analog_soft_film" } ?: allPresets.first()
             "disp_warm", "135sr", "135 sr" ->
                 return allPresets.find { it.id == "disp_warm" } ?: allPresets.first()
-            "analog_warm_film", "grd", "gr dr", "gr digital" ->
-                return allPresets.find { it.id == "analog_warm_film" } ?: allPresets.first()
+            "ccd_grd", "analog_warm_film", "grd", "gr dr", "gr digital", "gr d" ->
+                return allPresets.find { it.id == "ccd_grd" || it.id == "analog_warm_film" } ?: allPresets.first()
             "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" ->
                 return allPresets.find { it.id == "ccd_r" } ?: allPresets.first()
             "ccd_y2k_digital", "classic_u", "classicu", "classic u" ->

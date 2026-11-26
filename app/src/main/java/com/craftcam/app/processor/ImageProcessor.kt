@@ -2201,7 +2201,7 @@ object ImageProcessor {
         "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "lut_ccd_r.png"
         "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "lut_analog_35mm_classic.png"
         "analog_135ne", "135ne", "135 ne" -> "lut_135ne.png"
-        "analog_warm_film", "ccd_grd", "grd", "gr d" -> "lut_ccd_grd.png"
+        "ccd_grd", "analog_warm_film", "grd", "gr d" -> "lut_ccd_grd.png"
         "analog_soft_film", "analog_ct2f", "ct2f" -> "lut_ct2f.png"
         "analog_vintage_color", "analog_dexp", "dexp", "d exp" -> "lut_dexp.png"
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
@@ -2236,7 +2236,7 @@ object ImageProcessor {
     private fun selectGrainForPreset(presetId: String, isCamcorder: Boolean): String = when {
         isCamcorder                            -> "grains/grain8mm_01.jpg"
         presetId in listOf("analog_fxn_r", "fxnr", "vsco_a6", "a6", "vsco_g3", "g3", "vsco_hb1", "hb1") -> "grains/grain_ou.jpg"
-        presetId in listOf("ccd_r", "ccdr", "analog_warm_film", "ccd_grd", "grd", "gr d") -> "grains/grain_ccdr.jpg"
+        presetId in listOf("ccd_r", "ccdr") -> "grains/grain_ccdr.jpg"
         presetId in listOf("analog_35mm_classic", "d_classic", "dclassic", "vsco_c1", "c1", "vsco_b1", "b1") -> "grains/grain_dclassic.jpg"
         presetId in listOf("analog_soft_film", "analog_s67", "vsco_f2", "f2") -> "grains/grain_s67.jpg"
         presetId in listOf("analog_vintage_color", "analog_dexp", "vsco_m5", "m5", "vsco_x1", "x1") -> "grains/grain_dexp.jpg"
@@ -2259,7 +2259,7 @@ object ImageProcessor {
 
     private fun selectVignetteForPreset(presetId: String): String? = when (presetId) {
         "analog_fxn_r", "analog_nt16"          -> "vignette_nt16.jpg"
-        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm", "analog_warm_film", "ccd_grd" -> "vignette_dclassic.jpg"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "vignette_dclassic.jpg"
         "analog_soft_film", "analog_ct2f"      -> "vignette_ct2f.jpg"
         "analog_vintage_color", "analog_dexp"  -> "vignette_dexp.jpg"
         "analog_cinema_film", "analog_d3d"     -> "vignette_dclassic.jpg"

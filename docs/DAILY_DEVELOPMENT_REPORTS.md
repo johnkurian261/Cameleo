@@ -185,11 +185,33 @@ This document tracks daily engineering milestones, architectural audits, test su
 
 ---
 
+## Entry 6: Ricoh GR Digital (2005) CCD Color Science Deep Audit and Preview Correction (2026-11-26 15:30)
+
+### 1. Root Cause Identification
+- **Runaway Cyan/Blue Drift on Neutral Grayscale**: In `generate_all_luts.py` (`grade_ccd_grd`), asymmetric shadow cooling caused $b > r$ on all neutral tones, triggering an unconditional `if b > r:` boost ($b \times 1.14$, $r \times 0.96$) from black to pure white. Neutral gray 128 was corrupted with $+25.5$ blue cast, and pure white 255 had red clipped to 237.8 with cyan tint.
+- **Double Contrast Multiplication**: The LUT encoded contrast $1.28$ while the viewfinder shader applied contrast $1.16$, creating an effective contrast of $\approx 1.485$ that crushed all shadow detail below $20/255$ to hard black.
+- **Scanned Photochemical Film Artifacts**: Digital CCD preset was mistakenly bound to scanned 35mm film grain (`grain_ccdr.jpg`) and scanned film mechanical vignette (`vignette_dclassic.jpg`).
+- **Legacy Preset ID Routing**: Preset was registered under legacy `analog_warm_film` instead of dedicated CCD digital identification.
+
+### 2. Architecture & Pipeline Implementations
+- **Canonical Preset ID & Backward Compatibility**: Introduced canonical preset ID `"ccd_grd"` across `PresetCatalog.kt`, `CameraProfileCatalog.kt`, `ShaderConstants.kt`, and `ImageProcessor.kt`, with robust alias fallback for `"analog_warm_film"`, `"grd"`, `"gr d"`, `"gr dr"`, and `"gr digital"`.
+- **Strict Neutral Gray Axis Preservation**: Rewrote `grade_ccd_grd` with strict chroma gating ($\text{chroma} \le 0.015$). Output maintains $R_{out} = G_{out} = B_{out}$ across all 256 luminance levels ($\Delta E = 0.00$, max neutral channel difference = 0).
+- **Calibrated CCD Tone Curve**: Balanced midtone contrast (1.14) with complementary LUT contrast (1.10) to match the shader base (1.04). Shadow detail at $10/255$ is cleanly preserved at $8/255$. Smooth rational highlight shoulder at $0.94$ with continuous rolloff.
+- **Procedural CCD Electronic Sensor Noise**: Switched `grainProfile` to `GrainMode.PROCEDURAL` (`intensity = 0.09f`, `scale = 0.50f`, `isColorNoise = true`, `assetPath = ""`).
+- **Elimination of Analog Leaks**: Removed `vignette_dclassic.jpg` and static grain from GR D. Set dust, light leaks, and halation to disabled.
+- **Native Aspect Ratio & Prime FOV**: Standardized to 4:3 native aspect ratio and 28mm wide prime with 47mm digital crop mode.
+
+### 3. Verification & Metrics
+- **Unit Tests**: 170 tests completed, 0 failures (100.0% pass rate).
+- **Physical Device**: Deployed and tested on Samsung Galaxy S21 5G (`SM-G991B`, Android 14); Native Heap 29.8 MB, Dalvik Heap 6.0 MB; zero GL errors.
+
+---
+
 ## Test & Build Verification Summary
 
 | Metric | Status |
 | :--- | :--- |
-| **Unit Test Suite** | **169 tests passing** (0 failures, 0 skipped, 100.0% pass rate) |
+| **Unit Test Suite** | **170 tests passing** (0 failures, 0 skipped, 100.0% pass rate) |
 | **Build State** | `assembleDebug` SUCCESSFUL |
 | **Physical Hardware** | Verified on Samsung Galaxy S21 5G (`SM-G991B`, Android 14) via ADB |
 | **Git Working Tree** | Clean, verified and documented |

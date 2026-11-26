@@ -1,6 +1,7 @@
 package com.craftcam.app.camera.profile
 
 import com.craftcam.app.camera.AspectRatioMode
+import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.presets.PresetCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -281,6 +282,58 @@ class CameraProfileCatalogReaTest {
         assertEquals(1.02f, film.saturation, 0.001f)
         // Skin tone protection active for live viewfinder
         assertEquals(0.85f, film.skinProtection, 0.001f)
+    }
+
+    @Test
+    fun grdProfile_calibratedForAuthenticRicohGRDigitalAndPreviewParity() {
+        val grd = PresetCatalog.getPresetById("ccd_grd")
+        assertNotNull("Preset ccd_grd must be present", grd)
+        val legacyGrd = PresetCatalog.getPresetById("analog_warm_film")
+        assertNotNull("Legacy alias analog_warm_film must resolve", legacyGrd)
+
+        assertEquals("GR D", grd!!.name)
+        assertEquals("Ricoh GR Digital Snap", grd.subtitle)
+        assertEquals(CameraCategory.CCD_DIGITAL, grd.category)
+        assertEquals("2005", grd.year)
+
+        // Verify clean optical profile and lens settings
+        assertEquals(0.16f, grd.lens.vignetteIntensity, 0.001f)
+        assertEquals(0.88f, grd.lens.vignetteRadius, 0.001f)
+        assertFalse("Dust must be disabled on digital CCD", grd.dust?.enabled == true)
+        assertFalse("Light leaks must be disabled on digital CCD", grd.lightLeak?.enabled == true)
+
+        val profile = CameraProfileCatalog.getProfileForPreset(grd)
+        assertEquals("GR D", profile.name)
+        assertEquals("ccd_grd", profile.id)
+        assertEquals("ccd_grd", profile.presetId)
+
+        // 28mm wide prime with 47mm digital crop
+        assertEquals(2, profile.focalLengths.size)
+        assertEquals("28mm", profile.focalLengths[0].label)
+        assertEquals(28f, profile.focalLengths[0].focalLengthMm, 0.1f)
+        assertEquals("47mm (Crop)", profile.focalLengths[1].label)
+        assertEquals(47f, profile.focalLengths[1].focalLengthMm, 0.1f)
+
+        // Calibrated film and color response
+        val film = profile.filmProfile
+        assertEquals("lut_ccd_grd.png", film.lutAssetPath)
+        assertEquals(1.04f, film.contrast, 0.001f)
+        assertEquals(1.02f, film.saturation, 0.001f)
+        assertEquals(0.0f, film.temperature, 0.001f)
+        assertEquals(0.0f, film.tint, 0.001f)
+        assertEquals(0.0f, film.halationIntensity, 0.001f)
+
+        // Procedural CCD electronic sensor noise
+        val grain = profile.grainProfile
+        assertEquals(GrainMode.PROCEDURAL, grain.mode)
+        assertEquals("", grain.assetPath)
+        assertTrue(grain.isColorNoise)
+        assertEquals(0.09f, grain.intensity, 0.001f)
+
+        // Backward compatibility: alias resolves to identical profile
+        val legacyProfile = CameraProfileCatalog.getProfileForPreset(legacyGrd!!)
+        assertEquals(profile.id, legacyProfile.id)
+        assertEquals(profile.filmProfile.lutAssetPath, legacyProfile.filmProfile.lutAssetPath)
     }
 }
 

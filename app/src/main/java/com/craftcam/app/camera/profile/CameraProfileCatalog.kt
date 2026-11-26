@@ -560,10 +560,10 @@ object CameraProfileCatalog {
         id = "ccd_grd",
         name = "GR D",
         subtitle = "Ricoh GR Digital Snap",
-        presetId = "analog_warm_film",
+        presetId = "ccd_grd",
         focalLengths = listOf(
             FocalLengthOption("28mm", 28f),
-            FocalLengthOption("47mm", 47f)
+            FocalLengthOption("47mm (Crop)", 47f)
         ),
         defaultFocalLengthMm = 28f,
         supportedLenses = listOf(
@@ -577,13 +577,13 @@ object CameraProfileCatalog {
             id = "ccd_grd",
             name = "Ricoh GR Digital Snap",
             lutAssetPath = "lut_ccd_grd.png",
-            contrast = 1.16f,
-            saturation = 1.08f,
-            temperature = 0.02f,
+            contrast = 1.04f,
+            saturation = 1.02f,
+            temperature = 0.00f,
             tint = 0.00f,
-            toeLift = 0.005f,
-            shoulderClip = 0.97f,
-            highlightRollOff = 0.94f,
+            toeLift = 0.012f,
+            shoulderClip = 0.95f,
+            highlightRollOff = 0.95f,
             halationThreshold = 1.0f,
             halationIntensity = 0.0f,
             halationColorTintR = 1.0f,
@@ -592,12 +592,13 @@ object CameraProfileCatalog {
         ),
         grainProfile = GrainProfile(
             id = "grain_grd",
-            mode = GrainMode.SCANNED,
-            assetPath = "grains/grain_ccdr.jpg",
-            intensity = 0.12f,
-            scale = 0.90f,
+            mode = GrainMode.PROCEDURAL,
+            assetPath = "",
+            intensity = 0.09f,
+            scale = 0.50f,
+            isColorNoise = true,
             luminanceWeightingEnabled = true,
-            luminanceWeightingPower = 1.2f
+            luminanceWeightingPower = 1.0f
         )
     )
 
@@ -1589,7 +1590,7 @@ object CameraProfileCatalog {
             "analog_135ne", "135ne", "135 ne" -> return ONE_THREE_FIVE_NE
             "analog_fisheye_f", "fisheye" -> return FISHEYE_CAMERA
             "analog_soft_film", "ct2f" -> return SOFT_FILM
-            "analog_warm_film", "ccd_grd", "grd", "gr d" -> return GR_D
+            "ccd_grd", "analog_warm_film", "grd", "gr d", "gr dr", "gr digital" -> return GR_D
             "analog_s67", "s67", "s_67" -> return S_67
             "analog_dblack", "dblack", "d_black" -> return D_BLACK
             "analog_nt16", "nt16", "nt_16" -> return NT_16
