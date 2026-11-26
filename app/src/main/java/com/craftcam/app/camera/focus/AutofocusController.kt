@@ -352,13 +352,13 @@ class AutofocusController(
     /**
      * Coordinates shutter release with autofocus settling.
      *
-     * 1. If camera is fixed focus -> Ready immediately.
-     * 2. If camera is already focused and lens stationary -> Ready immediately.
-     * 3. If camera is scanning -> Awaits focus convergence with bounded timeout (max 700ms).
-     * 4. If timeout expires -> Proceeds with capture (best-effort, zero lockup).
+     * 1. If camera is fixed focus -> Ready immediately (0ms).
+     * 2. If camera is not actively scanning (stationary) -> Ready immediately (0ms).
+     * 3. If camera is actively hunting/scanning -> Awaits focus convergence with bounded timeout (max 500ms).
+     * 4. If timeout expires or exception occurs -> Proceeds with capture (best-effort, zero lockup).
      */
     suspend fun coordinateShutterWithFocus(
-        timeoutMs: Long = 700L
+        timeoutMs: Long = 500L
     ): Boolean = withContext(Dispatchers.Default) {
         val current = _telemetry.value
         if (current.isFixedFocus) {
@@ -366,8 +366,12 @@ class AutofocusController(
             return@withContext true
         }
 
-        if (current.isFocused && !current.isLensMoving) {
-            addLogEntry("Shutter ready immediately (Already focused)")
+        val isActivelyScanning = current.status == AutofocusStatus.PASSIVE_SCAN ||
+                current.status == AutofocusStatus.ACTIVE_SCAN ||
+                current.isLensMoving
+
+        if (!isActivelyScanning) {
+            addLogEntry("Shutter ready immediately (Lens stationary, status=${current.status.displayName})")
             return@withContext true
         }
 
@@ -387,9 +391,9 @@ class AutofocusController(
                 }
                 true
             }
-        } catch (e: TimeoutCancellationException) {
+        } catch (e: Exception) {
             val elapsed = SystemClock.elapsedRealtime() - startTime
-            addLogEntry("Focus convergence timeout after ${elapsed}ms: capturing with best-effort")
+            addLogEntry("Focus convergence finished (${e.javaClass.simpleName}) after ${elapsed}ms: capturing with best-effort")
             false
         }
     }

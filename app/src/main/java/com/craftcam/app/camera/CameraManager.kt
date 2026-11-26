@@ -95,7 +95,7 @@ class CameraManager(private val context: Context) {
     private val naturalExposureController = com.craftcam.app.camera.exposure.NaturalExposureController()
     val autofocusController = com.craftcam.app.camera.focus.AutofocusController(context, processingScope)
 
-    private fun startCaptureWatchdog(timeoutMs: Long = 8000L) {
+    private fun startCaptureWatchdog(timeoutMs: Long = 5000L) {
         captureWatchdogJob?.cancel()
         captureWatchdogJob = processingScope.launch {
             delay(timeoutMs)
@@ -103,7 +103,7 @@ class CameraManager(private val context: Context) {
                 Log.w(TAG, "Capture watchdog triggered: capture operation timed out after ${timeoutMs}ms, unlocking capture state")
                 lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                 isCapturingInProgress.set(false)
-                _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false) }
+                _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false, threeDProgressMessage = null) }
                 checkPendingRebind()
             }
         }
@@ -132,10 +132,10 @@ class CameraManager(private val context: Context) {
                 delay(1000L)
                 val now = SystemClock.elapsedRealtime()
                 val isCapturing = _uiState.value.isCapturing || isCapturingInProgress.get()
-                val isStarted = currentLifecycleOwner?.lifecycle?.currentState
-                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) == true
+                val isResumed = currentLifecycleOwner?.lifecycle?.currentState
+                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true
 
-                if (!isCameraActive || isCapturing || !isStarted) {
+                if (!isCameraActive || isCapturing || !isResumed) {
                     lastPreviewFrameTimestamp = now
                     continue
                 }
@@ -146,7 +146,7 @@ class CameraManager(private val context: Context) {
                     lastRecovery = now
                     withContext(Dispatchers.Main) {
                         if (currentLifecycleOwner?.lifecycle?.currentState
-                                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) != true ||
+                                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) != true ||
                             _uiState.value.isCapturing || isCapturingInProgress.get()
                         ) return@withContext
                         try {
@@ -1672,91 +1672,103 @@ class CameraManager(private val context: Context) {
         startCaptureWatchdog()
 
         processingScope.launch {
-            val isFocusConverged = autofocusController.coordinateShutterWithFocus(timeoutMs = 700L)
-            Log.d(TAG, "Shutter focus coordination completed: converged=$isFocusConverged")
+            try {
+                val isFocusConverged = autofocusController.coordinateShutterWithFocus(timeoutMs = 500L)
+                Log.d(TAG, "Shutter focus coordination completed: converged=$isFocusConverged")
 
-            capture.takePicture(
-                cameraExecutor,
-                object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(image: ImageProxy) {
-                    cancelCaptureWatchdog()
-                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
-                    isCapturingInProgress.set(false)
-                    _uiState.update { it.copy(isCapturing = false) }
-                    checkPendingRebind()
+                capture.takePicture(
+                    cameraExecutor,
+                    object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        cancelCaptureWatchdog()
+                        lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                        isCapturingInProgress.set(false)
+                        _uiState.update { it.copy(isCapturing = false) }
+                        checkPendingRebind()
 
-                    // Application-level coroutine scope: never aborted if user navigates to gallery
-                    val dfuns = preset.id == "ccd_flash" && captureState.engineMode == CameraEngineMode.FILM
-                    val format = image.format
-                    val shotResult = if (dfuns) dfunsCapture.resultFor(image.imageInfo.timestamp) else null
-                    processingScope.launch {
-                        try {
-                            val uri = ImageProcessor.processAndSaveImage(
-                                context = context,
-                                imageProxy = image,
-                                preset = preset,
-                                tuning = captureState.tuning,
-                                aspectRatio = aspectRatio,
-                                mirrorFrontCamera = mirrorFrontCamera,
-                                engineMode = captureState.engineMode,
-                                naturalProfile = captureState.naturalProfile,
-                                naturalColorProfile = captureState.naturalColorProfile,
-                                compareWithOriginal = captureState.debugCompareOriginal,
-                                captureFrameSnapshot = frameSnapshot,
-                                lensProfile = captureState.shootingState.selectedLens,
-                                isFlashActive = if (dfuns && shotResult != null) shotResult.get(android.hardware.camera2.CaptureResult.FLASH_STATE) in listOf(android.hardware.camera2.CaptureResult.FLASH_STATE_FIRED, android.hardware.camera2.CaptureResult.FLASH_STATE_PARTIAL) else captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
-                                sensorIso = captureState.liveIso,
-                                exposureTimeNs = captureState.liveExposureNs,
-                                cameraId = cameraId,
-                                stillResult = shotResult,
-                                rawCharacteristics = if (dfuns && format in com.craftcam.app.processor.DFunsRaw.formats && cameraId != null)
-                                    context.getSystemService(android.hardware.camera2.CameraManager::class.java).getCameraCharacteristics(cameraId)
-                                else null,
-                                faces = captureState.detectedFaces
-                            )
-                            if (uri != null) {
-                                withContext(Dispatchers.Main) {
-                                    onPhotoSaved(uri)
+                        // Application-level coroutine scope: never aborted if user navigates to gallery
+                        val dfuns = preset.id == "ccd_flash" && captureState.engineMode == CameraEngineMode.FILM
+                        val format = image.format
+                        val shotResult = if (dfuns) dfunsCapture.resultFor(image.imageInfo.timestamp) else null
+                        processingScope.launch {
+                            try {
+                                val uri = ImageProcessor.processAndSaveImage(
+                                    context = context,
+                                    imageProxy = image,
+                                    preset = preset,
+                                    tuning = captureState.tuning,
+                                    aspectRatio = aspectRatio,
+                                    mirrorFrontCamera = mirrorFrontCamera,
+                                    engineMode = captureState.engineMode,
+                                    naturalProfile = captureState.naturalProfile,
+                                    naturalColorProfile = captureState.naturalColorProfile,
+                                    compareWithOriginal = captureState.debugCompareOriginal,
+                                    captureFrameSnapshot = frameSnapshot,
+                                    lensProfile = captureState.shootingState.selectedLens,
+                                    isFlashActive = if (dfuns && shotResult != null) shotResult.get(android.hardware.camera2.CaptureResult.FLASH_STATE) in listOf(android.hardware.camera2.CaptureResult.FLASH_STATE_FIRED, android.hardware.camera2.CaptureResult.FLASH_STATE_PARTIAL) else captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                    sensorIso = captureState.liveIso,
+                                    exposureTimeNs = captureState.liveExposureNs,
+                                    cameraId = cameraId,
+                                    stillResult = shotResult,
+                                    rawCharacteristics = if (dfuns && format in com.craftcam.app.processor.DFunsRaw.formats && cameraId != null)
+                                        context.getSystemService(android.hardware.camera2.CameraManager::class.java).getCameraCharacteristics(cameraId)
+                                    else null,
+                                    faces = captureState.detectedFaces
+                                )
+                                if (uri != null) {
+                                    withContext(Dispatchers.Main) {
+                                        onPhotoSaved(uri)
+                                    }
+                                } else {
+                                    withContext(Dispatchers.Main) {
+                                        onError("Failed to develop photograph")
+                                    }
                                 }
-                            } else {
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "Error developing captured photo", t)
                                 withContext(Dispatchers.Main) {
-                                    onError("Failed to develop photograph")
+                                    if (dfuns && cameraId != null && format in com.craftcam.app.processor.DFunsRaw.formats) {
+                                        dfunsCapture.reject(cameraId, format)
+                                        if (currentPreset.id == "ccd_flash") bindCameraUseCases()
+                                        onError("RAW development unavailable. Take another photo to use the fallback.")
+                                    } else onError(t.message ?: "Image processing failed")
                                 }
-                            }
-                        } catch (t: Throwable) {
-                            Log.e(TAG, "Error developing captured photo", t)
-                            withContext(Dispatchers.Main) {
-                                if (dfuns && cameraId != null && format in com.craftcam.app.processor.DFunsRaw.formats) {
-                                    dfunsCapture.reject(cameraId, format)
-                                    if (currentPreset.id == "ccd_flash") bindCameraUseCases()
-                                    onError("RAW development unavailable. Take another photo to use the fallback.")
-                                } else onError(t.message ?: "Image processing failed")
                             }
                         }
                     }
-                }
 
-                override fun onError(exception: ImageCaptureException) {
-                    cancelCaptureWatchdog()
-                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
-                    isCapturingInProgress.set(false)
-                    _uiState.update { it.copy(isCapturing = false) }
-                    checkPendingRebind()
-                    Log.e(TAG, "Hardware photo capture failed: ${exception.message}", exception)
-                    ContextCompat.getMainExecutor(context).execute {
-                        if (preset.id == "ccd_flash" && currentPreset.id == preset.id && cameraId != null &&
-                            captureState.engineMode == CameraEngineMode.FILM &&
-                            exception.imageCaptureError == ImageCapture.ERROR_CAPTURE_FAILED &&
-                            camera?.cameraInfo?.cameraState?.value?.type == androidx.camera.core.CameraState.Type.OPEN &&
-                            exception.cause !is androidx.camera.core.CameraControl.OperationCanceledException &&
-                            dfunsBoundFormat != android.graphics.ImageFormat.JPEG) {
-                            dfunsCapture.reject(cameraId, dfunsBoundFormat)
-                            bindCameraUseCases()
-                            onError("Capture stream unavailable. Take another photo to use the fallback.")
-                        } else onError(exception.message ?: "Camera capture failed")
+                    override fun onError(exception: ImageCaptureException) {
+                        cancelCaptureWatchdog()
+                        lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                        isCapturingInProgress.set(false)
+                        _uiState.update { it.copy(isCapturing = false) }
+                        checkPendingRebind()
+                        Log.e(TAG, "Hardware photo capture failed: ${exception.message}", exception)
+                        ContextCompat.getMainExecutor(context).execute {
+                            if (preset.id == "ccd_flash" && currentPreset.id == preset.id && cameraId != null &&
+                                captureState.engineMode == CameraEngineMode.FILM &&
+                                exception.imageCaptureError == ImageCapture.ERROR_CAPTURE_FAILED &&
+                                camera?.cameraInfo?.cameraState?.value?.type == androidx.camera.core.CameraState.Type.OPEN &&
+                                exception.cause !is androidx.camera.core.CameraControl.OperationCanceledException &&
+                                dfunsBoundFormat != android.graphics.ImageFormat.JPEG) {
+                                dfunsCapture.reject(cameraId, dfunsBoundFormat)
+                                bindCameraUseCases()
+                                onError("Capture stream unavailable. Take another photo to use the fallback.")
+                            } else onError(exception.message ?: "Camera capture failed")
+                        }
                     }
+                })
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to initiate photo capture", t)
+                cancelCaptureWatchdog()
+                lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                isCapturingInProgress.set(false)
+                _uiState.update { it.copy(isCapturing = false) }
+                checkPendingRebind()
+                withContext(Dispatchers.Main) {
+                    onError(t.message ?: "Camera capture failed to initiate")
                 }
-            })
+            }
         }
     }
 
@@ -1786,71 +1798,83 @@ class CameraManager(private val context: Context) {
         startCaptureWatchdog(timeoutMs = 15000L)
 
         processingScope.launch {
-            val isFocusConverged = autofocusController.coordinateShutterWithFocus(timeoutMs = 700L)
-            Log.d(TAG, "3D Shutter focus coordination completed: converged=$isFocusConverged")
+            try {
+                val isFocusConverged = autofocusController.coordinateShutterWithFocus(timeoutMs = 500L)
+                Log.d(TAG, "3D Shutter focus coordination completed: converged=$isFocusConverged")
 
-            capture.takePicture(
-                cameraExecutor,
-                object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(image: ImageProxy) {
-                    cancelCaptureWatchdog()
-                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
-                    isCapturingInProgress.set(false)
-                    _uiState.update { it.copy(threeDProgressMessage = "Developing 3D Wigglegram...") }
-                    checkPendingRebind()
+                capture.takePicture(
+                    cameraExecutor,
+                    object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        cancelCaptureWatchdog()
+                        lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                        isCapturingInProgress.set(false)
+                        _uiState.update { it.copy(threeDProgressMessage = "Developing 3D Wigglegram...") }
+                        checkPendingRebind()
 
-                    processingScope.launch {
-                        try {
-                            val uri = ImageProcessor.processAndSaveThreeDImage(
-                                context = context,
-                                imageProxy = image,
-                                preset = preset,
-                                tuning = captureState.tuning,
-                                aspectRatio = aspectRatio,
-                                mirrorFrontCamera = mirrorFrontCamera,
-                                captureFrameSnapshot = frameSnapshot,
-                                lensProfile = captureState.shootingState.selectedLens,
-                                isFlashActive = captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
-                                cameraId = cameraId,
-                                faces = captureState.detectedFaces,
-                                onProgress = { progressText ->
-                                    _uiState.update { it.copy(threeDProgressMessage = progressText) }
+                        processingScope.launch {
+                            try {
+                                val uri = ImageProcessor.processAndSaveThreeDImage(
+                                    context = context,
+                                    imageProxy = image,
+                                    preset = preset,
+                                    tuning = captureState.tuning,
+                                    aspectRatio = aspectRatio,
+                                    mirrorFrontCamera = mirrorFrontCamera,
+                                    captureFrameSnapshot = frameSnapshot,
+                                    lensProfile = captureState.shootingState.selectedLens,
+                                    isFlashActive = captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                    cameraId = cameraId,
+                                    faces = captureState.detectedFaces,
+                                    onProgress = { progressText ->
+                                        _uiState.update { it.copy(threeDProgressMessage = progressText) }
+                                    }
+                                )
+
+                                _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
+
+                                if (uri != null) {
+                                    withContext(Dispatchers.Main) {
+                                        onVideoSaved(uri)
+                                    }
+                                } else {
+                                    withContext(Dispatchers.Main) {
+                                        onError("Failed to develop 3D photograph")
+                                    }
                                 }
-                            )
-
-                            _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
-
-                            if (uri != null) {
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "Error developing 3D photo", t)
+                                _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
                                 withContext(Dispatchers.Main) {
-                                    onVideoSaved(uri)
+                                    onError(t.message ?: "3D image processing failed")
                                 }
-                            } else {
-                                withContext(Dispatchers.Main) {
-                                    onError("Failed to develop 3D photograph")
-                                }
-                            }
-                        } catch (t: Throwable) {
-                            Log.e(TAG, "Error developing 3D photo", t)
-                            _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
-                            withContext(Dispatchers.Main) {
-                                onError(t.message ?: "3D image processing failed")
                             }
                         }
                     }
-                }
 
-                override fun onError(exception: ImageCaptureException) {
-                    cancelCaptureWatchdog()
-                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
-                    isCapturingInProgress.set(false)
-                    _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
-                    checkPendingRebind()
-                    Log.e(TAG, "Hardware photo capture failed for 3D: ${exception.message}", exception)
-                    ContextCompat.getMainExecutor(context).execute {
-                        onError(exception.message ?: "Camera capture failed")
+                    override fun onError(exception: ImageCaptureException) {
+                        cancelCaptureWatchdog()
+                        lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                        isCapturingInProgress.set(false)
+                        _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
+                        checkPendingRebind()
+                        Log.e(TAG, "Hardware photo capture failed for 3D: ${exception.message}", exception)
+                        ContextCompat.getMainExecutor(context).execute {
+                            onError(exception.message ?: "Camera capture failed")
+                        }
                     }
+                })
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to initiate 3D photo capture", t)
+                cancelCaptureWatchdog()
+                lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                isCapturingInProgress.set(false)
+                _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
+                checkPendingRebind()
+                withContext(Dispatchers.Main) {
+                    onError(t.message ?: "3D camera capture failed to initiate")
                 }
-            })
+            }
         }
     }
 

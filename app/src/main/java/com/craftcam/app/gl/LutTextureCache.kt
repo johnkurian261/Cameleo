@@ -135,6 +135,10 @@ object LutTextureCache {
         synchronized(lock) {
             cache[prepared.assetPath]?.let { return it }
 
+            if (android.opengl.EGL14.eglGetCurrentContext() == android.opengl.EGL14.EGL_NO_CONTEXT) {
+                return null
+            }
+
             val texIds = IntArray(1)
             GLES30.glGenTextures(1, texIds, 0)
             val texId = texIds[0]
@@ -193,6 +197,10 @@ object LutTextureCache {
 
         synchronized(lock) {
             cache[assetPath]?.let { return it }
+
+            if (android.opengl.EGL14.eglGetCurrentContext() == android.opengl.EGL14.EGL_NO_CONTEXT) {
+                return null
+            }
 
             val bitmap: Bitmap = try {
                 context.assets.open(assetPath).use { input ->

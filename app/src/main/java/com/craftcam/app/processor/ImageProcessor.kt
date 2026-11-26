@@ -25,6 +25,7 @@ import com.craftcam.app.model.BorderStyle
 import com.craftcam.app.model.GrainBlendMode
 import com.craftcam.app.model.GrainSourceMode
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -45,6 +46,7 @@ object ImageProcessor {
     private val lutCache = mutableMapOf<String, IntArray>()
     private val textureCache = mutableMapOf<String, Bitmap?>()
     private val grainPixelsCache = mutableMapOf<String, Pair<IntArray, Pair<Int, Int>>>()
+    private val processingSemaphore = kotlinx.coroutines.sync.Semaphore(2)
 
     // ─── Main Processing & Saving Pipeline ──────────────────────────────────
     suspend fun processAndSaveImage(
@@ -67,7 +69,8 @@ object ImageProcessor {
         cameraId: String? = null,
         rawCharacteristics: android.hardware.camera2.CameraCharacteristics? = null,
         stillResult: android.hardware.camera2.CaptureResult? = null
-    ): Uri? = withContext(Dispatchers.Default) {
+    ): Uri? = processingSemaphore.withPermit {
+        withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
         try {
@@ -233,6 +236,7 @@ object ImageProcessor {
             BitmapPool.release(workingBitmap)
         }
     }
+}
 
     // ─── 3D Stereoscopic Wigglegram Pipeline ──────────────────────────────────
     suspend fun processAndSaveThreeDImage(

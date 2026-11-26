@@ -104,7 +104,9 @@ fun ViewfinderScreen(
         if (IS_VIDEO_FEATURE_PAUSED) {
             cameraManager.setCaptureMode(CaptureMode.PHOTO)
         }
-        SoundManager.initialize(context)
+        withContext(Dispatchers.IO) {
+            SoundManager.initialize(context)
+        }
     }
 
     DisposableEffect(Unit) {
@@ -125,14 +127,21 @@ fun ViewfinderScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> glSurfaceViewRef?.onResume()
-                Lifecycle.Event.ON_PAUSE -> glSurfaceViewRef?.onPause()
+                Lifecycle.Event.ON_RESUME -> {
+                    cameraManager.setCameraActive(true)
+                    glSurfaceViewRef?.onResume()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    cameraManager.setCameraActive(false)
+                    glSurfaceViewRef?.onPause()
+                }
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            cameraManager.setCameraActive(false)
             glSurfaceViewRef?.onPause()
             glSurfaceViewRef = null
         }
