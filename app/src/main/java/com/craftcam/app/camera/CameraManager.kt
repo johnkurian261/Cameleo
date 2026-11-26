@@ -697,8 +697,10 @@ class CameraManager(private val context: Context) {
     }
 
     fun selectLensAccessory(lensType: LensType) {
-        val lensProfile = LensProfile.forType(lensType)
-        if (lensType == LensType.COLOR_FLASH && _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
+        val camProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getProfileForPreset(currentPreset)
+        val validatedLensType = if (camProfile.supportedLenses.contains(lensType)) lensType else camProfile.defaultLens
+        val lensProfile = LensProfile.forType(validatedLensType)
+        if (validatedLensType == LensType.COLOR_FLASH && _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF) {
             setFlashMode(ImageCapture.FLASH_MODE_ON)
         }
         val wasFisheye = isFisheyeActive()

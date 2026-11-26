@@ -1456,7 +1456,7 @@ private fun resolveSampleResIds(context: android.content.Context, preset: Camera
         "ccd_retro_compact", "dqs" -> listOf("sample_ccd_retro_compact", "sample_ccd_classic", "sample_ccd_y2k_digital")
         "disp_flash" -> listOf("sample_disp_flash", "sample_disp_night", "sample_disp_classic")
         "disp_classic" -> listOf("sample_disp_classic", "sample_disp_warm", "sample_disp_flash")
-        "analog_fisheye_f", "fisheye" -> listOf("sample_analog_fisheye_f", "sample_analog_cinema_film", "sample_disp_night")
+        "analog_fisheye_f", "fisheye" -> listOf("sample_analog_fisheye_f", "sample_disp_warm", "sample_disp_night")
         "inst_vintage", "inst_c" -> listOf("sample_inst_vintage", "sample_inst_classic", "sample_inst_soft_polaroid")
         "inst_paf" -> listOf("sample_inst_soft_polaroid", "sample_inst_classic", "sample_inst_vintage")
         "analog_vintage_color", "dexp" -> listOf("sample_analog_vintage_color", "sample_analog_faded_film", "sample_analog_soft_film")

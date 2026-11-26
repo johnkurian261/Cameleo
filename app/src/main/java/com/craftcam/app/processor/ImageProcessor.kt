@@ -862,8 +862,9 @@ object ImageProcessor {
             }
 
             // ── Step 1c: Camera Lens Optical Transformations (Fisheye F/W, Prism, Starburst, Barrel) ────
+            val isD3D = preset.id == "analog_cinema_film" || preset.id == "d3d"
             if (tuning.debugStageOptics) {
-                if (lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W) {
+                if (!isD3D && (lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W)) {
                     applyFisheyeCurvilinear(pixels, width, height, lensProfile)
                 } else if (lensProfile.type == LensType.PRISM && lensProfile.prismDispersion > 0.01f) {
                     applyPrismRefraction(pixels, width, height, lensProfile)
@@ -1491,7 +1492,7 @@ object ImageProcessor {
             }
 
             // 4e. Circular Fisheye Optical Hood Bezel Mask (enforced after grain/fade/leaks for pitch-black perimeter)
-            if (lensProfile.type == LensType.FISHEYE_F && tuning.debugStageOptics) {
+            if (!isD3D && lensProfile.type == LensType.FISHEYE_F && tuning.debugStageOptics) {
                 val hoodCx = width * 0.5f
                 val hoodCy = height * 0.5f
                 val minDim = minOf(width, height).toFloat()

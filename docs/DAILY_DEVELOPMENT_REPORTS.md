@@ -14,6 +14,7 @@ This document tracks daily engineering milestones, architectural audits, test su
 5. **App Stability & Capture Freezes Elimination**
 6. **Ricoh GR Digital (2005) CCD Profile Calibration**
 7. **Skin Colour Science Calibration Integrity & Authenticity Audit**
+8. **D3D Stereoscopic Lens Discipline & Fisheye Exclusion**
 
 ---
 
@@ -67,6 +68,12 @@ This document tracks daily engineering milestones, architectural audits, test su
 #### 6. Hardware-Aware Autofocus Subsystem (`2f5a312`)
 - Created centralized `AutofocusController` managing Camera2 `CONTROL_AF_MODE`, `CONTROL_AF_TRIGGER`, and `CONTROL_AF_STATE`.
 - Implemented continuous picture autofocus (`CONTINUOUS_PICTURE`) with touch-to-metering region coordinate mapping, letterbox aspect ratio projection, and pre-capture settling gate.
+
+#### 7. D3D Stereoscopic Lens Discipline & Fisheye Exclusion
+- **Optical Incompatibility**: Excluded circular fisheye (`FISHEYE_F`) and full-frame fisheye (`FISHEYE_W`) lenses from the D3D (`d_3d`, `analog_cinema_film`) camera profile. Fisheye curvilinear warping and black hood vignetting severely corrupt stereoscopic horizontal parallax alignment, causing depth estimation failure and severe retinal rivalry.
+- **Catalog & Selection Validation**: Updated `D_3D.supportedLenses` in `CameraProfileCatalog.kt` to strictly omit fisheye lenses. Added validation in `CameraManager.selectLensAccessory` to prevent mounting unsupported lenses on D3D.
+- **Viewfinder & Pipeline Guards**: Guarded `GLViewfinderRenderer.kt` and `ImageProcessor.kt` so that D3D rendering automatically falls back to `LensProfile.NORMAL` if an invalid lens state is passed.
+- **Automated Unit Tests**: Added `d3dCameraProfileStrictlyExcludesFisheyeLenses` in `ThreeDModeTest.kt` asserting that `D_3D.supportedLenses` contains only compatible optical accessories.
 
 ---
 

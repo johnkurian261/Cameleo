@@ -1471,7 +1471,13 @@ class GLViewfinderRenderer(
             if (uDebugStageVignetteLoc != -1) GLES30.glUniform1i(uDebugStageVignetteLoc, if (tuning.debugStageVignette) 1 else 0)
 
             // Upload active camera lens optical configuration
-            val lensProf = currentLensProfile
+            // D3D is a stereoscopic multi-lens camera; fisheye optical distortion is excluded
+            val isD3D = preset.id == "analog_cinema_film" || preset.id == "d3d" || preset.d3dProfile != null
+            val lensProf = if (isD3D && (currentLensProfile.type == LensType.FISHEYE_F || currentLensProfile.type == LensType.FISHEYE_W)) {
+                LensProfile.NORMAL
+            } else {
+                currentLensProfile
+            }
             val lensTypeInt = when (lensProf.type) {
                 LensType.NORMAL -> 0
                 LensType.WIDE -> 1
@@ -1499,7 +1505,6 @@ class GLViewfinderRenderer(
             }
 
             // D3D Single-Image 3D Photography Filter Uniforms
-            val isD3D = preset.id == "analog_cinema_film" || preset.id == "d3d" || preset.d3dProfile != null
             val d3dProf = preset.d3dProfile ?: com.craftcam.app.camera.profile.D3DProfile.Default
             if (uD3DEnabledLoc != -1) {
                 GLES30.glUniform1i(uD3DEnabledLoc, if (isD3D) 1 else 0)

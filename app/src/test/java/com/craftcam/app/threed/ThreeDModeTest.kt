@@ -178,4 +178,28 @@ class ThreeDModeTest {
         // Background moves counter to foreground
         assertTrue(dispBg < 0f)
     }
+
+    @Test
+    fun d3dCameraProfileStrictlyExcludesFisheyeLenses() {
+        val d3dProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.D_3D
+        assertFalse(
+            "D3D must not support Circular Fisheye F",
+            d3dProfile.supportedLenses.contains(com.craftcam.app.camera.profile.LensType.FISHEYE_F)
+        )
+        assertFalse(
+            "D3D must not support Full-Frame Fisheye W",
+            d3dProfile.supportedLenses.contains(com.craftcam.app.camera.profile.LensType.FISHEYE_W)
+        )
+        assertTrue(
+            "D3D must support Normal standard lens",
+            d3dProfile.supportedLenses.contains(com.craftcam.app.camera.profile.LensType.NORMAL)
+        )
+
+        // Preset mapping check
+        val preset = com.craftcam.app.presets.PresetCatalog.getPresetById("analog_cinema_film")
+        assertNotNull(preset)
+        val resolvedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getProfileForPreset(preset!!)
+        assertFalse(resolvedProfile.supportedLenses.contains(com.craftcam.app.camera.profile.LensType.FISHEYE_F))
+        assertFalse(resolvedProfile.supportedLenses.contains(com.craftcam.app.camera.profile.LensType.FISHEYE_W))
+    }
 }

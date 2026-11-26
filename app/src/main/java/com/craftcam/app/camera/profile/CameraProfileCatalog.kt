@@ -757,8 +757,6 @@ object CameraProfileCatalog {
         defaultFocalLengthMm = 30f,
         supportedLenses = listOf(
             LensType.NORMAL,
-            LensType.FISHEYE_F,
-            LensType.FISHEYE_W,
             LensType.PRISM,
             LensType.STARBURST
         ),
