@@ -890,6 +890,10 @@ private fun ColorProfileAndLensSheet(
 
             if (initialTab == BottomSheetType.COLOR_PROFILE) {
                 // ==================== COLOR PROFILE TAB (Dazz Cam Color Scheme) ====================
+                val context = LocalView.current.context
+                val defaultProfile = remember(preset.id) {
+                    com.craftcam.app.color.profile.CameraProfileCompatibility.getDefaultProfile(preset.id)
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -901,7 +905,7 @@ private fun ColorProfileAndLensSheet(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    if (selectedColorProfileIndex != 1) {
+                    if (selectedColorProfileIndex != defaultProfile.index) {
                         Text(
                             text = "Reset",
                             color = Color(0xFF8E8E93),
@@ -911,7 +915,7 @@ private fun ColorProfileAndLensSheet(
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    onSelectColorProfile(1) // Reset to C400 default
+                                    onSelectColorProfile(defaultProfile.index)
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
@@ -920,16 +924,25 @@ private fun ColorProfileAndLensSheet(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Scrollable Film Profile Swatches Row (03 G, C400, 07 FF, 19 P, 19 P2, 19 M, 22 M, EG200, FX33, FXN2)
+                // Scrollable Film Profile Swatches Row (Camera-Specific Compatibility)
+                val supportedProfiles = remember(preset.id) {
+                    com.craftcam.app.color.profile.CameraProfileCompatibility.getSupportedProfiles(preset.id).ifEmpty {
+                        com.craftcam.app.color.profile.DazzColorProfileCatalog.PROFILES
+                    }
+                }
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(com.craftcam.app.color.profile.DazzColorProfileCatalog.PROFILES) { profile ->
+                    items(supportedProfiles) { profile ->
+                        val thumbRes = remember(profile.thumbnailDrawableName) {
+                            context.resources.getIdentifier(profile.thumbnailDrawableName, "drawable", context.packageName)
+                        }
                         ColorProfileCard(
                             label = profile.displayName,
                             topColor = profile.topColor,
                             bodyColor = profile.bodyColor,
+                            thumbnailResId = if (thumbRes != 0) thumbRes else null,
                             isSelected = selectedColorProfileIndex == profile.index,
                             hasRainbow = profile.hasRainbow,
                             onClick = { onSelectColorProfile(profile.index) }
@@ -1247,6 +1260,7 @@ private fun ColorProfileCard(
     bodyColor: Color,
     isSelected: Boolean,
     hasRainbow: Boolean = false,
+    thumbnailResId: Int? = null,
     onClick: () -> Unit
 ) {
     val view = LocalView.current
@@ -1266,12 +1280,34 @@ private fun ColorProfileCard(
                 onClick()
             }
     ) {
+        if (thumbnailResId != null) {
+            Image(
+                painter = painterResource(id = thumbnailResId),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = 0.82f,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.15f),
+                                Color.Black.copy(alpha = 0.60f)
+                            )
+                        )
+                    )
+            )
+        }
+
         Column(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(18.dp)
-                    .background(topColor)
+                    .background(if (thumbnailResId != null) topColor.copy(alpha = 0.85f) else topColor)
             ) {
                 if (hasRainbow) {
                     Box(

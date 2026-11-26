@@ -623,6 +623,9 @@ class CameraManager(private val context: Context) {
                 ((defaultK - 5500f) / (9500f - 5500f) * 0.5f).coerceIn(0.0f, 0.5f)
             }
 
+            val savedProfileId = com.craftcam.app.config.AppSettingsStore.get(context).getColorProfileForCamera(preset.id)
+            val initialColorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedProfileId)
+
             _uiState.update { state ->
                 state.copy(
                     engineMode = newEngineMode,
@@ -638,7 +641,10 @@ class CameraManager(private val context: Context) {
                         selectedAspectRatio = initialRatio
                     ),
                     aspectRatio = initialRatio,
-                    tuning = state.tuning.copy(temperatureOffset = offset),
+                    tuning = state.tuning.copy(
+                        temperatureOffset = offset,
+                        filmColorProfileIndex = initialColorProfile.index
+                    ),
                     captureFrameState = state.captureFrameState.copy(
                         sizeFraction = defaultFraction,
                         normalizedCenterX = 0.5f,
@@ -679,11 +685,15 @@ class CameraManager(private val context: Context) {
 
     fun setFilmColorProfileIndex(index: Int) {
         val maxIdx = com.craftcam.app.color.profile.DazzColorProfileCatalog.PROFILES.size - 1
-        updateTuning { it.copy(filmColorProfileIndex = index.coerceIn(0, maxIdx)) }
+        val clamped = index.coerceIn(0, maxIdx)
+        val profile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(clamped)
+        com.craftcam.app.config.AppSettingsStore.get(context).setColorProfileForCamera(currentPreset.id, profile.id)
+        updateTuning { it.copy(filmColorProfileIndex = clamped) }
     }
 
     fun resetFilmColorProfile() {
-        setFilmColorProfileIndex(1)
+        val defaultProfile = com.craftcam.app.color.profile.CameraProfileCompatibility.getDefaultProfile(currentPreset.id)
+        setFilmColorProfileIndex(defaultProfile.index)
     }
 
     fun selectLensAccessory(lensType: LensType) {

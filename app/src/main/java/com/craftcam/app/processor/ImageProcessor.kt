@@ -770,9 +770,17 @@ object ImageProcessor {
 
 
             // 1. Identify camera-specific 3D LUT (matches GLViewfinderRenderer priority)
+            val isProfileCompatible = com.craftcam.app.color.profile.CameraProfileCompatibility.isProfileSupported(preset.id)
+            val colorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(tuning.filmColorProfileIndex)
+            val isMono = isProfileCompatible && colorProfile.isMonochrome
+
             val canonicalLut = selectLutForPreset(preset.id)
-            val profileLut = film.lutAssetPath?.ifEmpty { null }
-            val lutFile = profileLut ?: canonicalLut
+            val profileLut = if (isProfileCompatible) {
+                colorProfile.lutAssetPath
+            } else {
+                film.lutAssetPath?.ifEmpty { null } ?: canonicalLut
+            }
+            val lutFile = profileLut
             val lut = getOrLoadLut(context, lutFile)
 
             // Match GLViewfinderRenderer base grading resolution
@@ -787,9 +795,9 @@ object ImageProcessor {
             // Micro-tuning user offsets + selected film emulsion color profile
             val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
             val userTempOffset = if (tuning.isHardwareWbActive) 0.0f else tuning.temperatureOffset
-            val tempShift = (colorProfileAdj.tempDelta + userTempOffset).coerceIn(-1.0f, 1.0f)
-            val tintShift = (colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
-            val satBoost = (colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceIn(0.0f, 2.0f)
+            val tempShift = if (isMono) 0.0f else (colorProfileAdj.tempDelta + userTempOffset).coerceIn(-1.0f, 1.0f)
+            val tintShift = if (isMono) 0.0f else (colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+            val satBoost = if (isMono) 0.0f else (colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceIn(0.0f, 2.0f)
             val contBoost = (colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceIn(0.5f, 2.0f)
 
             // Filter intensity interpolation (0.0 = clean raw image, 1.0 = full analog photochemical grade)
@@ -798,15 +806,15 @@ object ImageProcessor {
             // Combined preset color grading + user tuning scaled by filter intensity
             val rawContrast = (baseContrast * contBoost).coerceAtLeast(0.1f)
             val effectiveContrast = 1.0f + (rawContrast - 1.0f) * intensity
-            val rawSat = (baseSaturation * satBoost).coerceAtLeast(0.0f)
-            val effectiveSat = 1.0f + (rawSat - 1.0f) * intensity
-            val effectiveTemp = ((baseTemp + tempShift) * intensity).coerceIn(-1.0f, 1.0f)
-            val effectiveTint = ((baseTint + tintShift) * intensity).coerceIn(-1.0f, 1.0f)
+            val rawSat = if (isMono) 0.0f else (baseSaturation * satBoost).coerceAtLeast(0.0f)
+            val effectiveSat = if (isMono) 0.0f else (1.0f + (rawSat - 1.0f) * intensity)
+            val effectiveTemp = if (isMono) 0.0f else ((baseTemp + tempShift) * intensity).coerceIn(-1.0f, 1.0f)
+            val effectiveTint = if (isMono) 0.0f else ((baseTint + tintShift) * intensity).coerceIn(-1.0f, 1.0f)
             val effectiveGamma = 1.0f + (grading.gamma - 1.0f) * intensity
             val effectiveFade = film.fadeAtIntensity(grading.fade, colorProfileAdj.fadeDelta, intensity)
-            val shadowR = baseShadowR * intensity
-            val shadowG = baseShadowG * intensity
-            val shadowB = baseShadowB * intensity
+            val shadowR = if (isMono) 0f else baseShadowR * intensity
+            val shadowG = if (isMono) 0f else baseShadowG * intensity
+            val shadowB = if (isMono) 0f else baseShadowB * intensity
             val rollOff = film.shoulderAtIntensity(intensity)
 
             // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
@@ -1395,7 +1403,8 @@ object ImageProcessor {
                     profile = skinProfile,
                     isFlashActive = isFlashActive,
                     iso = sensorIso,
-                    sourcePixels = sourcePixels
+                    sourcePixels = sourcePixels,
+                    isMonochrome = isMono
                 )
                 if (tuning.debugSkinToneStages) {
                     com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(

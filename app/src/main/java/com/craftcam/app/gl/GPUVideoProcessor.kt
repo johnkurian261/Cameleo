@@ -500,7 +500,9 @@ class GPUVideoProcessor(
             val preset = presetProvider()
             val tuning = tuningProvider()
             val intensity = tuning.filterIntensity.coerceIn(0.0f, 1.0f)
-            val lutAsset = ShaderConstants.getLutAssetForPreset(preset.id)
+            val isProfileCompatible = com.craftcam.app.color.profile.CameraProfileCompatibility.isProfileSupported(preset.id)
+            val colorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(tuning.filmColorProfileIndex)
+            val lutAsset = if (isProfileCompatible) colorProfile.lutAssetPath else ShaderConstants.getLutAssetForPreset(preset.id)
             val lutId = getOrLoadLutTexture(lutAsset)
 
             GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
@@ -590,11 +592,12 @@ class GPUVideoProcessor(
             GLES30.glUniform2f(uViewportSizeLoc, outputSize.width.toFloat(), outputSize.height.toFloat())
 
             val color = preset.colorGrading
+            val isMono = isProfileCompatible && colorProfile.isMonochrome
             val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
             val contrast = (color.contrast * colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
-            val saturation = (color.saturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
-            val temperature = (color.temperature + colorProfileAdj.tempDelta + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
-            val tint = (color.tint + colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+            val saturation = if (isMono) 0.0f else (color.saturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+            val temperature = if (isMono) 0.0f else (color.temperature + colorProfileAdj.tempDelta + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+            val tint = if (isMono) 0.0f else (color.tint + colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
 
             GLES30.glUniform1f(uContrastLoc, contrast)
             GLES30.glUniform1f(uSaturationLoc, saturation)
@@ -603,7 +606,7 @@ class GPUVideoProcessor(
             GLES30.glUniform1f(uGammaLoc, color.gamma)
             GLES30.glUniform1f(uFadeLoc, (color.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0f))
             GLES30.glUniform1f(uHighlightRollOffLoc, color.highlightRollOff)
-            GLES30.glUniform3f(uShadowTintLoc, color.shadowTintR, color.shadowTintG, color.shadowTintB)
+            GLES30.glUniform3f(uShadowTintLoc, if (isMono) 0f else color.shadowTintR, if (isMono) 0f else color.shadowTintG, if (isMono) 0f else color.shadowTintB)
 
             val lens = preset.lens
             val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0f, 1f)

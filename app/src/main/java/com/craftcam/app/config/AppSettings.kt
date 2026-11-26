@@ -125,6 +125,15 @@ class AppSettingsStore private constructor(context: Context) {
         _state.update { it.copy(preserveExif = enabled) }
     }
 
+    fun getColorProfileForCamera(presetId: String): String {
+        val defaultId = com.craftcam.app.color.profile.CameraProfileCompatibility.getDefaultProfile(presetId).id
+        return prefs.getString("color_profile_$presetId", defaultId) ?: defaultId
+    }
+
+    fun setColorProfileForCamera(presetId: String, profileId: String) {
+        prefs.edit().putString("color_profile_$presetId", profileId).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "cameleo_settings"
         private const val KEY_EXPORT_TO_ALBUM = "export_to_album"

@@ -4,9 +4,9 @@ import androidx.compose.ui.graphics.Color
 import com.craftcam.app.config.FilmColorProfileAdjustment
 
 /**
- * Authentic Dazz Cam Color Profile representation.
+ * Authentic Dazz Cam Color Profile representation with dedicated 3D LUT assets.
  * Based on reverse engineering of Dazz Cam's `Localizable.strings` (`LOOKUP_*_TIP`),
- * `Assets.car` (`icon_filter_*`), and `DZImageFilter.framework`.
+ * `Assets.car` (`icon_filter_*`), and `DZImageFilter.framework` (`lookup_*`).
  */
 data class DazzColorProfile(
     val index: Int,
@@ -18,6 +18,8 @@ data class DazzColorProfile(
     val bodyColor: Color,
     val hasRainbow: Boolean = false,
     val isMonochrome: Boolean = false,
+    val lutAssetPath: String,
+    val thumbnailDrawableName: String = "thumb_profile_${id.lowercase()}",
     val adjustment: FilmColorProfileAdjustment
 )
 
@@ -32,6 +34,7 @@ object DazzColorProfileCatalog {
             description = "Daylight-balanced movie film, with additional grading and reduced contrast.",
             topColor = Color(0xFF8D6E63),
             bodyColor = Color(0xFF3E2723),
+            lutAssetPath = "lut_profile_03g.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = 0.07f,
                 tintDelta = -0.02f,
@@ -50,6 +53,7 @@ object DazzColorProfileCatalog {
             topColor = Color(0xFFFFFFFF),
             bodyColor = Color(0xFF00C853),
             hasRainbow = true,
+            lutAssetPath = "lut_profile_c400.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = 0.00f,
                 tintDelta = 0.00f,
@@ -67,6 +71,7 @@ object DazzColorProfileCatalog {
             description = "Daylight-balanced motion picture film, with vibrant color rendering based on scans from a standard film scanner.",
             topColor = Color(0xFF80DEEA),
             bodyColor = Color(0xFF00796B),
+            lutAssetPath = "lut_profile_07ff.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = -0.05f,
                 tintDelta = -0.04f,
@@ -84,6 +89,7 @@ object DazzColorProfileCatalog {
             description = "Tungsten-balanced movie film, with warm-leaning color rendering based on print tones.",
             topColor = Color(0xFFD1C4E9),
             bodyColor = Color(0xFF4A148C),
+            lutAssetPath = "lut_profile_19p.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = -0.08f,
                 tintDelta = 0.07f,
@@ -101,6 +107,7 @@ object DazzColorProfileCatalog {
             description = "Tungsten-balanced movie film, with warm-leaning color rendering based on generic print tones.",
             topColor = Color(0xFFCE93D8),
             bodyColor = Color(0xFF6A1B9A),
+            lutAssetPath = "lut_profile_19p2.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = -0.06f,
                 tintDelta = 0.04f,
@@ -118,6 +125,7 @@ object DazzColorProfileCatalog {
             description = "Tungsten-balanced movie film, with warm-leaning color rendering based on the monitor’s tone.",
             topColor = Color(0xFFFFCC80),
             bodyColor = Color(0xFFE65100),
+            lutAssetPath = "lut_profile_19m.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = 0.04f,
                 tintDelta = 0.02f,
@@ -136,6 +144,7 @@ object DazzColorProfileCatalog {
             topColor = Color(0xFFEEEEEE),
             bodyColor = Color(0xFF212121),
             isMonochrome = true,
+            lutAssetPath = "lut_profile_22m.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = 0.00f,
                 tintDelta = 0.00f,
@@ -153,6 +162,7 @@ object DazzColorProfileCatalog {
             description = "Everyday daylight film with vibrant colors, a slight green tint, and solid dynamic range.",
             topColor = Color(0xFFFFE082),
             bodyColor = Color(0xFFF57F17),
+            lutAssetPath = "lut_profile_eg200.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = 0.03f,
                 tintDelta = -0.06f,
@@ -170,6 +180,7 @@ object DazzColorProfileCatalog {
             description = "A more authentic CCD look with smooth tones, a subtle cool tint, and balanced contrast.",
             topColor = Color(0xFF90CAF9),
             bodyColor = Color(0xFF1565C0),
+            lutAssetPath = "lut_profile_fx33.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = -0.04f,
                 tintDelta = 0.01f,
@@ -187,6 +198,7 @@ object DazzColorProfileCatalog {
             description = "Compared to FXN, FXN2 offers smoother tones and colors, with slightly lower contrast.",
             topColor = Color(0xFFFFAB91),
             bodyColor = Color(0xFFD84315),
+            lutAssetPath = "lut_profile_fxn2.png",
             adjustment = FilmColorProfileAdjustment(
                 tempDelta = 0.02f,
                 tintDelta = 0.01f,

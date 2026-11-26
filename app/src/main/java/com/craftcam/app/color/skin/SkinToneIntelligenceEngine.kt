@@ -74,12 +74,13 @@ class SkinToneIntelligenceEngine(
         isFlashActive: Boolean = false,
         iso: Int = 100,
         protectionOnly: Boolean = false,
-        sourcePixels: IntArray? = null
+        sourcePixels: IntArray? = null,
+        isMonochrome: Boolean = false
     ): SkinProcessingResult {
         val total = width * height
         val config = profile.config
 
-        if (!config.enabled || total == 0) {
+        if (!config.enabled || total == 0 || isMonochrome) {
             return SkinProcessingResult(
                 refinedSkinMask = FloatArray(total),
                 faceCount = faces.size,

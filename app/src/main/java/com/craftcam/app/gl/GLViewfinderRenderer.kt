@@ -485,9 +485,7 @@ class GLViewfinderRenderer(
         pendingPreset = preset
         val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
         activeUnifiedProfile = unifiedProfile
-        val canonicalLut = getLutAssetForPreset(preset.id)
-        val profileLut = unifiedProfile.filmProfile.lutAssetPath?.ifEmpty { null }
-        val lutAsset = profileLut ?: canonicalLut
+        val lutAsset = resolveActiveLutAsset(preset, unifiedProfile, currentTuning)
 
         val cachedLut = LutTextureCache.getCachedLutFast(lutAsset)
         val secLutAsset = unifiedProfile.filmProfile.secondaryLutAssetPath
@@ -639,10 +637,50 @@ class GLViewfinderRenderer(
     }
 
     fun updateTuning(tuning: UserTuningConfig) {
+        val oldLut = resolveActiveLutAsset(activePreset, activeUnifiedProfile, currentTuning)
+        val newLut = resolveActiveLutAsset(activePreset, activeUnifiedProfile, tuning)
         currentTuning = tuning
         isHardwareWbActive = tuning.isHardwareWbActive
+
+        if (oldLut != newLut) {
+            val cachedLut = LutTextureCache.getCachedLutFast(newLut)
+            if (cachedLut != null) {
+                activeLutTexId = cachedLut.textureId
+                activeLutTarget = cachedLut.target
+            } else {
+                renderScope.launch(Dispatchers.IO) {
+                    val preLoaded = LutTextureCache.getPreparedVoxel(newLut)
+                    val preparedPrimary = preLoaded ?: LutTextureCache.prepareVoxelDataAsync(context, newLut)
+                    glSurfaceView.queueEvent {
+                        val primaryTex = if (preparedPrimary != null) {
+                            LutTextureCache.uploadPreparedVoxelData(preparedPrimary)
+                        } else LutTextureCache.getOrCreateLutTexture(context, newLut, prefer3D = true)
+                        if (primaryTex != null && resolveActiveLutAsset(activePreset, activeUnifiedProfile, currentTuning) == newLut) {
+                            activeLutTexId = primaryTex.textureId
+                            activeLutTarget = primaryTex.target
+                            requestRenderSafe()
+                        }
+                    }
+                }
+            }
+        }
+
         resolveGrainTexture(activePreset, activeUnifiedProfile)
         requestRenderSafe()
+    }
+
+    private fun resolveActiveLutAsset(
+        preset: CameraPreset,
+        unifiedProfile: com.craftcam.app.camera.profile.CameraProfile,
+        tuning: UserTuningConfig
+    ): String {
+        val isProfileCompatible = com.craftcam.app.color.profile.CameraProfileCompatibility.isProfileSupported(preset.id)
+        return if (isProfileCompatible) {
+            val colorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(tuning.filmColorProfileIndex)
+            colorProfile.lutAssetPath
+        } else {
+            unifiedProfile.filmProfile.lutAssetPath?.ifEmpty { null } ?: getLutAssetForPreset(preset.id)
+        }
     }
 
     fun setHardwareWbActive(active: Boolean) {
@@ -1314,14 +1352,18 @@ class GLViewfinderRenderer(
             val baseShadowG = if (film.shadowTintG != 0.0f) film.shadowTintG else color.shadowTintG
             val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else color.shadowTintB
 
+            val colorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(tuning.filmColorProfileIndex)
+            val isProfileCompatible = com.craftcam.app.color.profile.CameraProfileCompatibility.isProfileSupported(preset.id)
+            val isMono = isProfileCompatible && colorProfile.isMonochrome
+
             val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
             val rawContrast = (baseContrast * colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
             val contrast = 1.0f + (rawContrast - 1.0f) * intensity
-            val rawSat = (baseSaturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
-            val saturation = 1.0f + (rawSat - 1.0f) * intensity
+            val rawSat = if (isMono) 0.0f else (baseSaturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+            val saturation = if (isMono) 0.0f else (1.0f + (rawSat - 1.0f) * intensity)
             val userTempOffset = if (isHardwareWbActive) 0.0f else tuning.temperatureOffset
-            val temperature = ((baseTemp + colorProfileAdj.tempDelta + userTempOffset) * intensity).coerceIn(-1.0f, 1.0f)
-            val tint = ((baseTint + colorProfileAdj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val temperature = if (isMono) 0.0f else ((baseTemp + colorProfileAdj.tempDelta + userTempOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val tint = if (isMono) 0.0f else ((baseTint + colorProfileAdj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
             val gamma = 1.0f + (color.gamma - 1.0f) * intensity
             val fade = film.fadeAtIntensity(color.fade, colorProfileAdj.fadeDelta, intensity)
             val highlightRollOff = film.shoulderAtIntensity(intensity)
@@ -1333,7 +1375,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uGammaLoc, gamma)
             GLES30.glUniform1f(uFadeLoc, fade)
             GLES30.glUniform1f(uHighlightRollOffLoc, highlightRollOff)
-            GLES30.glUniform3f(uShadowTintLoc, baseShadowR * intensity, baseShadowG * intensity, baseShadowB * intensity)
+            GLES30.glUniform3f(uShadowTintLoc, if (isMono) 0f else baseShadowR * intensity, if (isMono) 0f else baseShadowG * intensity, if (isMono) 0f else baseShadowB * intensity)
             if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, unifiedProfile.filmProfile.toeLift * intensity)
             if (uShoulderClipLoc != -1) {
                 val clip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity
@@ -1341,7 +1383,10 @@ class GLViewfinderRenderer(
             }
             GLES30.glUniform1f(uLowerMidtoneStrengthLoc, unifiedProfile.filmProfile.lowerMidtoneStrength * intensity)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
-            if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
+            if (uSkinProtectionLoc != -1) {
+                val skinProt = if (isMono) 0.0f else unifiedProfile.filmProfile.skinProtection
+                GLES30.glUniform1f(uSkinProtectionLoc, skinProt)
+            }
 
             val isPerformanceThrottled = frameMetrics.isThrottled
 
