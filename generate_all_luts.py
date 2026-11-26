@@ -555,9 +555,48 @@ def grade_ccd_r(r, g, b):
     
     return adjust_saturation(r, g, b, 1.30)
 
+# 25. GR D (Ricoh GR Digital 2005 8.1MP CCD Street Snap Camera)
+# High micro-contrast, deep clean black floor, punchy street primaries, crisp highlight retention
+def grade_ccd_grd(r, g, b):
+    # Distinctive GR street tonal curve: punchy midtones, true black anchor, clean digital highlight roll-off
+    r = film_s_curve(r, contrast=1.28, toe=0.005, shoulder=0.96)
+    g = film_s_curve(g, contrast=1.26, toe=0.005, shoulder=0.96)
+    b = film_s_curve(b, contrast=1.30, toe=0.005, shoulder=0.97)
+    luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    
+    # Deep, clean neutral shadow floor (true black, subtle slate coolness without muddy brown)
+    sh = clamp(1.0 - luma * 3.2)
+    r -= 0.02 * sh
+    g -= 0.01 * sh
+    b += 0.03 * sh
+    
+    # Crisp, punchy primary color fidelity (famous GR street snap color)
+    # Vibrant street reds (stop signs, brake lights, textiles)
+    if r > g and r > b:
+        r = clamp(r * 1.10)
+        g = clamp(g * 0.98)
+    # Crisp deep street blues (sky, denim)
+    if b > r:
+        b = clamp(b * 1.14)
+        g = clamp(g * 1.02)
+        r = clamp(r * 0.96)
+    # Rich foliage / architecture greens
+    if g > r and g > b:
+        g = clamp(g * 1.08)
+        b = clamp(b * 0.96)
+        
+    # Healthy peachy street skin tones
+    if r > g and g > b:
+        skin_factor = clamp(1.0 - abs(luma - 0.55) * 2.5)
+        r += 0.02 * skin_factor
+        g += 0.01 * skin_factor
+        
+    return adjust_saturation(r, g, b, 1.10)
+
 ALL_GRADES = {
+    "lut_ccd_grd.png":             grade_ccd_grd,
     "lut_analog_35mm_classic.png": grade_analog_35mm_classic,
-    "lut_analog_warm_film.png":    grade_analog_warm_film,
+    "lut_analog_warm_film.png":    grade_ccd_grd,
     "lut_analog_soft_film.png":    grade_analog_soft_film,
     "lut_analog_vintage_color.png": grade_analog_vintage_color,
     "lut_analog_faded_film.png":   grade_analog_faded_film,

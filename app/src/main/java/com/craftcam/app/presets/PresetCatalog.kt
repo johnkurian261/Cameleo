@@ -253,21 +253,21 @@ object PresetCatalog {
             year = "2005",
             description = "Legendary 28mm wide street snap camera. High micro-contrast, sharp optical rendering, and deep, evocative shadow delineation.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
-                saturation = 1.10f,
-                temperature = 0.16f,
-                tint = 0.02f,
-                fade = 0.02f,
-                highlightRollOff = 0.88f,
-                shadowTintR = 0.02f,
-                shadowTintG = 0.01f,
-                shadowTintB = 0.00f
+                contrast = 1.16f,
+                saturation = 1.08f,
+                temperature = 0.02f,
+                tint = 0.00f,
+                fade = 0.00f,
+                highlightRollOff = 0.94f,
+                shadowTintR = 0.00f,
+                shadowTintG = 0.00f,
+                shadowTintB = 0.01f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.25f, scale = 1.05f, isColorNoise = false, assetPath = "grains/grain_ou.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.36f, highlightStrength = 0.16f),
-            lens = LensConfig(vignetteIntensity = 0.25f, vignetteRadius = 0.82f, chromaticAberration = 0.003f),
-            dust = DustConfig(enabled = true, assetPath = "135_dust.png", opacity = 0.45f),
+            grain = GrainConfig(enabled = true, intensity = 0.12f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_ccdr.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.22f, highlightStrength = 0.06f),
+            lens = LensConfig(vignetteIntensity = 0.18f, vignetteRadius = 0.88f, chromaticAberration = 0.002f),
+            dust = DustConfig(enabled = false, assetPath = "", opacity = 0f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -21)
+            dateStamp = DateStampConfig(enabled = false, style = DateStampStyle.DIGICAM_YELLOW_DATETIME, customYearOffset = -21)
         ),
 
         CameraPreset(

@@ -514,7 +514,7 @@ object CameraProfileCatalog {
         id = "warm_film_gr",
         name = "Warm Film",
         subtitle = "Amber Tungsten",
-        presetId = "analog_warm_film",
+        presetId = "analog_warm_film_legacy",
         focalLengths = listOf(
             FocalLengthOption("28mm", 28f),
             FocalLengthOption("50mm", 50f)
@@ -553,6 +553,51 @@ object CameraProfileCatalog {
             scale = 1.05f,
             luminanceWeightingEnabled = true,
             luminanceWeightingPower = 1.0f
+        )
+    )
+
+    val GR_D = CameleoCameraProfile(
+        id = "ccd_grd",
+        name = "GR D",
+        subtitle = "Ricoh GR Digital Snap",
+        presetId = "analog_warm_film",
+        focalLengths = listOf(
+            FocalLengthOption("28mm", 28f),
+            FocalLengthOption("47mm", 47f)
+        ),
+        defaultFocalLengthMm = 28f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.FISHEYE_W,
+            LensType.STARBURST
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "ccd_grd",
+            name = "Ricoh GR Digital Snap",
+            lutAssetPath = "lut_ccd_grd.png",
+            contrast = 1.16f,
+            saturation = 1.08f,
+            temperature = 0.02f,
+            tint = 0.00f,
+            toeLift = 0.005f,
+            shoulderClip = 0.97f,
+            highlightRollOff = 0.94f,
+            halationThreshold = 1.0f,
+            halationIntensity = 0.0f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.35f,
+            halationColorTintB = 0.08f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_grd",
+            mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_ccdr.jpg",
+            intensity = 0.12f,
+            scale = 0.90f,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.2f
         )
     )
 
@@ -1499,6 +1544,7 @@ object CameraProfileCatalog {
         PAF_INSTANT,
         FISHEYE_CAMERA,
         SOFT_FILM,
+        GR_D,
         WARM_FILM,
         DISPOSABLE_FUNS,
         CPM_35,
@@ -1545,7 +1591,7 @@ object CameraProfileCatalog {
             "analog_135ne", "135ne", "135 ne" -> return ONE_THREE_FIVE_NE
             "analog_fisheye_f", "fisheye" -> return FISHEYE_CAMERA
             "analog_soft_film", "ct2f" -> return SOFT_FILM
-            "analog_warm_film", "grd", "gr d" -> return WARM_FILM
+            "analog_warm_film", "ccd_grd", "grd", "gr d" -> return GR_D
             "analog_s67", "s67", "s_67" -> return S_67
             "analog_dblack", "dblack", "d_black" -> return D_BLACK
             "analog_nt16", "nt16", "nt_16" -> return NT_16
