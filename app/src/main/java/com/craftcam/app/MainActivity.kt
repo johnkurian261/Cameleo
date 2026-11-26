@@ -120,9 +120,21 @@ class MainActivity : ComponentActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_MODERATE) {
+            com.craftcam.app.processor.BitmapPool.clear()
+            com.craftcam.app.processor.IntArrayPool.clear()
+            com.craftcam.app.processor.FloatArrayPool.clear()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         cameraManager.shutdown()
+        com.craftcam.app.processor.BitmapPool.clear()
+        com.craftcam.app.processor.IntArrayPool.clear()
+        com.craftcam.app.processor.FloatArrayPool.clear()
     }
 }
 

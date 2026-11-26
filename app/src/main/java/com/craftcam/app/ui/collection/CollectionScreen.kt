@@ -96,7 +96,11 @@ fun CollectionScreen(
     var bottomSheetTab by remember { mutableStateOf(BottomSheetType.COLOR_PROFILE) }
     var activeFrameEnabled by remember(frameEnabled) { mutableStateOf(frameEnabled) }
     var activeGrainEnabled by remember(grainEnabled) { mutableStateOf(grainEnabled) }
-    var selectedColorProfileIndex by remember(colorProfileIndex) { mutableStateOf(colorProfileIndex) } // 0=03G, 1=C400, 2=07FF, 3=19P
+    var selectedColorProfileIndex by remember(selectedPresetState.id, colorProfileIndex) {
+        val savedId = com.craftcam.app.config.AppSettingsStore.get(context).getColorProfileForCamera(selectedPresetState.id)
+        val prof = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedId)
+        mutableStateOf(prof.index)
+    }
 
     var activeLensType by remember(selectedPresetState.id) {
         val profile = CameraProfileCatalog.getProfileForPreset(selectedPresetState)
@@ -341,6 +345,9 @@ fun CollectionScreen(
                                             onSelectPreset(preset)
                                             val prof = CameraProfileCatalog.getProfileForPreset(preset)
                                             activeLensType = prof.defaultLens
+                                            val savedProfileId = com.craftcam.app.config.AppSettingsStore.get(context).getColorProfileForCamera(preset.id)
+                                            val savedProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedProfileId)
+                                            selectedColorProfileIndex = savedProfile.index
                                         },
                                         onConfirm = {
                                             view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)

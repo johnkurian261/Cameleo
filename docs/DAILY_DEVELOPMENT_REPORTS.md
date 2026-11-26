@@ -69,11 +69,16 @@ This document tracks daily engineering milestones, architectural audits, test su
 - Created centralized `AutofocusController` managing Camera2 `CONTROL_AF_MODE`, `CONTROL_AF_TRIGGER`, and `CONTROL_AF_STATE`.
 - Implemented continuous picture autofocus (`CONTINUOUS_PICTURE`) with touch-to-metering region coordinate mapping, letterbox aspect ratio projection, and pre-capture settling gate.
 
-#### 7. D3D Stereoscopic Lens Discipline & Fisheye Exclusion
+#### 7. D3D Stereoscopic Lens Discipline & Fisheye Exclusion (`ac36a15`)
 - **Optical Incompatibility**: Excluded circular fisheye (`FISHEYE_F`) and full-frame fisheye (`FISHEYE_W`) lenses from the D3D (`d_3d`, `analog_cinema_film`) camera profile. Fisheye curvilinear warping and black hood vignetting severely corrupt stereoscopic horizontal parallax alignment, causing depth estimation failure and severe retinal rivalry.
 - **Catalog & Selection Validation**: Updated `D_3D.supportedLenses` in `CameraProfileCatalog.kt` to strictly omit fisheye lenses. Added validation in `CameraManager.selectLensAccessory` to prevent mounting unsupported lenses on D3D.
 - **Viewfinder & Pipeline Guards**: Guarded `GLViewfinderRenderer.kt` and `ImageProcessor.kt` so that D3D rendering automatically falls back to `LensProfile.NORMAL` if an invalid lens state is passed.
 - **Automated Unit Tests**: Added `d3dCameraProfileStrictlyExcludesFisheyeLenses` in `ThreeDModeTest.kt` asserting that `D_3D.supportedLenses` contains only compatible optical accessories.
+
+#### 8. Memory Lifecycle Leak Prevention & UI State Synchronization
+- **Collection Shelf Selection Sync ([`CollectionScreen.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/ui/collection/CollectionScreen.kt))**: Fixed state desynchronization where `selectedColorProfileIndex` remained anchored to the initial preset index when switching cameras in the shelf. Keyed `remember(selectedPresetState.id, colorProfileIndex)` and updated `selectedColorProfileIndex` on `onSelect` with the newly selected camera's saved preference (`AppSettingsStore.getColorProfileForCamera(preset.id)`).
+- **Android LMK Memory Pool Eviction ([`MainActivity.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/MainActivity.kt))**: Implemented `onTrimMemory(level: Int)` and extended `onDestroy()`. Clears bounded pools (`BitmapPool.clear()`, `IntArrayPool.clear()`, `FloatArrayPool.clear()`) during `TRIM_MEMORY_MODERATE` to prevent Android low-memory killer eviction.
+- **Defensive 3D Stereo Optical Guards ([`ImageProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/processor/ImageProcessor.kt))**: Enforced `effectiveLensProfile = LensProfile.NORMAL` and `isFisheye = false` inside `processAndSaveThreeDImage` to defend against invalid external calls.
 
 ---
 
@@ -83,6 +88,12 @@ This document tracks daily engineering milestones, architectural audits, test su
 3. `d03609c` — *feat(camera): replace D3D icon with new triple-lens 3D pixel art drawable*
 4. `3418edc` — *feat(camera): update D Funs, Zero, and DQS icons and implement hardware white balance calibration*
 5. `b4d6eaa` — *fix(grd): implement authentic Ricoh GR Digital 2005 CCD profile, eliminate film dust and halation, and generate dedicated lut_ccd_grd*
+6. `ae900d7` — *fix(capture): eliminate ZSL buffer drops with MINIMIZE_LATENCY, stabilize D FUNS stream, and add automatic capture retry*
+7. `ea43a28` — *fix(stability): prevent capture freezes with try-catch guards, lifecycle-safe preview watchdog, and GL context checks*
+8. `2f5a312` — *feat(focus): implement hardware-aware autofocus subsystem, coordinate letterbox projection, and settling gate*
+9. `21842fa` — *feat(color): calibrate source-relative skin protection, D3D shadow neutrality, and gallery cleanup*
+10. `2130286` — *docs(reports): create persistent daily development log tracking architecture, commits, and device tests*
+11. `ac36a15` — *fix(d3d): exclude fisheye lenses from D3D camera profile and enforce optical compatibility guards*
 6. `ae900d7` — *fix(capture): eliminate ZSL buffer drops with MINIMIZE_LATENCY, stabilize D FUNS stream, and add automatic capture retry*
 7. `ea43a28` — *fix(stability): prevent capture freezes with try-catch guards, lifecycle-safe preview watchdog, and GL context checks*
 8. `2f5a312` — *feat(focus): implement hardware-aware autofocus subsystem, coordinate letterbox projection, and settling gate*
@@ -152,7 +163,7 @@ This document tracks daily engineering milestones, architectural audits, test su
 
 | Metric | Status |
 | :--- | :--- |
-| **Unit Test Suite** | **167 tests passing** (0 failures, 0 skipped) |
+| **Unit Test Suite** | **168 tests passing** (0 failures, 0 skipped, 100.0% pass rate) |
 | **Build State** | `assembleDebug` SUCCESSFUL |
 | **Physical Hardware** | Verified on Samsung Galaxy S21 5G (`SM-G991B`, Android 14) via ADB |
-| **Git Working Tree** | Clean, checkpointed at `65f884d` |
+| **Git Working Tree** | Clean, checkpointed at `ac36a15` |

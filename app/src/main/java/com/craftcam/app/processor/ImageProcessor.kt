@@ -282,25 +282,11 @@ object ImageProcessor {
         val orientedW = orientedBounds.width().roundToInt()
         val orientedH = orientedBounds.height().roundToInt()
 
-        val isFisheye = lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.id == "analog_fisheye_f" || preset.name.contains("Fisheye", ignoreCase = true)
-        val cropRect: Rect = if (captureFrameSnapshot != null && !isFisheye) {
+        // Enforce rigid optical compatibility: 3D stereoscopic images strictly forbid curvilinear fisheye distortion
+        val effectiveLensProfile = if (lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W) LensProfile.NORMAL else lensProfile
+        val isFisheye = false
+        val cropRect: Rect = if (captureFrameSnapshot != null) {
             CaptureFrameMapper.mapToImageCropRect(captureFrameSnapshot, orientedW, orientedH)
-        } else if (isFisheye && (lensProfile.type == LensType.FISHEYE_F || preset.id == "analog_fisheye_f" || preset.name.contains("Fisheye", ignoreCase = true))) {
-            // Circular fisheye retains full sensor width so left/right borders never cut off the bubble
-            val isPortrait = orientedW <= orientedH
-            if (isPortrait) {
-                val targetRatio = 1.0f / aspectRatio.ratio
-                val cW = orientedW
-                val cH = minOf(orientedH, (cW / targetRatio).toInt())
-                val sY = (orientedH - cH) / 2
-                Rect(0, sY, cW, sY + cH)
-            } else {
-                val targetRatio = aspectRatio.ratio
-                val cH = orientedH
-                val cW = minOf(orientedW, (cH * targetRatio).toInt())
-                val sX = (orientedW - cW) / 2
-                Rect(sX, 0, sX + cW, cH)
-            }
         } else {
             val srcRatio = orientedW.toFloat() / orientedH
             val targetRatio = if (orientedW > orientedH) aspectRatio.ratio else (1.0f / aspectRatio.ratio)
@@ -363,7 +349,7 @@ object ImageProcessor {
                 sourceBitmap = workingBitmap,
                 faces = mappedFaces,
                 gradeInPlace = { bitmap ->
-                    applyPresetEffects(context, bitmap, preset, tuning, lensProfile, isFlashActive, applyGrain = false, cameraId = cameraId, faces = mappedFaces)
+                    applyPresetEffects(context, bitmap, preset, tuning, effectiveLensProfile, isFlashActive, applyGrain = false, cameraId = cameraId, faces = mappedFaces)
                 },
                 onProgress = onProgress
             )
