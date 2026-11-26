@@ -116,8 +116,8 @@ class DeviceCalibrationManager(private val context: Context) {
          * Detects the manufacturer brand from Android Build metadata.
          */
         fun detectDeviceBrand(): DeviceBrand {
-            val manufacturer = Build.MANUFACTURER.lowercase()
-            val brand = Build.BRAND.lowercase()
+            val manufacturer = Build.MANUFACTURER?.lowercase() ?: ""
+            val brand = Build.BRAND?.lowercase() ?: ""
             return when {
                 manufacturer.contains("samsung") || brand.contains("samsung") -> DeviceBrand.SAMSUNG
                 manufacturer.contains("google") || brand.contains("google") -> DeviceBrand.GOOGLE

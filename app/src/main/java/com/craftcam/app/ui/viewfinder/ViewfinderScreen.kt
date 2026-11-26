@@ -410,11 +410,13 @@ fun ViewfinderScreen(
                 CameraExposureTemperatureControls(
                     modifier = Modifier.fillMaxWidth(),
                     temperatureState = TemperatureState(
-                        isAuto = false,
+                        isAuto = uiState.isAwbAuto,
                         kelvin = uiState.kelvin,
+                        defaultKelvin = uiState.whiteBalanceConfig.defaultKelvin,
                         minKelvin = uiState.minKelvin,
                         maxKelvin = uiState.maxKelvin,
-                        tint = uiState.tuning.tintOffset
+                        tint = uiState.tuning.tintOffset,
+                        autoRecommended = uiState.whiteBalanceConfig.autoRecommended
                     ),
                     exposureState = ExposureState(
                         isAuto = uiState.exposureIndex == 0,
@@ -429,7 +431,7 @@ fun ViewfinderScreen(
                         cameraManager.setKelvin(newKelvin)
                     },
                     onTemperatureReset = {
-                        cameraManager.setKelvin(5500)
+                        cameraManager.resetKelvin()
                     },
                     onExposureChange = { newIdx ->
                         cameraManager.setExposureIndex(newIdx)

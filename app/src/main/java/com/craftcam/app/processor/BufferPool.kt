@@ -123,8 +123,9 @@ object BitmapPool {
 object IntArrayPool {
     private const val TAG = "IntArrayPool"
 
-    // Max 2 full-res arrays (12.2M ints = ~48.8MB) for concurrent/overlapping photo development
-    private const val MAX_LARGE_ARRAYS = 2
+    // Max 3 full-res arrays (12.2M ints = ~48.8MB) for concurrent photo development
+    // (pixels, sourcePixels, and optical/distortion copy)
+    private const val MAX_LARGE_ARRAYS = 3
     // Max 2 medium arrays (~762K ints = ~3.05MB) for halation bloom downsampled passes
     private const val MAX_MEDIUM_ARRAYS = 2
 

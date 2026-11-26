@@ -311,7 +311,10 @@ class SkinColourEstimator {
                 }
             }
             try {
-                latch.await()
+                val completed = latch.await(2000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (!completed) {
+                    android.util.Log.w("SkinColourEstimator", "estimateColourProbability timed out after 2000ms")
+                }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             }

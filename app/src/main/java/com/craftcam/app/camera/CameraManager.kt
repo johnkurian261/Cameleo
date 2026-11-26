@@ -614,10 +614,23 @@ class CameraManager(private val context: Context) {
                 (26.0f / targetFocal).coerceIn(0.25f, 0.92f)
             }
 
+            val wbConfig = preset.whiteBalance
+            val defaultK = wbConfig.defaultKelvin
+            val wbPolicy = wbConfig.policy
+            val offset = if (defaultK <= 5500) {
+                ((defaultK - 5500f) / (5500f - 2500f) * 0.5f).coerceIn(-0.5f, 0.0f)
+            } else {
+                ((defaultK - 5500f) / (9500f - 5500f) * 0.5f).coerceIn(0.0f, 0.5f)
+            }
+
             _uiState.update { state ->
                 state.copy(
                     engineMode = newEngineMode,
                     captureMode = newCaptureMode,
+                    kelvin = defaultK,
+                    isAwbAuto = wbPolicy.isAuto,
+                    whiteBalancePolicy = wbPolicy,
+                    whiteBalanceConfig = wbConfig,
                     shootingState = state.shootingState.copy(
                         cameraProfile = profile,
                         selectedLens = initialLens,
@@ -625,6 +638,7 @@ class CameraManager(private val context: Context) {
                         selectedAspectRatio = initialRatio
                     ),
                     aspectRatio = initialRatio,
+                    tuning = state.tuning.copy(temperatureOffset = offset),
                     captureFrameState = state.captureFrameState.copy(
                         sizeFraction = defaultFraction,
                         normalizedCenterX = 0.5f,
@@ -635,6 +649,10 @@ class CameraManager(private val context: Context) {
             updateFisheyeZoom(wasFisheye)
             glRenderer?.setNaturalMode(newEngineMode == CameraEngineMode.NATURAL, _uiState.value.naturalProfile)
             glRenderer?.updateLensProfile(initialLens, isFlashActive = _uiState.value.flashMode != ImageCapture.FLASH_MODE_OFF)
+
+            if (newEngineMode != CameraEngineMode.PRO) {
+                applyCamera2Wb(policy = wbPolicy, kelvin = defaultK)
+            }
 
             if (newEngineMode != CameraEngineMode.NATURAL) {
                 val step = if (_uiState.value.exposureStep > 0f) _uiState.value.exposureStep else 0.5f
@@ -1218,6 +1236,12 @@ class CameraManager(private val context: Context) {
             _uiState.update { it.copy(hardwareCapabilities = caps) }
             if (_uiState.value.engineMode == CameraEngineMode.PRO) {
                 applyProCameraControls()
+            } else {
+                applyCamera2Wb(
+                    policy = _uiState.value.whiteBalancePolicy,
+                    kelvin = _uiState.value.kelvin,
+                    tint = _uiState.value.tuning.tintOffset
+                )
             }
 
         } catch (e: Exception) {
@@ -1376,36 +1400,89 @@ class CameraManager(private val context: Context) {
             it.copy(
                 kelvin = clamped,
                 isAwbAuto = false,
+                whiteBalancePolicy = com.craftcam.app.model.WhiteBalancePolicy.MANUAL_KELVIN,
                 tuning = it.tuning.copy(temperatureOffset = offset)
             )
         }
-        glRenderer?.updateTuning(_uiState.value.tuning)
-        applyCamera2Wb(isAuto = false, kelvin = clamped)
+        applyCamera2Wb(
+            policy = com.craftcam.app.model.WhiteBalancePolicy.MANUAL_KELVIN,
+            kelvin = clamped,
+            tint = _uiState.value.tuning.tintOffset
+        )
     }
 
     fun resetKelvin() {
-        setKelvin(5500)
+        val defaultK = currentPreset.whiteBalance.defaultKelvin
+        val policy = currentPreset.whiteBalance.policy
+        val offset = if (defaultK <= 5500) {
+            ((defaultK - 5500f) / (5500f - 2500f) * 0.5f).coerceIn(-0.5f, 0.0f)
+        } else {
+            ((defaultK - 5500f) / (9500f - 5500f) * 0.5f).coerceIn(0.0f, 0.5f)
+        }
+        _uiState.update {
+            it.copy(
+                kelvin = defaultK,
+                isAwbAuto = policy.isAuto,
+                whiteBalancePolicy = policy,
+                tuning = it.tuning.copy(temperatureOffset = offset)
+            )
+        }
+        applyCamera2Wb(
+            policy = policy,
+            kelvin = defaultK,
+            tint = _uiState.value.tuning.tintOffset
+        )
     }
 
     fun setAutoWhiteBalance() {
         resetKelvin()
     }
 
-    private fun applyCamera2Wb(isAuto: Boolean, kelvin: Int) {
+    private fun applyCamera2Wb(
+        policy: com.craftcam.app.model.WhiteBalancePolicy,
+        kelvin: Int,
+        tint: Float = _uiState.value.tuning.tintOffset
+    ) {
         val cam = camera ?: return
         try {
             val camera2Control = Camera2CameraControl.from(cam.cameraControl)
             val builder = CaptureRequestOptions.Builder()
             val caps = _uiState.value.hardwareCapabilities
-            if (!isAuto && caps?.supportsManualWb == true) {
-                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
-                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
-                val gains = kelvinToRggbGains(kelvin, _uiState.value.tuning.tintOffset)
-                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_GAINS, gains)
-            } else {
-                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+            val supportsManual = caps?.supportsManualWb == true
+            val brand = com.craftcam.app.color.DeviceCalibrationManager.detectDeviceBrand()
+            val activeCameraId = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
+
+            val execution = com.craftcam.app.color.HardwareWhiteBalanceCalibrator.resolveExecution(
+                policy = policy,
+                requestedKelvin = kelvin,
+                tintOffset = tint,
+                supportsManualWb = supportsManual,
+                brand = brand,
+                cameraId = activeCameraId
+            )
+
+            builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, execution.captureRequestAwbMode)
+            builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE, execution.colorCorrectionMode)
+
+            if (execution.colorCorrectionGains != null) {
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_GAINS, execution.colorCorrectionGains)
             }
+            if (execution.colorSpaceTransform != null) {
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_TRANSFORM, execution.colorSpaceTransform)
+            }
+
             camera2Control.setCaptureRequestOptions(builder.build())
+
+            val isHwActive = execution.isHardwareApplied
+            _uiState.update { state ->
+                state.copy(
+                    isHardwareWbActive = isHwActive,
+                    tuning = state.tuning.copy(isHardwareWbActive = isHwActive)
+                )
+            }
+            glRenderer?.setHardwareWbActive(isHwActive)
+            glRenderer?.updateTuning(_uiState.value.tuning)
+            Log.d(TAG, "Applied Camera2 WB: policy=$policy kelvin=$kelvin isHardwareActive=$isHwActive gains=${execution.colorCorrectionGains}")
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to apply Camera2 AWB options", t)
         }

@@ -47,9 +47,13 @@ object PresetCatalog {
             dust = DustConfig(enabled = false),
             lightLeak = LightLeakConfig(enabled = false),
             dateStamp = DateStampConfig(enabled = false),
-            border = BorderConfig(style = BorderStyle.NONE)
+            border = BorderConfig(style = BorderStyle.NONE),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.AUTO,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
-
         // =====================================================================
         // B. DAZZ CAM CLASSICS (Authenticated Analog Cameras & Sensors)
         // =====================================================================
@@ -214,7 +218,12 @@ object PresetCatalog {
             halation = HalationConfig(enabled = true, threshold = 0.74f, intensity = 0.22f, radius = 14f, haloRed = 1.0f, haloGreen = 0.42f, haloBlue = 0.20f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.40f),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MINIMAL_WHITE, customYearOffset = -34),
-            border = BorderConfig(style = BorderStyle.NONE)
+            border = BorderConfig(style = BorderStyle.NONE),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.FIXED_TUNGSTEN,
+                defaultKelvin = 3200,
+                autoRecommended = false
+            )
         ),
 
         CameraPreset(
@@ -267,7 +276,12 @@ object PresetCatalog {
             lens = LensConfig(vignetteIntensity = 0.18f, vignetteRadius = 0.88f, chromaticAberration = 0.002f),
             dust = DustConfig(enabled = false, assetPath = "", opacity = 0f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = false, style = DateStampStyle.DIGICAM_YELLOW_DATETIME, customYearOffset = -21)
+            dateStamp = DateStampConfig(enabled = false, style = DateStampStyle.DIGICAM_YELLOW_DATETIME, customYearOffset = -21),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.HYBRID_ILLUMINANT,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
 
         CameraPreset(
@@ -307,7 +321,12 @@ object PresetCatalog {
             halation = HalationConfig(enabled = true, threshold = 0.92f, intensity = 0.08f, radius = 8f, haloRed = 0.85f, haloGreen = 0.85f, haloBlue = 1.0f),
             dust = DustConfig(enabled = true, assetPath = "dust_black.png", opacity = 0.40f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.HYBRID_ILLUMINANT,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
 
         CameraPreset(
@@ -330,7 +349,12 @@ object PresetCatalog {
             lens = LensConfig(vignetteIntensity = 0.22f, vignetteRadius = 0.85f, chromaticAberration = 0.005f),
             dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.AMBER_SUBTLE_DATE),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.HYBRID_ILLUMINANT,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
 
         CameraPreset(
@@ -957,7 +981,12 @@ object PresetCatalog {
             lens = LensConfig(vignetteIntensity = 0.25f, vignetteRadius = 0.84f, chromaticAberration = 0.012f, softness = 0.25f),
             dust = DustConfig(enabled = true, assetPath = "vhs_grain_dust01.jpg", opacity = 0.50f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -36)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -36),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.AUTO,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
 
         CameraPreset(
@@ -980,7 +1009,12 @@ object PresetCatalog {
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.85f, chromaticAberration = 0.004f, softness = 0.15f),
             dust = DustConfig(enabled = true, assetPath = "8mm_dust.png", opacity = 0.45f),
             border = BorderConfig(style = BorderStyle.ROUNDED_16MM_GATE, assetPath = "mask_16mm_02_r.jpg"),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MONOSPACE_DOT_MATRIX, customYearOffset = -30)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.MONOSPACE_DOT_MATRIX, customYearOffset = -30),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.AUTO,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
 
         CameraPreset(
@@ -1002,7 +1036,12 @@ object PresetCatalog {
             lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.88f, chromaticAberration = 0.003f),
             dust = DustConfig(enabled = true, assetPath = "vhs_grain_dust05.jpg", opacity = 0.40f),
             border = BorderConfig(style = BorderStyle.CAMCORDER_FRAME),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -27)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.DIGITAL_LCD_GREEN, customYearOffset = -27),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.AUTO,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         )
     )
 

@@ -59,11 +59,13 @@ enum class QuickControlMode {
 data class TemperatureState(
     val isAuto: Boolean = false,
     val kelvin: Int = 5500,
+    val defaultKelvin: Int = 5500,
     val minKelvin: Int = 2500,
     val maxKelvin: Int = 9500,
-    val tint: Float = 0.0f
+    val tint: Float = 0.0f,
+    val autoRecommended: Boolean = false
 ) {
-    val isDefault: Boolean get() = kelvin == 5500
+    val isDefault: Boolean get() = kelvin == defaultKelvin
 }
 
 /**
@@ -200,6 +202,17 @@ private fun ExpandedTemperaturePanel(
             onKelvinChange = onKelvinChange,
             onResetToDaylight = onReset
         )
+
+        if (!state.autoRecommended) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Auto Color Temperature is not recommended for this camera.",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                letterSpacing = 0.2.sp
+            )
+        }
     }
 }
 

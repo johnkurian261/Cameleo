@@ -61,7 +61,8 @@ data class UserTuningConfig(
     val dfunsStrictExposure: Boolean = false,
     val debugDigicamStages: Boolean = false,
     val skinToneIntelligenceEnabled: Boolean = true,
-    val debugSkinToneStages: Boolean = false
+    val debugSkinToneStages: Boolean = false,
+    val isHardwareWbActive: Boolean = false
 )
 
 data class CameraUIState(
@@ -81,7 +82,10 @@ data class CameraUIState(
     val maxExposureIndex: Int = 4,
     val exposureStep: Float = 0.5f,
     val kelvin: Int = 5500,
-    val isAwbAuto: Boolean = true,
+    val isAwbAuto: Boolean = false,
+    val isHardwareWbActive: Boolean = false,
+    val whiteBalancePolicy: com.craftcam.app.model.WhiteBalancePolicy = com.craftcam.app.model.WhiteBalancePolicy.FIXED_DAYLIGHT,
+    val whiteBalanceConfig: com.craftcam.app.model.WhiteBalanceConfig = com.craftcam.app.model.WhiteBalanceConfig(),
     val minKelvin: Int = 2500,
     val maxKelvin: Int = 9500,
     val aspectRatio: AspectRatioMode = AspectRatioMode.RATIO_4_3,

@@ -46,7 +46,7 @@ object ImageProcessor {
     private val lutCache = mutableMapOf<String, IntArray>()
     private val textureCache = mutableMapOf<String, Bitmap?>()
     private val grainPixelsCache = mutableMapOf<String, Pair<IntArray, Pair<Int, Int>>>()
-    private val processingSemaphore = kotlinx.coroutines.sync.Semaphore(2)
+    private val processingSemaphore = kotlinx.coroutines.sync.Semaphore(1)
 
     // ─── Main Processing & Saving Pipeline ──────────────────────────────────
     suspend fun processAndSaveImage(
@@ -549,15 +549,16 @@ object ImageProcessor {
         sensorIso: Int = 100,
         faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList()
     ): Bitmap {
-        val width = source.width
-        val height = source.height
+        val workingSource = if (source.isMutable) source else source.copy(Bitmap.Config.ARGB_8888, true)
+        val width = workingSource.width
+        val height = workingSource.height
         val totalPixels = width * height
         val pixels = IntArrayPool.acquire(totalPixels)
-        val sourcePixels = if (tuning.skinToneIntelligenceEnabled) {
-            IntArrayPool.acquire(totalPixels).also { System.arraycopy(pixels, 0, it, 0, totalPixels) }
+        var sourcePixels: IntArray? = if (tuning.skinToneIntelligenceEnabled) {
+            IntArrayPool.acquire(totalPixels)
         } else null
         try {
-            source.getPixels(pixels, 0, width, 0, 0, width, height)
+            workingSource.getPixels(pixels, 0, width, 0, 0, width, height)
             if (sourcePixels != null) {
                 System.arraycopy(pixels, 0, sourcePixels, 0, totalPixels)
             }
@@ -578,13 +579,13 @@ object ImageProcessor {
             val isNatural = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
 
             val isCpm35 = preset.id == "disp_flash" || stock.id == "disposable_cpm35" || preset.id == "disp_cpm35" || preset.name.contains("CPM35", ignoreCase = true)
-            val isCcd = (preset.id == "ccd_r" || stock.id == "ccd_digital" || preset.id == "ccd_retro_compact" || (preset.category == CameraCategory.CCD_DIGITAL && preset.id != "ccd_flash"))
+            val isCcd = preset.id == "ccd_r" || stock.id == "ccd_digital" || preset.name.equals("CCD R", ignoreCase = true)
             val isDigicamTarget = (isCpm35 || isCcd) && !isNatural && !isCamcorder
             val digicamModel = if (isCpm35) com.craftcam.app.color.digicam.DigicamModel.CPM35 else com.craftcam.app.color.digicam.DigicamModel.CCD
 
             if (isDigicamTarget) {
                 val intensity = tuning.filterIntensity.coerceIn(0.0f, 1.0f)
-                val origCopy = if (tuning.debugDigicamStages) Bitmap.createBitmap(source) else null
+                val origCopy = if (tuning.debugDigicamStages) Bitmap.createBitmap(workingSource) else null
 
                 // 1. Camera Lens Optical Transformations (Fisheye, Prism, Starburst, Barrel)
                 if (tuning.debugStageOptics) {
@@ -633,13 +634,17 @@ object ImageProcessor {
                     if (tuning.debugSkinToneStages) {
                         com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(
                             context = context,
-                            sourceBmp = origCopy ?: source,
+                            sourceBmp = origCopy ?: workingSource,
                             colorProb = sResult.refinedSkinMask,
                             spatialPrior = sResult.refinedSkinMask,
                             refinedMask = sResult.refinedSkinMask,
-                            finalBmp = source,
+                            finalBmp = workingSource,
                             result = sResult
                         )
+                    }
+                    if (sourcePixels != null) {
+                        IntArrayPool.release(sourcePixels)
+                        sourcePixels = null
                     }
                 }
 
@@ -725,7 +730,7 @@ object ImageProcessor {
                 } else null
 
                 // In-place update of source bitmap
-                source.setPixels(pixels, 0, width, 0, 0, width, height)
+                workingSource.setPixels(pixels, 0, width, 0, 0, width, height)
 
                 // 7. Developer diagnostics export if enabled
                 if (tuning.debugDigicamStages && origCopy != null) {
@@ -741,7 +746,7 @@ object ImageProcessor {
                         wbBmp = stagePwb,
                         opticalBmp = stageOptical,
                         noiseBmp = stageNoise,
-                        finalBmp = source,
+                        finalBmp = workingSource,
                         skinResult = lastSkinResult
                     )
                     com.craftcam.app.processor.digicam.DigicamDiagnostics.exportDebugStages(
@@ -752,7 +757,7 @@ object ImageProcessor {
                         stagePwb = stagePwb,
                         stageOptical = stageOptical,
                         stageNoise = stageNoise,
-                        finalBitmap = source
+                        finalBitmap = workingSource
                     )
                     origCopy.recycle()
                     stagePwb?.recycle()
@@ -760,7 +765,7 @@ object ImageProcessor {
                     stageNoise?.recycle()
                 }
 
-                return source
+                return workingSource
             }
 
 
@@ -781,7 +786,8 @@ object ImageProcessor {
 
             // Micro-tuning user offsets + selected film emulsion color profile
             val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
-            val tempShift = (colorProfileAdj.tempDelta + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
+            val userTempOffset = if (tuning.isHardwareWbActive) 0.0f else tuning.temperatureOffset
+            val tempShift = (colorProfileAdj.tempDelta + userTempOffset).coerceIn(-1.0f, 1.0f)
             val tintShift = (colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
             val satBoost = (colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceIn(0.0f, 2.0f)
             val contBoost = (colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceIn(0.5f, 2.0f)
@@ -1372,8 +1378,13 @@ object ImageProcessor {
             // ── Step 2c: Skin Tone Intelligence Engine for Film Presets ────
             if (!isDigicamTarget && !isNatural && !isCamcorder && tuning.skinToneIntelligenceEnabled) {
                 val skinProfile = com.craftcam.app.color.skin.SkinToneProfileCatalog.getProfileForPreset(preset.id, preset.category)
-                val skinIlluminant = if (isFlashActive) com.craftcam.app.color.digicam.DigicamIlluminant.GOLDEN_DIRECT_FLASH
-                else com.craftcam.app.color.digicam.DigicamColorEngine().estimateIlluminant(pixels, width, height, isFlashActive, sensorIso)
+                val skinIlluminant = if (isFlashActive) {
+                    com.craftcam.app.color.digicam.DigicamIlluminant.GOLDEN_DIRECT_FLASH
+                } else if (preset.whiteBalance.policy == com.craftcam.app.model.WhiteBalancePolicy.FIXED_TUNGSTEN || (tuning.temperatureOffset < -0.25f && !tuning.isHardwareWbActive)) {
+                    com.craftcam.app.color.digicam.DigicamIlluminant.AMBER_TUNGSTEN
+                } else {
+                    com.craftcam.app.color.digicam.DigicamColorEngine().estimateIlluminant(pixels, width, height, isFlashActive, sensorIso)
+                }
                 val skinEngine = com.craftcam.app.color.skin.SkinToneIntelligenceEngine()
                 val skinResult = skinEngine.process(
                     pixels = pixels,
@@ -1389,21 +1400,26 @@ object ImageProcessor {
                 if (tuning.debugSkinToneStages) {
                     com.craftcam.app.color.skin.SkinToneDiagnostics.exportDebugStages(
                         context = context,
-                        sourceBmp = source,
+                        sourceBmp = workingSource,
                         colorProb = skinResult.refinedSkinMask,
                         spatialPrior = skinResult.refinedSkinMask,
                         refinedMask = skinResult.refinedSkinMask,
-                        finalBmp = source,
+                        finalBmp = workingSource,
                         result = skinResult
                     )
+                }
+                com.craftcam.app.processor.FloatArrayPool.release(skinResult.refinedSkinMask)
+                if (sourcePixels != null) {
+                    IntArrayPool.release(sourcePixels)
+                    sourcePixels = null
                 }
             }
 
             // In-place update of source bitmap (eliminates 48.8MB result Bitmap allocation)
-            source.setPixels(pixels, 0, width, 0, 0, width, height)
+            workingSource.setPixels(pixels, 0, width, 0, 0, width, height)
 
             // ── Step 4: Canvas Layer Overlays ────────────────────────────────────
-            val canvas = Canvas(source)
+            val canvas = Canvas(workingSource)
 
             // 4a. Authentic Optical Halation (Photochemical Highlight Bloom)
             val halationActive = tuning.debugStageHalation && tuning.halationEnabled && 
@@ -1483,11 +1499,12 @@ object ImageProcessor {
                 canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), hoodPaint)
             }
 
-            return source
+            return workingSource
         } finally {
             IntArrayPool.release(pixels)
             if (sourcePixels != null) {
                 IntArrayPool.release(sourcePixels)
+                sourcePixels = null
             }
         }
     }

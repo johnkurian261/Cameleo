@@ -98,49 +98,54 @@ class SkinToneIntelligenceEngine(
         val refinedMask = if (scale > 1) {
             val sw = width / scale
             val sh = height / scale
-            val subPixels = IntArray(sw * sh)
-            for (sy in 0 until sh) {
-                val srcY = sy * scale
-                val rowSub = sy * sw
-                val rowSrc = srcY * width
-                for (sx in 0 until sw) {
-                    subPixels[rowSub + sx] = pixels[rowSrc + sx * scale]
+            val subTotal = sw * sh
+            val subPixels = com.craftcam.app.processor.IntArrayPool.acquire(subTotal)
+            try {
+                for (sy in 0 until sh) {
+                    val srcY = sy * scale
+                    val rowSub = sy * sw
+                    val rowSrc = srcY * width
+                    for (sx in 0 until sw) {
+                        subPixels[rowSub + sx] = pixels[rowSrc + sx * scale]
+                    }
                 }
-            }
-            val subColorProb = if (config.detectionEnabled) {
-                colorEstimator.estimateColourProbability(subPixels, sw, sh, illuminant)
-            } else FloatArray(sw * sh) { 1.0f }
+                val subColorProb = if (config.detectionEnabled) {
+                    colorEstimator.estimateColourProbability(subPixels, sw, sh, illuminant)
+                } else FloatArray(subTotal) { 1.0f }
 
-            val subSpatialPrior = anatomyPrior.generateSpatialPrior(sw, sh, faces, config.backgroundSuppression)
-            val subFused = anatomyPrior.fuseConfidence(subColorProb, subSpatialPrior, config.spatialConfidenceWeight, config.colourConfidenceWeight)
-            val subRefined = maskRefiner.refineMask(subFused, sw, sh, config.maskFeatherRadius)
+                val subSpatialPrior = anatomyPrior.generateSpatialPrior(sw, sh, faces, config.backgroundSuppression)
+                val subFused = anatomyPrior.fuseConfidence(subColorProb, subSpatialPrior, config.spatialConfidenceWeight, config.colourConfidenceWeight)
+                val subRefined = maskRefiner.refineMask(subFused, sw, sh, config.maskFeatherRadius)
 
-            // Bilinear upsample back to full resolution
-            val fullMask = FloatArray(total)
-            val invScale = 1.0f / scale.toFloat()
-            for (y in 0 until height) {
-                val fy = y * invScale
-                val y0 = minOf(sh - 1, fy.toInt())
-                val y1 = minOf(sh - 1, y0 + 1)
-                val fracY = fy - y0
-                val invFracY = 1.0f - fracY
-                val rowFull = y * width
-                val rowSub0 = y0 * sw
-                val rowSub1 = y1 * sw
+                // Bilinear upsample back to full resolution using pooled float array
+                val fullMask = com.craftcam.app.processor.FloatArrayPool.acquire(total)
+                val invScale = 1.0f / scale.toFloat()
+                for (y in 0 until height) {
+                    val fy = y * invScale
+                    val y0 = minOf(sh - 1, fy.toInt())
+                    val y1 = minOf(sh - 1, y0 + 1)
+                    val fracY = fy - y0
+                    val invFracY = 1.0f - fracY
+                    val rowFull = y * width
+                    val rowSub0 = y0 * sw
+                    val rowSub1 = y1 * sw
 
-                for (x in 0 until width) {
-                    val fx = x * invScale
-                    val x0 = minOf(sw - 1, fx.toInt())
-                    val x1 = minOf(sw - 1, x0 + 1)
-                    val fracX = fx - x0
-                    val invFracX = 1.0f - fracX
+                    for (x in 0 until width) {
+                        val fx = x * invScale
+                        val x0 = minOf(sw - 1, fx.toInt())
+                        val x1 = minOf(sw - 1, x0 + 1)
+                        val fracX = fx - x0
+                        val invFracX = 1.0f - fracX
 
-                    val top = subRefined[rowSub0 + x0] * invFracX + subRefined[rowSub0 + x1] * fracX
-                    val bot = subRefined[rowSub1 + x0] * invFracX + subRefined[rowSub1 + x1] * fracX
-                    fullMask[rowFull + x] = top * invFracY + bot * fracY
+                        val top = subRefined[rowSub0 + x0] * invFracX + subRefined[rowSub0 + x1] * fracX
+                        val bot = subRefined[rowSub1 + x0] * invFracX + subRefined[rowSub1 + x1] * fracX
+                        fullMask[rowFull + x] = top * invFracY + bot * fracY
+                    }
                 }
+                fullMask
+            } finally {
+                com.craftcam.app.processor.IntArrayPool.release(subPixels)
             }
-            fullMask
         } else {
             val colorProb = if (config.detectionEnabled) {
                 colorEstimator.estimateColourProbability(pixels, width, height, illuminant)
@@ -392,7 +397,10 @@ class SkinToneIntelligenceEngine(
             }
 
             try {
-                latch.await()
+                val completed = latch.await(2000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (!completed) {
+                    android.util.Log.w("SkinToneEngine", "processChunk timed out after 2000ms")
+                }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             }

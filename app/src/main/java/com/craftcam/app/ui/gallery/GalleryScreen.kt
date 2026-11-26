@@ -1056,16 +1056,24 @@ private suspend fun redevelopPhoto(
 ): Uri? = withContext(Dispatchers.IO) {
     try {
         val bitmap = context.contentResolver.openInputStream(item.uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream)
+            val options = BitmapFactory.Options().apply {
+                inMutable = true
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            BitmapFactory.decodeStream(stream, null, options)
         } ?: return@withContext null
 
-        val redeveloped = ImageProcessor.applyPresetEffects(
-            context = context,
-            source = bitmap,
-            preset = preset
-        )
-        ImageProcessor.saveToGallery(context, redeveloped, preset.name)
+        try {
+            ImageProcessor.developBitmap(
+                context = context,
+                sourceBitmap = bitmap,
+                preset = preset
+            )
+        } finally {
+            try { bitmap.recycle() } catch (_: Throwable) {}
+        }
     } catch (e: Exception) {
+        android.util.Log.e("GalleryScreen", "Failed to redevelop photo", e)
         null
     }
 }
@@ -1077,16 +1085,24 @@ private suspend fun importAndDevelopPhoto(
 ): Uri? = withContext(Dispatchers.IO) {
     try {
         val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream)
+            val options = BitmapFactory.Options().apply {
+                inMutable = true
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            BitmapFactory.decodeStream(stream, null, options)
         } ?: return@withContext null
 
-        val developed = ImageProcessor.applyPresetEffects(
-            context = context,
-            source = bitmap,
-            preset = preset
-        )
-        ImageProcessor.saveToGallery(context, developed, preset.name)
+        try {
+            ImageProcessor.developBitmap(
+                context = context,
+                sourceBitmap = bitmap,
+                preset = preset
+            )
+        } finally {
+            try { bitmap.recycle() } catch (_: Throwable) {}
+        }
     } catch (e: Exception) {
+        android.util.Log.e("GalleryScreen", "Failed to import photo", e)
         null
     }
 }

@@ -274,6 +274,9 @@ class GLViewfinderRenderer(
     private var currentTuning: UserTuningConfig = UserTuningConfig()
 
     @Volatile
+    private var isHardwareWbActive: Boolean = false
+
+    @Volatile
     private var activeUnifiedProfile: com.craftcam.app.camera.profile.CameraProfile =
         com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(activePreset)
 
@@ -637,7 +640,13 @@ class GLViewfinderRenderer(
 
     fun updateTuning(tuning: UserTuningConfig) {
         currentTuning = tuning
+        isHardwareWbActive = tuning.isHardwareWbActive
         resolveGrainTexture(activePreset, activeUnifiedProfile)
+        requestRenderSafe()
+    }
+
+    fun setHardwareWbActive(active: Boolean) {
+        isHardwareWbActive = active
         requestRenderSafe()
     }
 
@@ -1310,7 +1319,8 @@ class GLViewfinderRenderer(
             val contrast = 1.0f + (rawContrast - 1.0f) * intensity
             val rawSat = (baseSaturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
             val saturation = 1.0f + (rawSat - 1.0f) * intensity
-            val temperature = ((baseTemp + colorProfileAdj.tempDelta + tuning.temperatureOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val userTempOffset = if (isHardwareWbActive) 0.0f else tuning.temperatureOffset
+            val temperature = ((baseTemp + colorProfileAdj.tempDelta + userTempOffset) * intensity).coerceIn(-1.0f, 1.0f)
             val tint = ((baseTint + colorProfileAdj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
             val gamma = 1.0f + (color.gamma - 1.0f) * intensity
             val fade = film.fadeAtIntensity(color.fade, colorProfileAdj.fadeDelta, intensity)

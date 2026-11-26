@@ -84,7 +84,10 @@ class SkinMaskRefiner {
                     }
                 }
                 try {
-                    latchH.await()
+                    val completed = latchH.await(2000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if (!completed) {
+                        android.util.Log.w("SkinMaskRefiner", "refineMask horizontal pass timed out after 2000ms")
+                    }
                 } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                 }
@@ -129,7 +132,10 @@ class SkinMaskRefiner {
                     }
                 }
                 try {
-                    latchV.await()
+                    val completed = latchV.await(2000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if (!completed) {
+                        android.util.Log.w("SkinMaskRefiner", "refineMask vertical pass timed out after 2000ms")
+                    }
                 } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                 }
