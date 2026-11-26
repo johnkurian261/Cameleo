@@ -69,6 +69,8 @@ fun CameraControlMenu(
     onNavigateToCollection: () -> Unit = {},
     shootingState: CameraShootingState? = null,
     onSelectLens: ((LensType) -> Unit)? = null,
+    showFocusInspector: Boolean = false,
+    onToggleFocusInspector: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     if (!visible) return
@@ -211,7 +213,30 @@ fun CameraControlMenu(
                             }
                         }
 
-                        // 5. Settings Gear Button
+                        // 5. Focus Inspector Diagnostic Toggle
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(if (showFocusInspector) Color(0xFF2E7D32) else Color(0xFF1E1E20))
+                                .border(1.dp, if (showFocusInspector) Color(0xFF4CAF50) else Color(0x33FFFFFF), CircleShape)
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onToggleFocusInspector()
+                                    onDismiss()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "AF",
+                                color = if (showFocusInspector) Color(0xFFE8F5E9) else Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
+
+                        // 6. Settings Gear Button
                         Box(
                             modifier = Modifier
                                 .size(60.dp)

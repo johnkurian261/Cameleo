@@ -93,6 +93,7 @@ class CameraManager(private val context: Context) {
     private var captureWatchdogJob: Job? = null
     private var pendingRebindAfterCapture = false
     private val naturalExposureController = com.craftcam.app.camera.exposure.NaturalExposureController()
+    val autofocusController = com.craftcam.app.camera.focus.AutofocusController(context, processingScope)
 
     private fun startCaptureWatchdog(timeoutMs: Long = 8000L) {
         captureWatchdogJob?.cancel()
@@ -228,6 +229,12 @@ class CameraManager(private val context: Context) {
             lastSelectedRearLens = defaultRear
 
             processingScope.launch {
+                autofocusController.telemetry.collect { tel ->
+                    _uiState.update { it.copy(focusTelemetry = tel) }
+                }
+            }
+
+            processingScope.launch {
                 AppSettingsStore.get(context).state.collect { settings ->
                     _uiState.update { current ->
                         if (current.showGrid != settings.assistiveGrid) {
@@ -354,7 +361,16 @@ class CameraManager(private val context: Context) {
                     hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL ||
                     hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3
 
-            CameraHardwareCapabilities(
+            val afModes = chars.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)?.toList() ?: emptyList()
+            val maxAfReg = chars.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF) ?: 0
+            val maxAeReg = chars.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE) ?: 0
+            val hyperfocal = chars.get(CameraCharacteristics.LENS_INFO_HYPERFOCAL_DISTANCE) ?: 0.0f
+            val focusCalib = chars.get(CameraCharacteristics.LENS_INFO_FOCUS_DISTANCE_CALIBRATION) ?: 0
+            val activeArray = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            val isFixed = minFocus <= 0.0f || (afModes.size == 1 && afModes.contains(CaptureRequest.CONTROL_AF_MODE_OFF))
+            val supportsAf = !isFixed && afModes.any { it != CaptureRequest.CONTROL_AF_MODE_OFF }
+
+            val caps = CameraHardwareCapabilities(
                 cameraId = cameraId,
                 hardwareLevel = hwLevel,
                 minIso = isoRange?.lower ?: 50,
@@ -368,8 +384,19 @@ class CameraManager(private val context: Context) {
                 maxEv = evRange?.upper ?: 4,
                 evStep = evStepVal,
                 supportsManualWb = supportsManualPostProcessing,
-                supportsColorGains = supportsManualPostProcessing
+                supportsColorGains = supportsManualPostProcessing,
+                supportsAutofocus = supportsAf,
+                availableAfModes = afModes,
+                maxAfRegions = maxAfReg,
+                maxAeRegions = maxAeReg,
+                hyperfocalDistance = hyperfocal,
+                focusDistanceCalibration = focusCalib,
+                isFixedFocus = isFixed,
+                activeArrayWidth = activeArray?.width() ?: 4032,
+                activeArrayHeight = activeArray?.height() ?: 3024
             )
+            autofocusController.onCameraCapabilitiesChanged(caps, _uiState.value.lensFacing)
+            caps
         } catch (e: Exception) {
             Log.w(TAG, "Failed to query hardware capabilities for camera $cameraId", e)
             CameraHardwareCapabilities(cameraId = cameraId)
@@ -825,6 +852,12 @@ class CameraManager(private val context: Context) {
                     )
                 }
             }
+            if (supports(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)) {
+                camera2Extender.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_AF_MODE,
+                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                )
+            }
             try {
                 val cameraService = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
                 val targetFacing = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) {
@@ -850,6 +883,7 @@ class CameraManager(private val context: Context) {
             }
             camera2Extender.setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    autofocusController.onCaptureResult(result)
                     if (request.get(CaptureRequest.CONTROL_CAPTURE_INTENT) == CaptureRequest.CONTROL_CAPTURE_INTENT_STILL_CAPTURE) {
                         if (dfuns) dfunsCapture.record(result)
                         Log.d(TAG, "Still capture flash state=${result.get(CaptureResult.FLASH_STATE)}")
@@ -988,6 +1022,12 @@ class CameraManager(private val context: Context) {
                     .setFlashMode(_uiState.value.flashMode)
 
                 val captureExtender = Camera2Interop.Extender(imageCaptureBuilder)
+                if (supports(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)) {
+                    captureExtender.setCaptureRequestOption(
+                        CaptureRequest.CONTROL_AF_MODE,
+                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                    )
+                }
                 val isDigicamPreset = currentPreset.id in listOf("ccd_r", "disp_flash", "disp_cpm35", "ccd_retro_compact") ||
                     currentPreset.category == com.craftcam.app.model.CameraCategory.CCD_DIGITAL
                 if (dfunsChars != null) {
@@ -1558,33 +1598,42 @@ class CameraManager(private val context: Context) {
     }
 
     fun tapToFocus(tapX: Float, tapY: Float, viewWidth: Int = 0, viewHeight: Int = 0) {
-        val previewView = currentPreviewView
-        if (previewView != null) {
-            val factory = previewView.meteringPointFactory
-            val point = factory.createPoint(tapX, tapY)
-            val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
-                .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
-            camera?.cameraControl?.startFocusAndMetering(action)
-        } else {
-            val cam = camera ?: return
-            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                context.display ?: windowManager?.defaultDisplay
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager?.defaultDisplay
-            } ?: return
-            val metrics = context.resources.displayMetrics
-            val targetW = if (viewWidth > 0) viewWidth.toFloat() else metrics.widthPixels.toFloat()
-            val targetH = if (viewHeight > 0) viewHeight.toFloat() else metrics.heightPixels.toFloat()
-            val factory = DisplayOrientedMeteringPointFactory(display, cam.cameraInfo, targetW, targetH)
-            val point = factory.createPoint(tapX, tapY)
-            val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
-                .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
-            cam.cameraControl.startFocusAndMetering(action)
-        }
+        val cam = camera ?: return
+        val w = if (viewWidth > 0) viewWidth else currentPreviewView?.width ?: context.resources.displayMetrics.widthPixels
+        val h = if (viewHeight > 0) viewHeight else currentPreviewView?.height ?: context.resources.displayMetrics.heightPixels
+        autofocusController.triggerTapToFocus(
+            cameraControl = cam.cameraControl,
+            tapX = tapX,
+            tapY = tapY,
+            viewWidth = w,
+            viewHeight = h,
+            aspectRatio = _uiState.value.aspectRatio
+        )
+    }
+
+    fun lockFocusAndExposure(tapX: Float, tapY: Float, viewWidth: Int = 0, viewHeight: Int = 0) {
+        val cam = camera ?: return
+        val w = if (viewWidth > 0) viewWidth else currentPreviewView?.width ?: context.resources.displayMetrics.widthPixels
+        val h = if (viewHeight > 0) viewHeight else currentPreviewView?.height ?: context.resources.displayMetrics.heightPixels
+        autofocusController.lockFocusAndExposure(
+            cameraControl = cam.cameraControl,
+            tapX = tapX,
+            tapY = tapY,
+            viewWidth = w,
+            viewHeight = h,
+            aspectRatio = _uiState.value.aspectRatio
+        )
+        _uiState.update { it.copy(isAeLocked = true) }
+    }
+
+    fun unlockFocusAndExposure() {
+        val cam = camera ?: return
+        autofocusController.unlockFocusAndExposure(cam.cameraControl)
+        _uiState.update { it.copy(isAeLocked = false) }
+    }
+
+    fun toggleFocusInspector() {
+        _uiState.update { it.copy(showFocusInspector = !it.showFocusInspector) }
     }
 
     fun captureAndProcessPhoto(
@@ -1622,9 +1671,13 @@ class CameraManager(private val context: Context) {
         _uiState.update { it.copy(isCapturing = true) }
         startCaptureWatchdog()
 
-        capture.takePicture(
-            cameraExecutor,
-            object : ImageCapture.OnImageCapturedCallback() {
+        processingScope.launch {
+            val isFocusConverged = autofocusController.coordinateShutterWithFocus(timeoutMs = 700L)
+            Log.d(TAG, "Shutter focus coordination completed: converged=$isFocusConverged")
+
+            capture.takePicture(
+                cameraExecutor,
+                object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     cancelCaptureWatchdog()
                     lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
@@ -1703,8 +1756,8 @@ class CameraManager(private val context: Context) {
                         } else onError(exception.message ?: "Camera capture failed")
                     }
                 }
-            }
-        )
+            })
+        }
     }
 
     fun captureAndProcessThreeDPhoto(
@@ -1732,9 +1785,13 @@ class CameraManager(private val context: Context) {
         _uiState.update { it.copy(isCapturing = true, threeDProgressMessage = "Capturing 3D...") }
         startCaptureWatchdog(timeoutMs = 15000L)
 
-        capture.takePicture(
-            cameraExecutor,
-            object : ImageCapture.OnImageCapturedCallback() {
+        processingScope.launch {
+            val isFocusConverged = autofocusController.coordinateShutterWithFocus(timeoutMs = 700L)
+            Log.d(TAG, "3D Shutter focus coordination completed: converged=$isFocusConverged")
+
+            capture.takePicture(
+                cameraExecutor,
+                object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     cancelCaptureWatchdog()
                     lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
@@ -1793,8 +1850,8 @@ class CameraManager(private val context: Context) {
                         onError(exception.message ?: "Camera capture failed")
                     }
                 }
-            }
-        )
+            })
+        }
     }
 
     private fun captureNaturalBurst(

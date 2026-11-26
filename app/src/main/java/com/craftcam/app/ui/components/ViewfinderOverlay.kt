@@ -42,7 +42,10 @@ fun ViewfinderOverlay(
     minExposureIndex: Int = -4,
     maxExposureIndex: Int = 4,
     exposureStep: Float = 0.5f,
-    onTapFocus: (Float, Float) -> Unit,
+    focusTelemetry: com.craftcam.app.camera.focus.FocusTelemetry? = null,
+    onTapFocus: (Float, Float, Int, Int) -> Unit,
+    onLockFocus: (Float, Float, Int, Int) -> Unit = { _, _, _, _ -> },
+    onUnlockFocus: () -> Unit = {},
     onExposureChange: (Int) -> Unit = {},
     onPinchZoom: (Float) -> Unit = {}
 ) {
@@ -54,6 +57,7 @@ fun ViewfinderOverlay(
     var dismissJob by remember { mutableStateOf<Job?>(null) }
 
     fun scheduleDismiss() {
+        if (focusTelemetry?.isLocked == true) return // Don't auto-dismiss when locked
         dismissJob?.cancel()
         dismissJob = scope.launch {
             delay(3500)
@@ -63,6 +67,8 @@ fun ViewfinderOverlay(
     }
 
     val currentOnTapFocus by rememberUpdatedState(onTapFocus)
+    val currentOnLockFocus by rememberUpdatedState(onLockFocus)
+    val currentOnUnlockFocus by rememberUpdatedState(onUnlockFocus)
     val currentOnExposureChange by rememberUpdatedState(onExposureChange)
     val currentOnPinchZoom by rememberUpdatedState(onPinchZoom)
 
@@ -137,10 +143,15 @@ fun ViewfinderOverlay(
                             lastPinchSpan = 0f
                             if (!isDrag && !isPinch) {
                                 val duration = System.currentTimeMillis() - downTime
-                                if (duration < 450) {
+                                if (focusTelemetry?.isLocked == true) {
+                                    // Tap unlocks AE/AF Lock
+                                    currentOnUnlockFocus()
+                                    focusPoint = null
+                                    scope.launch { focusAlpha.animateTo(0f, tween(200)) }
+                                } else if (duration < 450) {
                                     if (focusPoint == null || (startPos - focusPoint!!).getDistance() > moveThresholdPx) {
                                         focusPoint = startPos
-                                        currentOnTapFocus(startPos.x, startPos.y)
+                                        currentOnTapFocus(startPos.x, startPos.y, size.width, size.height)
                                         scope.launch {
                                             focusScale.snapTo(1.35f)
                                             focusAlpha.snapTo(1.0f)
@@ -152,6 +163,15 @@ fun ViewfinderOverlay(
                                         }
                                     }
                                     scheduleDismiss()
+                                } else if (duration >= 500) {
+                                    // Long press: Lock AE/AF
+                                    focusPoint = startPos
+                                    currentOnLockFocus(startPos.x, startPos.y, size.width, size.height)
+                                    scope.launch {
+                                        focusScale.snapTo(1.4f)
+                                        focusAlpha.snapTo(1.0f)
+                                        focusScale.animateTo(1.0f, tween(200))
+                                    }
                                 }
                             }
                             break
@@ -230,21 +250,47 @@ fun ViewfinderOverlay(
                     val clampedPtX = pt.x.coerceIn(left + halfBox + 10.dp.toPx(), right - halfBox - 60.dp.toPx())
                     val clampedPtY = pt.y.coerceIn(top + halfBox + 10.dp.toPx(), bottom - halfBox - 10.dp.toPx())
 
-                    // Focus frame: clean rounded square with corner brackets in VintageAmber
+                    val isLocked = focusTelemetry?.isLocked == true
+                    val isFocused = focusTelemetry?.isFocused == true
+                    val activeBoxColor = when {
+                        isLocked -> Color(0xFFFFD54F) // Gold for lock
+                        isFocused -> Color(0xFF81C784) // Soft green for focus achieved
+                        else -> VintageAmber
+                    }
+
+                    // Focus frame: clean rounded square with corner brackets
                     drawRoundRect(
-                        color = VintageAmber.copy(alpha = alpha * 0.90f),
+                        color = activeBoxColor.copy(alpha = alpha * 0.90f),
                         topLeft = Offset(clampedPtX - halfBox, clampedPtY - halfBox),
                         size = Size(boxSize, boxSize),
                         cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
-                        style = Stroke(width = 1.5.dp.toPx())
+                        style = Stroke(width = if (isLocked) 2.dp.toPx() else 1.5.dp.toPx())
                     )
 
                     // Small center dot
                     drawCircle(
-                        color = VintageAmber.copy(alpha = alpha * 0.70f),
+                        color = activeBoxColor.copy(alpha = alpha * 0.70f),
                         radius = 2.dp.toPx(),
                         center = Offset(clampedPtX, clampedPtY)
                     )
+
+                    // AE/AF Lock badge tag above reticle
+                    if (isLocked) {
+                        val lockPaint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.argb((alpha * 255).toInt(), 255, 213, 79)
+                            textSize = 9.sp.toPx()
+                            isFakeBoldText = true
+                            isAntiAlias = true
+                        }
+                        val lockText = "AE/AF LOCK"
+                        val textWidth = lockPaint.measureText(lockText)
+                        drawContext.canvas.nativeCanvas.drawText(
+                            lockText,
+                            clampedPtX - textWidth / 2f,
+                            clampedPtY - halfBox - 6.dp.toPx(),
+                            lockPaint
+                        )
+                    }
 
                     // Vertical Exposure Track & Sun Handle
                     val trackHeight = 94.dp.toPx()

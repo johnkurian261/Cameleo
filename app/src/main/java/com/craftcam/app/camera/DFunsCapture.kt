@@ -39,13 +39,8 @@ internal class DFunsCapture {
         mode(C.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES,Q.NOISE_REDUCTION_MODE,Q.NOISE_REDUCTION_MODE_OFF)
         mode(C.EDGE_AVAILABLE_EDGE_MODES,Q.EDGE_MODE,Q.EDGE_MODE_OFF)
         mode(C.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES,Q.CONTROL_VIDEO_STABILIZATION_MODE,Q.CONTROL_VIDEO_STABILIZATION_MODE_OFF)
-        val focus = c.get(C.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f
-        if (focus >= FIXED_DIOPTERS && c.get(C.LENS_INFO_FOCUS_DISTANCE_CALIBRATION) in listOf(C.LENS_INFO_FOCUS_DISTANCE_CALIBRATION_APPROXIMATE, C.LENS_INFO_FOCUS_DISTANCE_CALIBRATION_CALIBRATED) &&
-            Q.LENS_FOCUS_DISTANCE in c.availableCaptureRequestKeys && Q.CONTROL_AF_MODE in c.availableCaptureRequestKeys &&
-            c.get(C.CONTROL_AF_AVAILABLE_MODES)?.contains(Q.CONTROL_AF_MODE_OFF) == true) {
-            ext.setCaptureRequestOption(Q.CONTROL_AF_MODE,Q.CONTROL_AF_MODE_OFF)
-            ext.setCaptureRequestOption(Q.LENS_FOCUS_DISTANCE,FIXED_DIOPTERS)
-        }
+        // D FUNS uses reliable hardware autofocus for high-fidelity source capture.
+        // The fixed-focus disposable aesthetic is simulated optically in the rendering pipeline.
     }
 
     @Synchronized fun record(result: R) {

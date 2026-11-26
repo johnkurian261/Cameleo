@@ -296,8 +296,17 @@ fun ViewfinderScreen(
                         minExposureIndex = uiState.minExposureIndex,
                         maxExposureIndex = uiState.maxExposureIndex,
                         exposureStep = uiState.exposureStep,
-                        onTapFocus = { tapX, tapY ->
-                            cameraManager.tapToFocus(tapX, tapY)
+                        focusTelemetry = uiState.focusTelemetry,
+                        onTapFocus = { tapX, tapY, w, h ->
+                            cameraManager.tapToFocus(tapX, tapY, w, h)
+                        },
+                        onLockFocus = { tapX, tapY, w, h ->
+                            cameraManager.lockFocusAndExposure(tapX, tapY, w, h)
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        },
+                        onUnlockFocus = {
+                            cameraManager.unlockFocusAndExposure()
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         },
                         onExposureChange = { newIdx ->
                             cameraManager.setExposureIndex(newIdx)
@@ -343,6 +352,18 @@ fun ViewfinderScreen(
                             modifier = Modifier.align(Alignment.Center).size(36.dp),
                             color = Color.White,
                             strokeWidth = 3.dp
+                        )
+                    }
+
+                    // Focus Inspector Diagnostic Overlay
+                    if (uiState.showFocusInspector) {
+                        com.craftcam.app.ui.components.FocusInspectorOverlay(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 16.dp),
+                            telemetry = uiState.focusTelemetry,
+                            autofocusController = cameraManager.autofocusController,
+                            onClose = { cameraManager.toggleFocusInspector() }
                         )
                     }
                 }
@@ -663,6 +684,8 @@ fun ViewfinderScreen(
             onNavigateToCollection = onNavigateToCollection,
             shootingState = uiState.shootingState,
             onSelectLens = { lensType -> cameraManager.selectLensAccessory(lensType) },
+            showFocusInspector = uiState.showFocusInspector,
+            onToggleFocusInspector = { cameraManager.toggleFocusInspector() },
             onDismiss = { showControlMenu = false }
         )
 

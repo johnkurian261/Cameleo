@@ -93,7 +93,16 @@ data class CameraHardwareCapabilities(
     val maxEv: Int = 4,
     val evStep: Float = 0.5f,
     val supportsManualWb: Boolean = true,
-    val supportsColorGains: Boolean = true
+    val supportsColorGains: Boolean = true,
+    val supportsAutofocus: Boolean = true,
+    val availableAfModes: List<Int> = listOf(4, 1), // CONTINUOUS_PICTURE, AUTO
+    val maxAfRegions: Int = 1,
+    val maxAeRegions: Int = 1,
+    val hyperfocalDistance: Float = 0.28f,
+    val focusDistanceCalibration: Int = 2, // CALIBRATED
+    val isFixedFocus: Boolean = false,
+    val activeArrayWidth: Int = 4032,
+    val activeArrayHeight: Int = 3024
 )
 
 object ProCameraFormatters {

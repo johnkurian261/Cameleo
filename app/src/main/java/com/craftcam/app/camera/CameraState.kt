@@ -121,7 +121,9 @@ data class CameraUIState(
     val isAwbLocked: Boolean = false,
     val isRawCaptureEnabled: Boolean = false,
     val isZebraWarningEnabled: Boolean = false,
-    val deviceSensorProfile: com.craftcam.app.color.DeviceSensorProfile? = null
+    val deviceSensorProfile: com.craftcam.app.color.DeviceSensorProfile? = null,
+    val focusTelemetry: com.craftcam.app.camera.focus.FocusTelemetry = com.craftcam.app.camera.focus.FocusTelemetry(),
+    val showFocusInspector: Boolean = false
 ) {
     val availableLenses: List<CameraLens>
         get() = if (lensFacing == CameraSelector.LENS_FACING_FRONT) frontLenses else rearLenses
