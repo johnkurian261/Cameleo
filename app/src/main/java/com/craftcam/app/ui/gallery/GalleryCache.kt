@@ -167,14 +167,14 @@ object GalleryCache {
             }
         } catch (_: Exception) {}
 
-        val sorted = items.sortedByDescending { it.dateAdded }
-        // Preserve any freshly shot items already in cachedItems that MediaStore indexing hasn't picked up yet
+        // A just-saved item can reach our cache before it appears in MediaStore.
         val nowSec = System.currentTimeMillis() / 1000
-        val unindexedRecent = cachedItems?.filter { cached ->
-            sorted.none { it.id == cached.id } && (nowSec - cached.dateAdded < 120)
-        } ?: emptyList()
-
-        val merged = (unindexedRecent + sorted).sortedByDescending { it.dateAdded }
+        val recent = cachedItems.orEmpty().filter { nowSec - it.dateAdded < 120 }
+        if (recent.isNotEmpty()) {
+            val indexedUris = items.mapTo(HashSet()) { it.uri }
+            items.addAll(recent.filter { indexedUris.add(it.uri) })
+        }
+        val merged = items.sortedByDescending { it.dateAdded }
         cachedItems = merged
         return merged
     }

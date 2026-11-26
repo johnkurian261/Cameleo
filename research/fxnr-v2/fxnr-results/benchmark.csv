@@ -1,0 +1,11 @@
+iteration,profile,milliseconds,process_hwm_kb
+0,film_fxn_r,3227,602104
+0,film_fxn_r_v2,2204,604000
+1,film_fxn_r_v2,2252,607476
+1,film_fxn_r,3106,610784
+2,film_fxn_r,3716,614760
+2,film_fxn_r_v2,2538,618396
+3,film_fxn_r_v2,2384,622888
+3,film_fxn_r,3324,627636
+4,film_fxn_r,3469,627636
+4,film_fxn_r_v2,2538,627636

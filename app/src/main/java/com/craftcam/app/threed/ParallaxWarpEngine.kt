@@ -140,6 +140,7 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
         val outPixels = IntArray(width * height)
         val tgtDisparity = FloatArray(width)
         val sourceColumn = IntArray(width)
+        val shiftByColumn = FloatArray(width)
 
         for (y in 0 until height) {
             val rowOffset = y * width
@@ -152,6 +153,7 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
                 // Perspective-projective disparity: d(Z) = deltaX * (d - pivot) / (1 + 0.35 * (1 - d))
                 // Accelerates foreground pop while smoothly dampening background shifts
                 val dx = deltaX * (d - pivot) / (1.0f + 0.35f * (1.0f - d))
+                shiftByColumn[x] = dx
                 val xt = x + dx
                 val xt0 = floor(xt).toInt()
                 val xt1 = xt0 + 1
@@ -214,12 +216,22 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
             for (xt in 0 until width) {
                 val dt = tgtDisparity[xt]
                 if (dt < 0f) continue
-                val dx = deltaX * (dt - pivot) / (1.0f + 0.35f * (1.0f - dt))
+                val dx = shiftByColumn[sourceColumn[xt]]
                 val xs = (xt - dx).coerceIn(0f, (width - 1).toFloat())
 
                 val xs0 = floor(xs).toInt()
                 val xs1 = (xs0 + 1).coerceAtMost(width - 1)
                 val tx = xs - xs0
+
+                // At a silhouette, the two source pixels can belong to different
+                // surfaces. Only the surface that won the depth test is visible.
+                val depth0 = dispGrid[rowOffset + xs0]
+                val depth1 = dispGrid[rowOffset + xs1]
+                if (abs(depth0 - depth1) > 0.08f) {
+                    val visibleX = if (abs(depth0 - dt) <= abs(depth1 - dt)) xs0 else xs1
+                    outPixels[rowOffset + xt] = srcPixels[rowOffset + visibleX]
+                    continue
+                }
 
                 val c0 = srcPixels[rowOffset + xs0]
                 val c1 = srcPixels[rowOffset + xs1]

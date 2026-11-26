@@ -40,7 +40,7 @@ class ComputationalCaptureEngine(
      * Executes the computational photography pipeline on [sequence].
      * Returns a developed [Bitmap] from [BitmapPool]. Guarantees safe single-frame fallback on any failure.
      */
-    fun processSequence(
+    suspend fun processSequence(
         sequence: FrameSequence,
         targetWidth: Int,
         targetHeight: Int,

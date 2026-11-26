@@ -55,7 +55,7 @@ object GrainStage {
     )
 
     private val grainPixelsCache = mutableMapOf<String, Pair<IntArray, Pair<Int, Int>>>()
-    private val textureCache = mutableMapOf<String, Bitmap?>()
+    private val missingTextures = mutableSetOf<String>()
     private val lock = Any()
 
     /**
@@ -68,7 +68,7 @@ object GrainStage {
         tuning: UserTuningConfig,
         intensityFactor: Float = 1.0f
     ): ResolvedGrainConfig {
-        val tuningBoost = tuning.grainBoost
+        val tuningBoost = if (tuning.debugStageGrain) tuning.grainBoost else 0f
         val baseIntensity = grainProfile.intensity
         val effectiveIntensity = (baseIntensity * tuningBoost * intensityFactor).coerceIn(0.0f, 1.0f)
 
@@ -175,9 +175,13 @@ object GrainStage {
             val bmp = loadTexture(context, resolvedName) ?: loadTexture(context, assetName) ?: return null
             val gw = bmp.width
             val gh = bmp.height
-            val gp = IntArray(gw * gh)
-            bmp.getPixels(gp, 0, gw, 0, 0, gw, gh)
-            val result = Pair(gp, Pair(gw, gh))
+            val result = try {
+                val pixels = IntArray(gw * gh)
+                bmp.getPixels(pixels, 0, gw, 0, 0, gw, gh)
+                pixels to (gw to gh)
+            } finally {
+                bmp.recycle()
+            }
             grainPixelsCache[assetName] = result
             grainPixelsCache[resolvedName] = result
             return result
@@ -185,18 +189,14 @@ object GrainStage {
     }
 
     private fun loadTexture(context: Context, name: String): Bitmap? {
-        if (textureCache.containsKey(name)) {
-            return textureCache[name]
-        }
+        if (name in missingTextures) return null
         return try {
             context.assets.open(name).use { input ->
-                val bmp = BitmapFactory.decodeStream(input)
-                textureCache[name] = bmp
-                bmp
+                BitmapFactory.decodeStream(input).also { if (it == null) missingTextures.add(name) }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Scanned grain asset not found: $name")
-            textureCache[name] = null
+            missingTextures.add(name)
             null
         }
     }
@@ -210,9 +210,10 @@ object GrainStage {
         height: Int,
         grainWidth: Int,
         grainHeight: Int,
-        grainScale: Float
+        grainScale: Float,
+        timestamp: Long = System.currentTimeMillis()
     ): AntiTilingOffsets {
-        val captureSeed = (System.currentTimeMillis() xor (width.toLong() shl 16) xor height.toLong())
+        val captureSeed = (timestamp xor (width.toLong() shl 16) xor height.toLong())
         val gw = maxOf(1, grainWidth)
         val gh = maxOf(1, grainHeight)
         val seedX = ((captureSeed ushr 7) % gw).toInt().let { if (it < 0) it + gw else it }
@@ -241,8 +242,7 @@ object GrainStage {
     fun clearCache() {
         synchronized(lock) {
             grainPixelsCache.clear()
-            textureCache.values.forEach { it?.recycle() }
-            textureCache.clear()
+            missingTextures.clear()
         }
     }
 }

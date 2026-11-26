@@ -1,0 +1,10 @@
+allprojects {
+    plugins.withId("com.android.application") {
+        androidComponents.finalizeDsl { dsl ->
+            dsl.defaultConfig.testInstrumentationRunner = "com.craftcam.probe.FxnrRegression"
+            dsl.sourceSets.androidTest.assets.srcDir(rootProject.file("app/build/fxnr-inputs"))
+            dsl.sourceSets.androidTest.java.srcDir(rootProject.file("tools/fxnr/src"))
+        }
+    }
+}
+

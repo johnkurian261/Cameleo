@@ -76,9 +76,9 @@ object SkinToneProfileCatalog {
 
     /**
      * CPM35: Golden early digital compact.
-     * Reference-calibrated against Refs 1, 2, 3, 6:
+     * Calibrated against verified digicam references:
      * Golden illuminated skin, amber tungsten retention, deep contrast shadows, soft optical detail.
-     * Protected against excessive mustard drift under neutral daylight.
+     * Crisp digital direct flash highlights with source-relative protection.
      */
     val CPM35 = SkinToneProfile(
         id = "skin_cpm35",
@@ -95,10 +95,10 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 3.5f, // Radiant golden-amber cast matching references
         skinGains = floatArrayOf(1.04f, 0.98f, 0.93f),
-        skinMidtoneLift = 0.012f, // Restrained to preserve deep shadows and authentic digicam punch
-        skinHighlightKnee = 0.86f,
+        skinMidtoneLift = 0.008f, // Restrained to preserve deep shadows and authentic digicam punch
+        skinHighlightKnee = 0.96f, // Crisp digital direct flash highlights (harder digital clipping)
         maxSkinSaturation = 0.70f,
-        textureDampening = 0.18f
+        textureDampening = 0.12f
     )
 
     /**
@@ -171,10 +171,10 @@ object SkinToneProfileCatalog {
         ),
         targetHueBias = 0.0f,
         skinGains = floatArrayOf(1.00f, 1.00f, 1.00f),
-        skinMidtoneLift = 0.012f,
-        skinHighlightKnee = 0.88f,
+        skinMidtoneLift = 0.008f,
+        skinHighlightKnee = 0.95f,
         maxSkinSaturation = 0.65f,
-        textureDampening = 0.15f
+        textureDampening = 0.10f
     )
 
     /**

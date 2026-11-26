@@ -37,7 +37,7 @@ data class ThreeDConfig(
     val d3dDebugDepth: Boolean = false,
 
     /** Transverse chromatic / RGB channel misalignment in pixels (subtle optical aberration). */
-    val rgbSeparationPx: Float = 0.5f,
+    val rgbSeparationPx: Float = 0.20f,
 
     /** Mechanical frame registration jitter amplitude in pixels (film gate tolerance). */
     val mechanicalJitterPx: Float = 0f,
@@ -49,7 +49,7 @@ data class ThreeDConfig(
     val grainIntensity: Float = 0.18f,
 
     /** Subtle optical lens softness diffusion radius (0.0 = tack sharp). */
-    val softnessRadius: Float = 0.0f,
+    val softnessRadius: Float = 0.25f,
 
     /** Frame rate of the output animation in FPS (10 fps gives snappy authentic 4-lens snap). */
     val fps: Int = 10,

@@ -1,0 +1,442 @@
+[
+  {
+    "file": "1216x806x2 (4).jpg",
+    "sha256": "246063153ea63f4ab446520f14c7015dd9725e17ebfa2165fd6364d755695327",
+    "size": [
+      2432,
+      1612
+    ],
+    "source": "https://cdn.assets.lomography.com/fe/5e71b8498b6fca943b437955848d91e2789760/1216x806x2.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "indoor group / apparent flash",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "1216x806x2.jpg",
+    "sha256": "6516c836eff778b3f1f90b313fb010ded8b5d6365b3d07182cbeff44c4769c9b",
+    "size": [
+      2432,
+      1612
+    ],
+    "source": "https://cdn.assets.lomography.com/26/38ef6f290cb7f1f3e49b162a6724c58284df76/1216x806x2.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "outdoor animal",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "1216x806x2 (1).jpg",
+    "sha256": "396d9128dd46f8be99e00f8cc40cb84f437e523971647f766b24f2a441938146",
+    "size": [
+      2432,
+      1612
+    ],
+    "source": "https://cdn.assets.lomography.com/d1/0f28161e491bd953b8cc6b800c860cf5c17efd/1216x806x2.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "daylight street",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "1216x806x2 (3).jpg",
+    "sha256": "7e8b30fd6bb1caad003961dc2c751c3351822aa98b200047b3f6d4d2195db178",
+    "size": [
+      2432,
+      1612
+    ],
+    "source": "https://cdn.assets.lomography.com/19/e1513d862703b0f1e3648c4d69e44aca447712/1216x806x2.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "indoor portrait / apparent flash",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "1216x806x2 (2).jpg",
+    "sha256": "6cb69e5304dae38cc08cb64dbaeeccde182c00a4537572af6e935de8c69f2abe",
+    "size": [
+      2432,
+      1612
+    ],
+    "source": "https://cdn.assets.lomography.com/2a/d0dc775698d248b1106382c2e7e151dd730679/1216x806x2.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "backlit sunset",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "1216x813x2.jpg",
+    "sha256": "1d8d389e7f9e1ae4f04a2af51ce4c5b65c836e27f874377235628ed1fcb15566",
+    "size": [
+      2432,
+      1626
+    ],
+    "source": "https://cdn.assets.lomography.com/01/f900261aa05634b4e85b84b3c184bd7ac162ae/1216x813x2.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "backlit landscape",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "1080x864x1.jpg",
+    "sha256": "54cfbd6dcaa6245875e5bbefa246bf2dc96a8305c9e5437331f9f2adfba870f2",
+    "size": [
+      1080,
+      864
+    ],
+    "source": "https://cdn.assets.lomography.com/83/37b4ff0870566cdc5cf3724a3446f1662534ac/1080x864x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "daylight / apparent light leak",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene and texture candidate"
+  },
+  {
+    "file": "386x256x1 (5).jpg",
+    "sha256": "2d2d20a1a33763e7efdbaa9954483880c1df0adfa891a3fa7c1756301b7e803e",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/44/6a514c61c608f05367135d6a81c982c0ca5896/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "daylight group",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1 (3).jpg",
+    "sha256": "4750b65d6f2376e4606633dd485bc255635bdd767d5052c8204531396ea02777",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/14/8dba2164b785ec66da21138670aeefb657fd40/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "outdoor portrait",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "383x256x1 (1).jpg",
+    "sha256": "76483da5736cc2c37e86d80f80764d61c95614123ef1618bbc63b677b96d5c09",
+    "size": [
+      383,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/05/fe344e34413c4c082b1017bb962f744a94c7c8/383x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "daylight portrait",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "384x256x1.jpg",
+    "sha256": "671cb44944515317a714f376243620b815adcda6407725b96c77d96b7f5be966",
+    "size": [
+      384,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/5b/1fdde908fccfee15e82e4f4f9204652be89162/384x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "daylight coast",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1 (6).jpg",
+    "sha256": "3b0a0aeef44229b1e0a817666944e0c4554c758d8d874d36d06e5d866232a913",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/69/db4332a4786db23046683989ed5dcf62912d53/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "indoor portrait / apparent flash",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1 (1).jpg",
+    "sha256": "f7de7e1d9e4a081e5343273020583c241c4d1aadf07aedb74f6984dcdefceb00",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/e9/192f0493cf763e400ebecf30766674ea9ba7fe/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "indoor portrait / edge flare",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1.jpg",
+    "sha256": "f614415be7b49e068e912521239b12f836e09d5937de8fdedf7806da9d277856",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/a2/f062df212aaab5f6b8c43a895840990b6b9f57/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "night portrait / apparent flash",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "320x256x1.jpg",
+    "sha256": "126b2384f6cab6b2bcee5864aaefacb9fa2404ab49902c68add15fcd9f9f20c9",
+    "size": [
+      320,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/63/c74a3d85511c621dacfd81c4558745273af684/320x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "outdoor group",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "383x256x1.jpg",
+    "sha256": "aef97afc607c0b1845b50b09ebbbf4b35534453d42843e2fb199224a448a3c5b",
+    "size": [
+      383,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/51/97fa303b5aeb073c69ea40eb3312a0cece06a8/383x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "daylight water",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "380x256x1.jpg",
+    "sha256": "c5d5bf8459f87b78905f1613b43e617ebcd403537058f21ab97c049d98473238",
+    "size": [
+      380,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/d9/91a364e2dbf36e204598fb437c4a777513cb6c/380x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "night portrait / apparent flash",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1 (4).jpg",
+    "sha256": "5e745d7219948105dcc9644ece65086b7ea74c8bfe479710405f370abcf19aba",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/58/4ebb7c4f1bb61a37698eeb200136ebad553697/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "indoor animal",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1 (7).jpg",
+    "sha256": "2e092c3041e2c10ecc332c082a87462a57057b155031ffc8968698a62a11337f",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/de/0f06a143a46119673c6c6a383c5776666ed6e1/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "indoor room",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "386x256x1 (2).jpg",
+    "sha256": "4c3b0880d787eae4694c06325a2485b48efd1867c3144843535d6a5908583664",
+    "size": [
+      386,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/cc/67f9ef5a467dccaa9643a4f251e6fb1fc92ac9/386x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "backlit portrait",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "377x256x1.jpg",
+    "sha256": "4e91377dd35e1410f7b111ea7b7599279ddcb8e843f4ab6841112e97f6ae9648",
+    "size": [
+      377,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/36/12758d6950753e9c524e7e7dce31f2b1149d77/377x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "overcast landscape",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  },
+  {
+    "file": "171x256x1.jpg",
+    "sha256": "3ac0e42830aa0123eb7969d0cf2938b6bed97679f2196307e70f91af3ba02660",
+    "size": [
+      171,
+      256
+    ],
+    "source": "https://cdn.assets.lomography.com/58/7beb5e496fdabd116b11507db5870a6c926607/171x256x1.jpg",
+    "photographer": null,
+    "camera": null,
+    "camera_confidence": "unverified supplied candidate",
+    "scene": "night / apparent flash",
+    "flash": null,
+    "scanner": null,
+    "editing": null,
+    "exposure": null,
+    "license": "unknown; local analysis only",
+    "duplicate_of": null,
+    "suitability": "scene only"
+  }
+]

@@ -224,26 +224,17 @@ class CameraProfileCatalogReaTest {
     }
 
     @Test
-    fun ccdFlashProfile_calibratedWithDirectFlashAndRadialFalloff() {
-        val preset = PresetCatalog.getPresetById("ccd_flash")
-        assertNotNull("Preset ccd_flash must be present in catalog", preset)
-        val profile = CameraProfileCatalog.getProfileForPreset(preset!!)
-
-        assertEquals("CCD Flash", profile.name)
-        val film = profile.filmProfile
-        assertEquals("lut_ccd_flash.png", film.lutAssetPath)
-        assertEquals(1.30f, film.contrast, 0.001f)
-        assertEquals(1.18f, film.saturation, 0.001f)
-        assertEquals(0.88f, film.highlightRollOff, 0.001f)
-
-        val grain = profile.grainProfile
-        assertEquals(GrainMode.SCANNED, grain.mode)
-        assertEquals("grains/grain_dfuns.jpg", grain.assetPath)
-        assertEquals(0.22f, grain.intensity, 0.001f)
-
-        val optics = profile.opticalProfile
-        assertEquals(0.45f, optics.vignetteStrength, 0.001f)
-        assertEquals(0.72f, optics.vignetteRadius, 0.001f)
+    fun dFunsResolvesLegacyKeyToNegativeAndRetainsGrainControls() {
+        val preset = requireNotNull(PresetCatalog.getPresetById("ccd_flash"))
+        val profile = CameraProfileCatalog.getProfileForPreset(preset)
+        assertEquals("D Funs", profile.name)
+        assertEquals("lut_dfuns_v1.png", profile.filmProfile.lutAssetPath)
+        assertEquals(LutInputSpace.SRGB, profile.filmProfile.lutInputSpace)
+        assertEquals(GrainMode.SCANNED, profile.grainProfile.mode)
+        assertEquals("grains/grain_dfuns.jpg", profile.grainProfile.assetPath)
+        assertTrue(preset.dust?.enabled == false)
+        assertTrue(preset.flashOverlay?.enabled != true)
+        assertTrue(profile.filmProfile.halationIntensity == 0f)
     }
 
     @Test
@@ -268,6 +259,28 @@ class CameraProfileCatalogReaTest {
         assertEquals("lut_vsco_handycam.png", handycamProfile.filmProfile.lutAssetPath)
         assertEquals(GrainMode.SCANNED, handycamProfile.grainProfile.mode)
         assertEquals("grains/grain8mm_01.jpg", handycamProfile.grainProfile.assetPath)
+    }
+
+    @Test
+    fun cpm35Profile_calibratedToPreventMustardYellowAndDoubleGradingInPreview() {
+        val cpm = PresetCatalog.getPresetById("disp_flash")
+        assertNotNull("Preset disp_flash must be present", cpm)
+        val profile = CameraProfileCatalog.getProfileForPreset(cpm!!)
+        assertEquals("CPM 35", profile.name)
+
+        val film = profile.filmProfile
+        assertEquals("lut_disp_flash.png", film.lutAssetPath)
+        // Must avoid double-grading warmth on top of calibrated LUT
+        assertEquals(0.0f, film.temperature, 0.001f)
+        assertEquals(0.0f, film.tint, 0.001f)
+        assertEquals(0.0f, film.shadowTintR, 0.001f)
+        assertEquals(0.0f, film.shadowTintG, 0.001f)
+        assertEquals(0.0f, film.shadowTintB, 0.001f)
+        // Normalized contrast and saturation
+        assertEquals(1.04f, film.contrast, 0.001f)
+        assertEquals(1.02f, film.saturation, 0.001f)
+        // Skin tone protection active for live viewfinder
+        assertEquals(0.85f, film.skinProtection, 0.001f)
     }
 }
 

@@ -173,7 +173,7 @@ class ThreeDVideoEncoder {
         val deadline = android.os.SystemClock.elapsedRealtime() + 5000L
 
         while (true) {
-            val encoderStatus = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC)
+            val encoderStatus = codec.dequeueOutputBuffer(bufferInfo, if (endOfStream) TIMEOUT_USEC else 0L)
             if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                 if (!endOfStream) break
                 check(android.os.SystemClock.elapsedRealtime() < deadline) { "Encoder timed out waiting for EOS" }
@@ -218,7 +218,7 @@ class ThreeDVideoEncoder {
         private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
 
         private var programId = 0
-        private var textureId = 0
+        private val frameTextures = java.util.IdentityHashMap<Bitmap, Int>()
         private var aPositionLoc = -1
         private var aTexCoordLoc = -1
         private var uTextureLoc = -1
@@ -306,9 +306,13 @@ class ThreeDVideoEncoder {
             aTexCoordLoc = GLES20.glGetAttribLocation(programId, "aTexCoord")
             uTextureLoc = GLES20.glGetUniformLocation(programId, "uTexture")
 
+            GLES20.glViewport(0, 0, width, height)
+        }
+
+        private fun upload(bitmap: Bitmap): Int {
             val textures = IntArray(1)
             GLES20.glGenTextures(1, textures, 0)
-            textureId = textures[0]
+            val textureId = textures[0]
 
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
@@ -316,7 +320,8 @@ class ThreeDVideoEncoder {
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
 
-            GLES20.glViewport(0, 0, width, height)
+            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            return textureId
         }
 
         fun drawBitmap(bitmap: Bitmap) {
@@ -325,8 +330,8 @@ class ThreeDVideoEncoder {
             GLES20.glUseProgram(programId)
 
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
-            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            val texture = frameTextures.getOrPut(bitmap) { upload(bitmap) }
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
             GLES20.glUniform1i(uTextureLoc, 0)
 
             GLES20.glEnableVertexAttribArray(aPositionLoc)

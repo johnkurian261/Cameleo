@@ -1,0 +1,4 @@
+id=0 facing=1 level=1 caps=[0, 1, 5, 2, 6, 4, 3, 9, 10] exposure=[85000, 100000000] ISO=[50, 3200] AWB=[0, 1, 2, 3, 5, 6] NR=[0, 1, 2, 4] edge=[0, 1, 2, 3] formats=[32, 256, 34, 35]
+id=1 facing=0 level=0 caps=[0, 1, 5, 6, 9] exposure=[60000, 100000000] ISO=[50, 3200] AWB=[0, 1, 2, 3, 5, 6] NR=[0, 1, 2] edge=[0, 1, 2] formats=[256, 34, 35]
+id=2 facing=1 level=0 caps=[0, 1, 5, 6, 3, 9] exposure=[60000, 100000000] ISO=[50, 3200] AWB=[0, 1, 2, 3, 5, 6] NR=[0, 1, 2] edge=[0, 1, 2] formats=[32, 256, 34, 35]
+id=3 facing=0 level=0 caps=[0, 1, 5, 6, 9] exposure=[60000, 100000000] ISO=[50, 3200] AWB=[0, 1, 2, 3, 5, 6] NR=[0, 1, 2] edge=[0, 1, 2] formats=[256, 34, 35]

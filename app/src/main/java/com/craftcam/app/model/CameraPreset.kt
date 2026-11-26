@@ -76,7 +76,9 @@ enum class DateStampStyle {
     SEVEN_SEGMENT_ORANGE,
     DIGITAL_LCD_GREEN,
     MONOSPACE_DOT_MATRIX,
-    MINIMAL_WHITE
+    MINIMAL_WHITE,
+    AMBER_SUBTLE_DATE,
+    DIGICAM_YELLOW_DATETIME
 }
 
 data class DateStampConfig(

@@ -100,6 +100,7 @@ class CameraManager(private val context: Context) {
             delay(timeoutMs)
             if (isCapturingInProgress.get() || _uiState.value.isCapturing || _uiState.value.isComputationalProcessing) {
                 Log.w(TAG, "Capture watchdog triggered: capture operation timed out after ${timeoutMs}ms, unlocking capture state")
+                lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                 isCapturingInProgress.set(false)
                 _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false) }
                 checkPendingRebind()
@@ -130,24 +131,31 @@ class CameraManager(private val context: Context) {
                 delay(1000L)
                 val now = SystemClock.elapsedRealtime()
                 val isCapturing = _uiState.value.isCapturing || isCapturingInProgress.get()
-                if (isCameraActive && !isCapturing) {
-                    val timeSinceLastFrame = now - lastPreviewFrameTimestamp
-                    if (timeSinceLastFrame > 2000L && now - lastRecovery > 2000L) {
-                        Log.w(TAG, "Preview watchdog alert: No camera frame for ${timeSinceLastFrame}ms. Triggering non-destructive recovery.")
-                        lastRecovery = now
-                        withContext(Dispatchers.Main) {
-                            if (currentLifecycleOwner?.lifecycle?.currentState
-                                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) != true ||
-                                _uiState.value.isCapturing || isCapturingInProgress.get()
-                            ) return@withContext
-                            try {
-                                glRenderer?.requestRenderSafe()
-                                if (SystemClock.elapsedRealtime() - lastPreviewFrameTimestamp > 3500L) {
-                                    bindCameraUseCases()
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Preview watchdog recovery encountered error", e)
+                val isStarted = currentLifecycleOwner?.lifecycle?.currentState
+                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) == true
+
+                if (!isCameraActive || isCapturing || !isStarted) {
+                    lastPreviewFrameTimestamp = now
+                    continue
+                }
+
+                val timeSinceLastFrame = now - lastPreviewFrameTimestamp
+                if (timeSinceLastFrame > 4000L && now - lastRecovery > 4000L) {
+                    Log.w(TAG, "Preview watchdog alert: No camera frame for ${timeSinceLastFrame}ms. Triggering non-destructive recovery.")
+                    lastRecovery = now
+                    withContext(Dispatchers.Main) {
+                        if (currentLifecycleOwner?.lifecycle?.currentState
+                                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) != true ||
+                            _uiState.value.isCapturing || isCapturingInProgress.get()
+                        ) return@withContext
+                        try {
+                            glRenderer?.requestRenderSafe()
+                            if (SystemClock.elapsedRealtime() - lastPreviewFrameTimestamp > 6000L) {
+                                lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                                bindCameraUseCases()
                             }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Preview watchdog recovery encountered error", e)
                         }
                     }
                 }
@@ -264,12 +272,16 @@ class CameraManager(private val context: Context) {
     fun clearGLRenderer(renderer: GLViewfinderRenderer) {
         if (glRenderer === renderer) {
             glRenderer?.onHistogramUpdated = null
+            glRenderer?.onFrameAvailableListener = null
             glRenderer = null
         }
     }
 
     fun setGLRenderer(renderer: GLViewfinderRenderer) {
         glRenderer = renderer
+        glRenderer?.onFrameAvailableListener = {
+            lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+        }
         glRenderer?.setMirrorFrontPreview(AppSettingsStore.get(context).current.mirrorFrontCamera)
         glRenderer?.updatePreset(currentPreset)
         glRenderer?.updateTuning(_uiState.value.tuning)
@@ -962,9 +974,16 @@ class CameraManager(private val context: Context) {
                     .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
                     .build()
 
+                val isFlashOff = _uiState.value.flashMode == ImageCapture.FLASH_MODE_OFF
+                val optimalCaptureMode = if (isFlashOff) {
+                    ImageCapture.CAPTURE_MODE_ZERO_SHUTTER_LAG
+                } else {
+                    ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+                }
+
                 val imageCaptureBuilder = ImageCapture.Builder()
                     .setResolutionSelector(photoResolutionSelector)
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setCaptureMode(optimalCaptureMode)
                     .setJpegQuality(95)
                     .setFlashMode(_uiState.value.flashMode)
 
@@ -1608,6 +1627,7 @@ class CameraManager(private val context: Context) {
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     cancelCaptureWatchdog()
+                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                     isCapturingInProgress.set(false)
                     _uiState.update { it.copy(isCapturing = false) }
                     checkPendingRebind()
@@ -1665,6 +1685,7 @@ class CameraManager(private val context: Context) {
 
                 override fun onError(exception: ImageCaptureException) {
                     cancelCaptureWatchdog()
+                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                     isCapturingInProgress.set(false)
                     _uiState.update { it.copy(isCapturing = false) }
                     checkPendingRebind()
@@ -1716,6 +1737,7 @@ class CameraManager(private val context: Context) {
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     cancelCaptureWatchdog()
+                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                     isCapturingInProgress.set(false)
                     _uiState.update { it.copy(threeDProgressMessage = "Developing 3D Wigglegram...") }
                     checkPendingRebind()
@@ -1762,6 +1784,7 @@ class CameraManager(private val context: Context) {
 
                 override fun onError(exception: ImageCaptureException) {
                     cancelCaptureWatchdog()
+                    lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                     isCapturingInProgress.set(false)
                     _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
                     checkPendingRebind()

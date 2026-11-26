@@ -1,0 +1,6 @@
+profile,black,white,highlight_distinct_rgb,highlight_distinct_luma,weave_contrast,dark_patch_sd,dark_side_undershoot,light_side_overshoot
+source,0.0,255.0,56,56,5.0,0.0,0,0
+legacy,17.42,230.0,22,9,4.0,0.08,0,0
+gentle,18.49,230.21,31,15,5.0,2.21,0,0
+v2,18.49,230.21,31,15,5.0,2.29,0,0
+strong,18.49,230.21,31,15,5.07,2.39,0,0

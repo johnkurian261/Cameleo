@@ -196,3 +196,81 @@ object IntArrayPool {
     }
 }
 
+/**
+ * Thread-safe, bounded memory pool for FloatArray buffers.
+ * Eliminates repeated multi-megabyte heap churn during skin probability estimation,
+ * anatomical priors, mask feathering, and optical highlight scatter blurs.
+ */
+object FloatArrayPool {
+    private const val TAG = "FloatArrayPool"
+
+    private const val MAX_LARGE_ARRAYS = 4
+    private const val MAX_MEDIUM_ARRAYS = 4
+
+    private const val LARGE_FLOAT_THRESHOLD = 8_000_000  // ~8M elements (32MB)
+    private const val MEDIUM_FLOAT_THRESHOLD = 500_000   // ~500K elements (2MB)
+
+    private val lock = Any()
+    private val largePool = ArrayList<FloatArray>(MAX_LARGE_ARRAYS)
+    private val mediumPool = ArrayList<FloatArray>(MAX_MEDIUM_ARRAYS)
+
+    /**
+     * Acquires a FloatArray with at least [minSize] elements.
+     * Reuses an existing array from the pool if available; otherwise allocates a new one.
+     */
+    fun acquire(minSize: Int): FloatArray {
+        synchronized(lock) {
+            val pool = if (minSize >= LARGE_FLOAT_THRESHOLD) {
+                largePool
+            } else if (minSize >= MEDIUM_FLOAT_THRESHOLD) {
+                mediumPool
+            } else {
+                null
+            }
+
+            if (pool != null) {
+                val iterator = pool.iterator()
+                while (iterator.hasNext()) {
+                    val candidate = iterator.next()
+                    if (candidate.size >= minSize) {
+                        iterator.remove()
+                        return candidate
+                    }
+                }
+            }
+        }
+
+        return FloatArray(minSize)
+    }
+
+    /**
+     * Releases a FloatArray back to the pool.
+     */
+    fun release(array: FloatArray?) {
+        if (array == null) return
+
+        synchronized(lock) {
+            if (array.size >= LARGE_FLOAT_THRESHOLD) {
+                if (largePool.size < MAX_LARGE_ARRAYS) {
+                    largePool.add(array)
+                }
+            } else if (array.size >= MEDIUM_FLOAT_THRESHOLD) {
+                if (mediumPool.size < MAX_MEDIUM_ARRAYS) {
+                    mediumPool.add(array)
+                }
+            }
+        }
+    }
+
+    /**
+     * Clears all pooled arrays.
+     */
+    fun clear() {
+        synchronized(lock) {
+            largePool.clear()
+            mediumPool.clear()
+        }
+    }
+}
+
+

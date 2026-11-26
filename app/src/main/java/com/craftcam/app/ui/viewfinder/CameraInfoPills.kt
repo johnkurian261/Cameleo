@@ -93,11 +93,15 @@ fun CameraInfoPills(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 1. Flash Toggle Button (⚡) - Authentic Dazz icon (normalized optical size)
-        QuickDrawableButton(
-            iconRes = if (isFlashActive) R.drawable.ic_dazz_flash_on else R.drawable.ic_dazz_flash_off,
-            contentDescription = "Flash",
+        QuickIconButton(
+            icon = flashIcon,
+            contentDescription = when (flashMode) {
+                ImageCapture.FLASH_MODE_ON -> "Flash on"
+                ImageCapture.FLASH_MODE_AUTO -> "Flash auto"
+                else -> "Flash off"
+            },
             isActive = isFlashActive,
-            iconSize = 46.dp,
+            iconSize = 28.dp,
             onClick = onFlashCycle
         )
 
@@ -106,7 +110,7 @@ fun CameraInfoPills(
             iconRes = R.drawable.ic_dazz_ev,
             contentDescription = "Brightness / Exposure",
             isActive = hasEvOffset || isExposureSliderOpen,
-            iconSize = 32.dp,
+            iconSize = 26.dp,
             subscript = evBadgeText,
             onClick = onToggleExposure
         )

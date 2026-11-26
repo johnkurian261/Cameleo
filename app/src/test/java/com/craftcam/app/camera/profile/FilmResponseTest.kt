@@ -6,6 +6,20 @@ import org.junit.Test
 
 class FilmResponseTest {
     @Test
+    fun fxnrCandidateRampsAreMonotonicAndLeaveHighlightsAlone() {
+        for (strength in listOf(0.035f, 0.065f, 0.10f)) {
+            var previous = -1f
+            for (i in 0..4096) {
+                val input = i / 4096f
+                val output = input + lowerMidtoneLift(input, strength)
+                assertTrue(output >= previous)
+                if (input >= 0.685f) assertEquals(input, output, 0f)
+                previous = output
+            }
+        }
+    }
+
+    @Test
     fun brightRampRetainsTheStockResponse() {
         val stocks = listOf(CameraProfileCatalog.INSTANT_CAMERA, CameraProfileCatalog.FXN_R, CameraProfileCatalog.CCD_DIGITAL)
         val white = stocks.map { profile ->

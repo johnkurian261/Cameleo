@@ -29,6 +29,12 @@ class DateStampRendererTest {
         val formatted = sdf.format(cal.time)
 
         assertEquals("'8 22 '25", formatted)
+
+        // Dazz Cam parity pattern: ''MM  dd  ''yy (e.g. '11  25  '26)
+        val sdfDazz = SimpleDateFormat("''MM  dd  ''yy", Locale.US)
+        cal.set(2026, Calendar.NOVEMBER, 25)
+        val formattedDazz = sdfDazz.format(cal.time)
+        assertEquals("'11  25  '26", formattedDazz)
     }
 
     @Test

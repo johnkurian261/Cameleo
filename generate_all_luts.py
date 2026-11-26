@@ -147,26 +147,27 @@ def grade_analog_faded_film(r, g, b):
     return adjust_saturation(r, g, b, 0.72)
 
 # 6. Cinema Film (Kodak Vision3 500T / D3D)
-# Balanced motion picture negative: rich cinematic contrast, cool teal shadows, natural red-orange skin tones without yellow cast
+# Balanced motion picture negative: rich cinematic contrast, deep neutral black floor, subtle cool shadow separation, natural red-orange skin tones without yellow or blue casts
 def grade_analog_cinema_film(r, g, b):
-    r = film_s_curve(r, contrast=1.24, toe=0.02, shoulder=0.90)
-    g = film_s_curve(g, contrast=1.22, toe=0.03, shoulder=0.90)
-    b = film_s_curve(b, contrast=1.20, toe=0.04, shoulder=0.91)
+    r = film_s_curve(r, contrast=1.20, toe=0.002, shoulder=0.96)
+    g = film_s_curve(g, contrast=1.20, toe=0.002, shoulder=0.96)
+    b = film_s_curve(b, contrast=1.20, toe=0.002, shoulder=0.96)
     luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
     
-    # Deep cool teal shadows (concentrated in shadows below 0.35)
-    sh = clamp(1.0 - luma * 2.6)
-    r -= 0.10 * sh
-    g += 0.03 * sh
-    b += 0.14 * sh
+    # Shadow transition teal tint: preserves true black floor while giving subtle filmic cool shadow separation
+    black_anchor = clamp((luma - 0.01) / 0.05)
+    sh = clamp(1.0 - (luma - 0.05) * 3.0) * black_anchor
+    r -= 0.015 * sh
+    g += 0.010 * sh
+    b += 0.025 * sh
     
     # Balanced warm highlights: preserves red-orange vascular tone without crushing blue or over-boosting green
-    hi = clamp((luma - 0.48) * 1.8)
-    r += 0.08 * hi
-    g += 0.02 * hi
-    b -= 0.04 * hi
+    hi = clamp((luma - 0.45) * 1.8)
+    r += 0.06 * hi
+    g += 0.015 * hi
+    b -= 0.025 * hi
     
-    return adjust_saturation(r, g, b, 1.10)
+    return adjust_saturation(r, g, b, 1.05)
 
 # 7. CCD Classic (135 NE / 2003 Compact Digicam)
 # High digital contrast, vivid electric cyan/blue skies, cool metallic shadows, punchy primaries
@@ -302,19 +303,25 @@ def grade_disp_classic(r, g, b):
 
 # 13. Disposable Flash (CPM35 Flash Disposable)
 # Harsh xenon strobe, warm skin glow, saturated party snapshot
+# 13. Flash Disposable (CPM 35 / Color Print Motion 35 - Y2K Golden Digital Compact)
+# Golden nostalgic compact camera response: radiant amber flash, golden skin, rich reds,
+# protected blue channel preventing mustard/curry yellow cast on skin tones
 def grade_disp_flash(r, g, b):
-    r = film_s_curve(r, contrast=1.44, toe=0.03, shoulder=0.88)
-    g = film_s_curve(g, contrast=1.38, toe=0.02, shoulder=0.89)
-    b = film_s_curve(b, contrast=1.28, toe=0.02, shoulder=0.92)
+    # Balanced digicam S-curve: uniform contrast across channels to preserve chromaticity ratios
+    r = film_s_curve(r, contrast=1.18, toe=0.02, shoulder=0.92)
+    g = film_s_curve(g, contrast=1.16, toe=0.015, shoulder=0.93)
+    b = film_s_curve(b, contrast=1.15, toe=0.01, shoulder=0.94)
     luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
     
-    if luma > 0.35:
-        strobe = (luma - 0.35) * 1.7
-        r += 0.14 * strobe
-        g += 0.07 * strobe
-        b -= 0.03 * strobe
+    # Warm golden flash in highlights with blue preservation (prevents mustard yellow)
+    if luma > 0.42:
+        strobe = (luma - 0.42) * 1.1
+        r += 0.07 * strobe
+        g += 0.015 * strobe
+        b += 0.02 * strobe # Preserve blue in highlights
     
-    return adjust_saturation(r, g, b, 1.36)
+    # Golden digicam saturation
+    return adjust_saturation(r, g, b, 1.12)
 
 # 14. Disposable Warm (135 SR / Golden Summer Disposable)
 # Deep honey-orange saturation, sunset beach memories, copper glow

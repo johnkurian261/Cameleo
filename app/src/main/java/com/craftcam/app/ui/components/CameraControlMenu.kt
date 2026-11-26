@@ -128,11 +128,7 @@ fun CameraControlMenu(
                                 .background(Color(0xFF1E1E20))
                                 .clickable {
                                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    val nextMode = when (flashMode) {
-                                        ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
-                                        ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
-                                        else -> ImageCapture.FLASH_MODE_OFF
-                                    }
+                                    val nextMode = com.craftcam.app.camera.nextFlashMode(flashMode)
                                     onFlashSelect(nextMode)
                                 },
                             contentAlignment = Alignment.Center

@@ -123,6 +123,7 @@ class GPUVideoProcessor(
     private var uPreLinearizationEnabledLoc = -1
     private var uPreLinearizationStrengthLoc = -1
     private var uFilterIntensityLoc = -1
+    private var uLowerMidtoneStrengthLoc = -1
     private var uClarityStrengthLoc = -1
     private var uSkinProtectionLoc = -1
     private var uToeLiftLoc = -1
@@ -325,6 +326,7 @@ class GPUVideoProcessor(
         uPreLinearizationEnabledLoc = GLES30.glGetUniformLocation(programId, "uPreLinearizationEnabled")
         uPreLinearizationStrengthLoc = GLES30.glGetUniformLocation(programId, "uPreLinearizationStrength")
         uFilterIntensityLoc = GLES30.glGetUniformLocation(programId, "uFilterIntensity")
+        uLowerMidtoneStrengthLoc = GLES30.glGetUniformLocation(programId, "uLowerMidtoneStrength")
         uClarityStrengthLoc = GLES30.glGetUniformLocation(programId, "uClarityStrength")
         uSkinProtectionLoc = GLES30.glGetUniformLocation(programId, "uSkinProtection")
         uToeLiftLoc = GLES30.glGetUniformLocation(programId, "uToeLift")
@@ -532,6 +534,7 @@ class GPUVideoProcessor(
             if (uPreLinearizationStrengthLoc != -1) GLES30.glUniform1f(uPreLinearizationStrengthLoc, tuning.preLinearizationStrength)
             if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, intensity)
             val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+            GLES30.glUniform1f(uLowerMidtoneStrengthLoc, unifiedProfile.filmProfile.lowerMidtoneStrength * intensity)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
             if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, unifiedProfile.filmProfile.toeLift * intensity)
@@ -612,7 +615,7 @@ class GPUVideoProcessor(
 
             videoFrameCount++
             val grain = preset.grain
-            val grainIntensity = if (grain.enabled) (grain.intensity * tuning.grainBoost).coerceIn(0f, 1f) else 0f
+            val grainIntensity = if (grain.enabled && tuning.debugStageGrain) (grain.intensity * tuning.grainBoost).coerceIn(0f, 1f) else 0f
             val frameSeed = ((videoFrameCount / 2) % 60).toFloat() / 60.0f
             GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
             GLES30.glUniform1f(uGrainScaleLoc, grain.scale)

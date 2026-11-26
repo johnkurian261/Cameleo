@@ -14,6 +14,14 @@ enum class LutInputSpace {
     CUSTOM_PRETRANSFORM      // Pre-LUT contrast flattening / linearization
 }
 
+/** Compact polynomial with zero slope at either end. Operates on encoded SDR luma. */
+internal fun lowerMidtoneLift(luma: Float, strength: Float): Float {
+    val x = ((luma - 0.035f) / 0.65f).coerceIn(0f, 1f)
+    val envelope = 4f * x * (1f - x)
+    val toe = (1f - luma / 0.18f).coerceIn(0f, 1f)
+    return strength * envelope * envelope - 0.029f * toe * toe * (3f - 2f * toe)
+}
+
 /** Above the stock's knee the slope falls smoothly from one toward zero. */
 internal fun compressFilmHighlight(peak: Float, shoulder: Float): Float {
     if (peak <= shoulder || shoulder >= 1f) return peak
@@ -53,6 +61,7 @@ data class FilmProfile(
     val halationColorTintR: Float = 1.0f,
     val halationColorTintG: Float = 0.32f,
     val halationColorTintB: Float = 0.10f,
+    val lowerMidtoneStrength: Float = 0f,
     val toneCurve: com.craftcam.app.color.ToneCurve? = null
 ) {
     fun fadeAtIntensity(presetFade: Float, adjustment: Float, intensity: Float): Float {

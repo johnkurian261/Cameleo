@@ -128,6 +128,7 @@ class GLViewfinderRenderer(
     private var sLut3DLoc = -1
     private var uUseLut3DLoc = -1
     private var uLutInputSpaceLoc = -1
+    private var uLowerMidtoneStrengthLoc = -1
     private var uClarityStrengthLoc = -1
     private var uSkinProtectionLoc = -1
     private var uLutEnabledLoc = -1
@@ -813,6 +814,7 @@ class GLViewfinderRenderer(
         sLut3DLoc = GLES30.glGetUniformLocation(programId, "sLut3D")
         uUseLut3DLoc = GLES30.glGetUniformLocation(programId, "uUseLut3D")
         uLutInputSpaceLoc = GLES30.glGetUniformLocation(programId, "uLutInputSpace")
+        uLowerMidtoneStrengthLoc = GLES30.glGetUniformLocation(programId, "uLowerMidtoneStrength")
         uClarityStrengthLoc = GLES30.glGetUniformLocation(programId, "uClarityStrength")
         uSkinProtectionLoc = GLES30.glGetUniformLocation(programId, "uSkinProtection")
         uLutEnabledLoc = GLES30.glGetUniformLocation(programId, "uLutEnabled")
@@ -1024,6 +1026,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uBarrelDistortionLoc, 0f)
             GLES30.glUniform1f(uSoftnessLoc, 0f)
             GLES30.glUniform1f(uFadeLoc, 0f)
+            GLES30.glUniform1f(uLowerMidtoneStrengthLoc, 0f)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
             if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
@@ -1146,6 +1149,7 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uBarrelDistortionLoc, 0f)
             GLES30.glUniform1f(uSoftnessLoc, 0f)
             GLES30.glUniform1f(uFadeLoc, 0f)
+            GLES30.glUniform1f(uLowerMidtoneStrengthLoc, 0f)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, 0f)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, 0f)
             if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, 0)
@@ -1325,6 +1329,7 @@ class GLViewfinderRenderer(
                 val clip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity
                 GLES30.glUniform1f(uShoulderClipLoc, clip)
             }
+            GLES30.glUniform1f(uLowerMidtoneStrengthLoc, unifiedProfile.filmProfile.lowerMidtoneStrength * intensity)
             if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
             if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
 
@@ -1334,9 +1339,10 @@ class GLViewfinderRenderer(
             val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0f, 1f)
             GLES30.glUniform1f(uVignetteIntensityLoc, vigIntensity)
             GLES30.glUniform1f(uVignetteRadiusLoc, lens.vignetteRadius)
-            GLES30.glUniform1f(uChromaticAberrationLoc, lens.chromaticAberration * intensity)
+            val nativeDetail = film.lowerMidtoneStrength > 0f
+            GLES30.glUniform1f(uChromaticAberrationLoc, if (nativeDetail && currentLensProfile.type == LensType.NORMAL) 0f else lens.chromaticAberration * intensity)
             GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion * intensity)
-            val softStrength = if (isPerformanceThrottled) 0f else lens.softness * intensity
+            val softStrength = if (isPerformanceThrottled || (nativeDetail && !tuning.softLensDiffusion)) 0f else lens.softness * intensity
             GLES30.glUniform1f(uSoftnessLoc, softStrength)
 
             val resolvedGrain = activeResolvedGrain ?: com.craftcam.app.processor.GrainStage.resolve(
@@ -1348,7 +1354,10 @@ class GLViewfinderRenderer(
             val grainIntensity = if (resolvedGrain.useScannedTexture) resolvedGrain.effectiveIntensity else resolvedGrain.proceduralIntensity
             val frameSeed = ((frameCount / 2) % 60).toFloat() / 60.0f
             GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
-            GLES30.glUniform1f(uGrainScaleLoc, resolvedGrain.scale)
+            val previewGrainScale = if (film.id == "dfuns_negative_v1")
+                1f / (resolvedGrain.scale * minOf(viewportWidth, viewportHeight) / 1600f).coerceIn(0.5f, 3f)
+            else resolvedGrain.scale
+            GLES30.glUniform1f(uGrainScaleLoc, previewGrainScale)
             GLES30.glUniform1i(uIsColorNoiseLoc, if (resolvedGrain.isColorNoise) 1 else 0)
             GLES30.glUniform1f(uRandomSeedLoc, frameSeed)
 
@@ -1558,8 +1567,11 @@ class GLViewfinderRenderer(
         LutTextureCache.clear()
     }
 
+    var onFrameAvailableListener: (() -> Unit)? = null
+
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
         updateSurface = true
         requestRenderSafe()
+        onFrameAvailableListener?.invoke()
     }
 }

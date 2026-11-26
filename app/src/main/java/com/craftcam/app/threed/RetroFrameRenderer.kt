@@ -2,7 +2,7 @@ package com.craftcam.app.threed
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import com.craftcam.app.processor.GrainStage
 import android.util.Log
 import kotlin.math.*
 
@@ -45,18 +45,9 @@ class RetroFrameRenderer(
 
         for (assetName in GRAIN_ASSET_NAMES) {
             try {
-                ctx.assets.open(assetName).use { input ->
-                    val bmp = BitmapFactory.decodeStream(input)
-                    if (bmp != null) {
-                        val gw = bmp.width
-                        val gh = bmp.height
-                        val gp = IntArray(gw * gh)
-                        bmp.getPixels(gp, 0, gw, 0, 0, gw, gh)
-                        list.add(GrainTexture(gp, gw, gh))
-                        bmp.recycle()
-                        Log.d(TAG, "Loaded scanned 3D film grain: $assetName (${gw}x${gh})")
-                    }
-                }
+                val grain = GrainStage.getOrLoadGrainPixels(ctx, assetName) ?: continue
+                val (width, height) = grain.second
+                list.add(GrainTexture(grain.first, width, height))
             } catch (t: Throwable) {
                 Log.w(TAG, "Could not load scanned grain asset: $assetName", t)
             }
@@ -75,7 +66,7 @@ class RetroFrameRenderer(
     fun processFrames(frames: List<Bitmap>): List<Bitmap> {
         val count = frames.size
         val outFrames = ArrayList<Bitmap>(count)
-        val grains = getOrLoadGrains()
+        val grains = if (config.grainIntensity > 0f) getOrLoadGrains() else emptyList()
 
         for (i in 0 until count) {
             val src = frames[i]
@@ -131,15 +122,26 @@ class RetroFrameRenderer(
         val leakPhase = (2.0 * Math.PI * frameIndex / totalFrames).toFloat()
         val leakStrength = config.lightLeakIntensity * (0.85f + 0.15f * sin(leakPhase * 2f))
 
+        val halfPixelSplit = jitterX == 0f && jitterY == 0f && config.rgbSeparationPx == 0.5f
         for (y in 0 until height) {
             val rowOffset = y * width
             for (x in 0 until width) {
-                // Sample Red channel with sub-pixel shift
-                val r = sampleChannel(srcPixels, width, height, x + rShiftX, y + rShiftY, channel = 0)
-                // Sample Green channel with mechanical jitter
-                val g = sampleChannel(srcPixels, width, height, x + gShiftX, y + gShiftY, channel = 1)
-                // Sample Blue channel with reverse sub-pixel shift
-                val b = sampleChannel(srcPixels, width, height, x + bShiftX, y + bShiftY, channel = 2)
+                val r: Float
+                val g: Float
+                val b: Float
+                if (halfPixelSplit) {
+                    // The default horizontal half-pixel shift needs only three pixels on this row.
+                    val center = srcPixels[rowOffset + x]
+                    val left = srcPixels[rowOffset + (x - 1).coerceAtLeast(0)]
+                    val right = srcPixels[rowOffset + (x + 1).coerceAtMost(width - 1)]
+                    r = (((center ushr 16) and 255) + ((right ushr 16) and 255)) * 0.5f
+                    g = ((center ushr 8) and 255).toFloat()
+                    b = ((left and 255) + (center and 255)) * 0.5f
+                } else {
+                    r = sampleChannel(srcPixels, width, height, x + rShiftX, y + rShiftY, channel = 0)
+                    g = sampleChannel(srcPixels, width, height, x + gShiftX, y + gShiftY, channel = 1)
+                    b = sampleChannel(srcPixels, width, height, x + bShiftX, y + bShiftY, channel = 2)
+                }
 
                 // Apply exposure multiplier
                 var finalR = (r * exposureMult).coerceIn(0f, 255f)
@@ -250,24 +252,35 @@ class RetroFrameRenderer(
     }
 
     /**
-     * In-place lightweight 3-tap Gaussian-like diffusion: [0.08, 0.84, 0.08]
-     * Softens harsh digital edges into organic vintage lens rendition.
+     * In-place organic 2D lens diffusion cross filter [center 0.88, 4-neighbors 0.03 each].
+     * Specifically diffuses aggressive smartphone ISP sharpening edge halos around hair,
+     * eyelashes, and contours while preserving high-frequency skin pores and facial hair texture.
      */
     private fun applyGentleDiffusion(pixels: IntArray, width: Int, height: Int) {
         val temp = pixels.clone()
-        val w0 = 0.84f
-        val w1 = 0.08f
+        val wCenter = 0.88f
+        val wCross = 0.03f
 
-        for (y in 0 until height) {
+        for (y in 1 until height - 1) {
             val row = y * width
+            val rowAbove = (y - 1) * width
+            val rowBelow = (y + 1) * width
             for (x in 1 until width - 1) {
-                val pL = temp[row + x - 1]
                 val pC = temp[row + x]
+                val pL = temp[row + x - 1]
                 val pR = temp[row + x + 1]
+                val pT = temp[rowAbove + x]
+                val pB = temp[rowBelow + x]
 
-                val r = (((pL shr 16) and 0xFF) * w1 + ((pC shr 16) and 0xFF) * w0 + ((pR shr 16) and 0xFF) * w1).roundToInt()
-                val g = (((pL shr 8) and 0xFF) * w1 + ((pC shr 8) and 0xFF) * w0 + ((pR shr 8) and 0xFF) * w1).roundToInt()
-                val b = ((pL and 0xFF) * w1 + (pC and 0xFF) * w0 + (pR and 0xFF) * w1).roundToInt()
+                val r = (((pC shr 16) and 0xFF) * wCenter +
+                        (((pL shr 16) and 0xFF) + ((pR shr 16) and 0xFF) +
+                         ((pT shr 16) and 0xFF) + ((pB shr 16) and 0xFF)) * wCross).roundToInt()
+                val g = (((pC shr 8) and 0xFF) * wCenter +
+                        (((pL shr 8) and 0xFF) + ((pR shr 8) and 0xFF) +
+                         ((pT shr 8) and 0xFF) + ((pB shr 8) and 0xFF)) * wCross).roundToInt()
+                val b = ((pC and 0xFF) * wCenter +
+                        ((pL and 0xFF) + (pR and 0xFF) +
+                         (pT and 0xFF) + (pB and 0xFF)) * wCross).roundToInt()
 
                 pixels[row + x] = 0xFF000000.toInt() or (r shl 16) or (g shl 8) or b
             }

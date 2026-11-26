@@ -59,13 +59,26 @@ object DateStampRenderer {
                 val sdf = SimpleDateFormat("yyyy / MM / dd", Locale.US)
                 Triple(sdf.format(date), Color.rgb(240, 240, 240), Color.argb(120, 20, 20, 20))
             }
+            DateStampStyle.AMBER_SUBTLE_DATE -> {
+                val sdf = SimpleDateFormat("''MM  dd  ''yy", Locale.US)
+                Triple(sdf.format(date), Color.rgb(238, 126, 18), Color.argb(160, 195, 75, 10))
+            }
+            DateStampStyle.DIGICAM_YELLOW_DATETIME -> {
+                val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US)
+                Triple(sdf.format(date), Color.rgb(255, 230, 0), Color.argb(140, 180, 150, 0))
+            }
         }
 
         // Apply custom year override if provided
         val text = if (!customYearText.isNullOrBlank()) {
             val yr = if (customYearText.startsWith("'")) customYearText else "'$customYearText"
-            val m = SimpleDateFormat("M d", Locale.US).format(date)
-            "$yr  $m"
+            if (config.style == DateStampStyle.AMBER_SUBTLE_DATE) {
+                val m = SimpleDateFormat("MM  dd", Locale.US).format(date)
+                "'$m  $yr"
+            } else {
+                val m = SimpleDateFormat("M d", Locale.US).format(date)
+                "$yr  $m"
+            }
         } else {
             rawText
         }
@@ -73,8 +86,12 @@ object DateStampRenderer {
         val width = mutableBitmap.width.toFloat()
         val height = mutableBitmap.height.toFloat()
 
-        // Size proportional to image dimensions
-        val textSize = height * 0.034f
+        // Size proportional to image dimensions and stamp style
+        val textSize = when (config.style) {
+            DateStampStyle.AMBER_SUBTLE_DATE -> height * 0.021f
+            DateStampStyle.DIGICAM_YELLOW_DATETIME -> height * 0.030f
+            else -> height * 0.034f
+        }
         val marginX = width * 0.05f
         val marginY = height * 0.05f
 

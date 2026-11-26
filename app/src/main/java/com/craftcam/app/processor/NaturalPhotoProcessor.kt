@@ -10,6 +10,9 @@ import com.craftcam.app.color.WhiteBalanceProcessor
 import com.craftcam.app.model.NaturalCameraProfile
 import com.craftcam.app.portrait.FaceRegion
 import com.craftcam.app.scene.SceneType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.*
 
 /**
@@ -51,7 +54,7 @@ object NaturalPhotoProcessor {
     /**
      * Executes the flagship Natural computational photography pipeline on [source].
      */
-    fun process(
+    suspend fun process(
         source: Bitmap,
         profile: NaturalCameraProfile = NaturalCameraProfile.S21_PROFILE,
         compareWithOriginal: Boolean = false,
@@ -91,14 +94,18 @@ object NaturalPhotoProcessor {
             }
 
             // ─── Stage 2: Radiometric Linear Color Transform, WB, & Highlights ─
-            applyRadiometricColorAndTones(
-                pixels = pixels,
-                totalPixels = totalPixels,
-                colorProfile = colorProfile,
-                profile = profile,
-                wbKelvin = wbKelvin,
-                wbTint = wbTint
-            )
+            val workers = minOf(Runtime.getRuntime().availableProcessors(), 4)
+            val chunkSize = maxOf(65536, (totalPixels + workers - 1) / workers)
+            coroutineScope {
+                for (start in 0 until totalPixels step chunkSize) {
+                    launch(Dispatchers.Default) {
+                        applyRadiometricColorAndTones(
+                            pixels, start, minOf(start + chunkSize, totalPixels),
+                            colorProfile, profile, wbKelvin, wbTint
+                        )
+                    }
+                }
+            }
 
             // ─── Stage 3: Multi-Scale Local Contrast & Restrained Detail ─────
             // Subtle texture definition and subject separation without HDR halos; dampened on skin
@@ -251,7 +258,8 @@ object NaturalPhotoProcessor {
     // ─── Stage 2: Radiometric Linear Color Transform, WB, & Highlights ─────────
     private fun applyRadiometricColorAndTones(
         pixels: IntArray,
-        totalPixels: Int,
+        start: Int,
+        end: Int,
         colorProfile: NaturalColorProfile,
         profile: NaturalCameraProfile,
         wbKelvin: Int,
@@ -279,7 +287,7 @@ object NaturalPhotoProcessor {
 
         val hsv = FloatArray(3)
 
-        for (i in 0 until totalPixels) {
+        for (i in start until end) {
             val p = pixels[i]
             val ir = (p shr 16) and 0xFF
             val ig = (p shr 8) and 0xFF

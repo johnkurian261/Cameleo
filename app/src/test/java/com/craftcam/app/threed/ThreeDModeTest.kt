@@ -33,6 +33,20 @@ class ThreeDModeTest {
     }
 
     @Test
+    fun fractionalParallaxKeepsThinForegroundFreeOfBackgroundColour() {
+        val near = 0xffff0000.toInt()
+        val far = 0xff0000ff.toInt()
+        val colors = IntArray(25) { if (it == 12) near else far }
+        val depths = FloatArray(25) { if (it == 12) 1f else 0f }
+        val engine = ParallaxWarpEngine()
+        for (shift in listOf(-2.5f, 2.5f)) {
+            val view = engine.warpPixels(colors, depths, 25, 1, shift, 0f)
+            assertTrue(view.contains(near))
+            assertTrue(view.all { it == near || it == far })
+        }
+    }
+
+    @Test
     fun nearbySubjectStaysPinnedAgainstMovingBackground() {
         val width = 100
         val near = 0xffff0000.toInt()

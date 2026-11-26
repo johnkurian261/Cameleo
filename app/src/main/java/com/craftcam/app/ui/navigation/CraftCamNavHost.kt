@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import com.craftcam.app.camera.CameraManager
 import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
 import com.craftcam.app.model.CameraCategory
+import com.craftcam.app.model.CameraEngineMode
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.ui.collection.CollectionScreen
@@ -61,12 +62,16 @@ fun CraftCamNavHost(
             val uiState by cameraManager.uiState.collectAsState()
             CollectionScreen(
                 currentPreset = selectedPreset,
+                filmControlsAvailable = uiState.engineMode == CameraEngineMode.FILM,
                 selectedLens = uiState.shootingState.selectedLens,
                 frameEnabled = uiState.tuning.frameBorderEnabled,
-                grainEnabled = uiState.tuning.debugStageGrain,
+                strictExposure = uiState.tuning.dfunsStrictExposure,
+                onStrictExposure = { enabled -> cameraManager.updateTuning { it.copy(dfunsStrictExposure = enabled) } },
+                grainEnabled = uiState.tuning.debugStageGrain && uiState.tuning.grainBoost > 0f,
                 colorProfileIndex = uiState.tuning.filmColorProfileIndex,
                 onSelectPreset = { preset ->
                     selectedPreset = preset
+                    cameraManager.setEngineMode(if (preset.id == "zero") CameraEngineMode.NATURAL else CameraEngineMode.FILM)
                     cameraManager.setPreset(preset)
                 },
                 onSelectLens = { lensType ->
@@ -87,6 +92,7 @@ fun CraftCamNavHost(
 
         composable(Screen.Gallery.route) {
             GalleryScreen(
+                onSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateBack = { navController.popBackStack() }
             )
         }

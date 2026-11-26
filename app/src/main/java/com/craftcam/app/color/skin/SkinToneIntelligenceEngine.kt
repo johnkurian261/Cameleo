@@ -297,33 +297,59 @@ class SkinToneIntelligenceEngine(
 
                 // 7. Source-Relative Yellow Cast Guard (guards against blue-channel starvation without destroying genuine tungsten warmth)
                 if (config.yellowCastProtectionEnabled && config.protectionEnabled) {
-                    val rbRatio = curR / maxOf(1.0f, curB)
-                    val srcRbRatio = rSrc.toFloat() / maxOf(1.0f, bSrc.toFloat())
+                    val curLumaVal = 0.299f * curR + 0.587f * curG + 0.114f * curB
+                    // Luma gate: smoothly fade out in deep shadows to prevent numerical division blowup when B -> 0,
+                    // and in extreme specular flash highlights so highlights clip cleanly
+                    val shadowGate = ((curLumaVal - 16.0f) / 20.0f).coerceIn(0.0f, 1.0f)
+                    val highlightGate = ((254.0f - curLumaVal) / 12.0f).coerceIn(0.0f, 1.0f)
+                    val lumaGate = shadowGate * highlightGate
 
-                    val maxAllowedRb = when (profile.id) {
-                        "skin_dfuns" -> 1.95f
-                        "skin_cpm35" -> 2.35f
-                        else -> 1.75f
-                    }
-                    val targetRb = when (profile.id) {
-                        "skin_dfuns" -> 1.70f
-                        "skin_cpm35" -> 1.95f
-                        else -> 1.70f
-                    }
+                    if (lumaGate > 0.01f) {
+                        val rbRatio = curR / maxOf(1.0f, curB)
+                        val srcRbRatio = if (sourcePixels != null) rSrc.toFloat() / maxOf(1.0f, bSrc.toFloat()) else rbRatio
 
-                    val isFilterInducedMustard = (rbRatio > srcRbRatio + 0.30f) || sourcePixels == null
-                    if (rbRatio > maxAllowedRb && isFilterInducedMustard) {
-                        val targetB = curR / targetRb
-                        val deltaB = (targetB - curB) * config.yellowCastProtectionStrength * 0.85f
-                        curB = (curB + deltaB).coerceIn(0f, 255f)
-                    }
+                        // Allowed camera profile warmth tolerance over source
+                        val allowedWarmthDrift = when (profile.id) {
+                            "skin_cpm35" -> if (illuminant == DigicamIlluminant.AMBER_TUNGSTEN) 0.65f else 0.40f
+                            "skin_dfuns" -> if (illuminant == DigicamIlluminant.AMBER_TUNGSTEN) 0.55f else 0.35f
+                            else -> if (illuminant == DigicamIlluminant.AMBER_TUNGSTEN) 0.45f else 0.28f
+                        }
 
-                    val rgRatio = curR / maxOf(1.0f, curG)
-                    if (rgRatio < 1.30f && curG > curB * 1.15f) {
-                        val targetG = curR / 1.32f
-                        val deltaG = (curG - targetG) * config.yellowCastProtectionStrength * 0.70f
-                        curG = (curG - deltaG).coerceIn(0f, 255f)
-                        curR = (curR - deltaG * 0.15f).coerceIn(0f, 255f)
+                        // Check if filter introduced excessive blue starvation relative to source
+                        val isFilterInducedYellow = (rbRatio > srcRbRatio + allowedWarmthDrift) || (sourcePixels == null && rbRatio > 2.05f)
+
+                        if (isFilterInducedYellow) {
+                            val targetRatio = if (sourcePixels != null) {
+                                (srcRbRatio + allowedWarmthDrift).coerceAtLeast(1.55f)
+                            } else {
+                                when (profile.id) {
+                                    "skin_cpm35" -> 1.95f
+                                    "skin_dfuns" -> 1.70f
+                                    else -> 1.68f
+                                }
+                            }
+                            val targetB = curR / targetRatio
+                            if (targetB > curB) {
+                                val deltaB = (targetB - curB) * config.yellowCastProtectionStrength * lumaGate
+                                curB = (curB + deltaB).coerceIn(0f, 255f)
+                            }
+                        }
+
+                        // Source-relative green over-amplification guard (preserves natural olive and environmental green lighting)
+                        val rgRatio = curR / maxOf(1.0f, curG)
+                        val srcRgRatio = if (sourcePixels != null) rSrc.toFloat() / maxOf(1.0f, gSrc.toFloat()) else rgRatio
+                        val excessFilterGreen = srcRgRatio - rgRatio
+
+                        if ((excessFilterGreen > 0.05f || (sourcePixels == null && rgRatio < 1.29f)) && curG > curB * 1.15f) {
+                            val greenGuardScale = if (illuminant == DigicamIlluminant.YELLOW_GREEN_ARTIFICIAL) 0.30f else 0.70f
+                            val targetRg = if (sourcePixels != null) maxOf(1.18f, srcRgRatio - 0.03f) else 1.30f
+                            val targetG = curR / targetRg
+                            if (curG > targetG) {
+                                val deltaG = (curG - targetG) * config.yellowCastProtectionStrength * greenGuardScale * lumaGate
+                                curG = (curG - deltaG).coerceIn(0f, 255f)
+                                curR = (curR - deltaG * 0.15f).coerceIn(0f, 255f)
+                            }
+                        }
                     }
                 }
 
