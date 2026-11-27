@@ -527,3 +527,38 @@ This document tracks daily engineering milestones, architectural audits, test su
   - `.\gradlew.bat assembleDebug` -> **BUILD SUCCESSFUL in 7s**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **172,225,334 bytes (164.25 MB)** (SHA-256: `d5968341103c195eed38a8bafb45867aa6d7b3b89f1416c9f2a1605754e10bbf`).
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; physical hardware capture execution on Samsung Galaxy S21 5G remains **NOT VERIFIED**.
 - **Comprehensive Calibration Report**: [OLYMPUS_MJU2_REFERENCE_FILTER_CALIBRATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/OLYMPUS_MJU2_REFERENCE_FILTER_CALIBRATION_REPORT.md).
+
+---
+
+## Entry 17 — DazzClassic Warm Monochrome Photo Booth Calibration
+
+**Date**: November 27, 2026 (23:45 IST)  
+**Milestone**: Calibration of DazzClassic (`analog_35mm_classic` / `d_classic`) from 6 Authoritative Photo Booth References, Dedicated 3D LUT Generation, 34-Preset Zero-Regression Isolation, 219 Passing Tests & Build Verification
+
+### 1. Calibration Architecture & Sensitometry
+- **Color Science & Reference Extraction**:
+  - Preserved 6 user-provided reference photographs byte-for-byte in [`docs/calibration/dazzclassic_reference/originals/`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/dazzclassic_reference/originals/).
+  - Measured CIELAB, OKLab, and OKLCh across deep shadows ($L^* \approx 12..25, a^* \in [0.0, 5.4], b^* \in [2.6, 7.8]$), midtone skin ($L^* \approx 65..78, a^* \in [1.1, 5.3], b^* \in [10.1, 15.8]$), and specular highlights ($L^* \approx 92..96$). Confirmed authentic warm silver-gelatin paper print toning ($R \ge G \ge B$, hue locus $h^\circ \in [50^\circ, 85^\circ]$).
+  - Formulated panchromatic portrait luminance weighting: $\text{Luma} = 0.36R + 0.48G + 0.16B$, $1.12$ contrast S-curve with $0.84$ shoulder knee, paper black toe lift ($0.025$), and creamy ivory highlight roll-off ($0.92$).
+- **Dedicated 3D LUT Generation**:
+  - Synthesized dedicated 3D LUT [`lut_dazzclassic.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/assets/lut_dazzclassic.png) (512 × 512 Hald-8, 64 × 64 × 64, SHA-256 `fc1b207899540f278e4f237f757197a051d5dabc9fb8d36141f0e6138cc2cafe`).
+  - Evaluated 5-way controlled ablations (A: Previous shared LUT, B: Desaturated baseline, C: High-contrast silver, D: Heavy sepia, E: Production warm monochrome) with contact sheets in `docs/calibration/dazzclassic_reference/`.
+- **Pipeline Integration**:
+  - Updated [`CameraProfileCatalog.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/camera/profile/CameraProfileCatalog.kt), [`PresetCatalog.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/presets/PresetCatalog.kt), [`ShaderConstants.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/gl/shaders/ShaderConstants.kt), [`ImageProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/processor/ImageProcessor.kt), and [`CameraProfileCompatibility.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/color/profile/CameraProfileCompatibility.kt).
+  - Preserved `lut_analog_35mm_classic.png` untouched for `analog_s67` and `analog_fisheye_f`.
+  - Added D Classic identifiers to `FIXED_MONOCHROME_IDS` so default profile selection resolves `isMonochrome = true`, bypassing unwanted sensor temperature offsets and color skin retouching.
+
+### 2. Quantitative Verification & Zero-Regression Metrics
+- **MEASURED RESULT — 35-Preset Isolation Regression Verification (`scratch/verify_dclassic_isolation.py`)**:
+  - **All 34 Unrelated Cameras Preserved Bit-Exact (0.0000 ΔE, 0 pixels changed)**.
+  - **D FUNS (`ccd_flash`), DQS (`ccd_retro_compact`), Olympus MJU II (`analog_mju2`), and CCMP (`disp_flash`) 100% Protected and Unaffected**.
+  - **DazzClassic (`analog_35mm_classic`)**: Deliberate calibration shift verified (Mean ΔE = **42.3466**, Max ΔE = **85.2445**).
+  - **Total Regressions**: **0 / 35**.
+- **MEASURED RESULT — Automated Test Suite**:
+  - Created [`DazzClassicEmulationTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/DazzClassicEmulationTest.kt) and updated [`CameraProfileCatalogReaTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/CameraProfileCatalogReaTest.kt).
+  - `.\gradlew.bat testDebugUnitTest` -> **35 test suites, 219 unit tests, 0 failures, 0 errors, 0 skipped** (`BUILD SUCCESSFUL in 20s`).
+- **MEASURED RESULT — Build Compilation**:
+  - `.\gradlew.bat assembleDebug` -> **BUILD SUCCESSFUL in 8s**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **172,225,406 bytes (164.25 MB)** (SHA-256: `355865df66abd5ad1cf5c1e6cbed5e121ff6994492a30f72707d3fdc3a5eb2d0`).
+  - Confirmed `assets/lut_dazzclassic.png` is packaged inside the APK.
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty / adb not found; physical hardware capture execution on Samsung Galaxy S21 5G remains **NOT VERIFIED**.
+- **Comprehensive Calibration Report**: [DAZZCLASSIC_MONOCHROME_PHOTOBOOTH_CALIBRATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DAZZCLASSIC_MONOCHROME_PHOTOBOOTH_CALIBRATION_REPORT.md).

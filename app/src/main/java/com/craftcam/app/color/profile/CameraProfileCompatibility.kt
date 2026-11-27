@@ -25,7 +25,8 @@ object CameraProfileCompatibility {
     )
 
     private val FIXED_MONOCHROME_IDS = setOf(
-        "analog_dblack", "dblack", "d black", "vsco_b1", "b1", "vsco_x1", "x1"
+        "analog_dblack", "dblack", "d black", "vsco_b1", "b1", "vsco_x1", "x1",
+        "analog_35mm_classic", "d_classic", "dclassic", "dazzclassic", "d classic"
     )
 
     data class ResolvedLutPlan(
@@ -217,7 +218,7 @@ object CameraProfileCompatibility {
             primaryLutAsset = resolvedCameraLut,
             secondaryLutAsset = selectedProfile.lutAssetPath,
             dualLutMix = 0.65f,
-            isMonochrome = false,
+            isMonochrome = normalizedId in FIXED_MONOCHROME_IDS,
             isCustomProfile = true,
             effectiveAdjustment = selectedProfile.adjustment,
             activeProfile = selectedProfile

@@ -1,0 +1,200 @@
+{
+  "deep_shadow_black": {
+    "input_rgb": [
+      10,
+      10,
+      10
+    ],
+    "config_c_silver": [
+      17,
+      16,
+      14
+    ],
+    "config_d_vintage": [
+      24,
+      21,
+      14
+    ],
+    "config_e_balanced": [
+      20,
+      18,
+      14
+    ]
+  },
+  "charcoal_hair": {
+    "input_rgb": [
+      25,
+      25,
+      25
+    ],
+    "config_c_silver": [
+      29,
+      28,
+      26
+    ],
+    "config_d_vintage": [
+      34,
+      32,
+      26
+    ],
+    "config_e_balanced": [
+      32,
+      30,
+      26
+    ]
+  },
+  "midtone_curtain": {
+    "input_rgb": [
+      115,
+      115,
+      115
+    ],
+    "config_c_silver": [
+      118,
+      117,
+      113
+    ],
+    "config_d_vintage": [
+      125,
+      121,
+      111
+    ],
+    "config_e_balanced": [
+      122,
+      119,
+      112
+    ]
+  },
+  "skin_fair_complexion": {
+    "input_rgb": [
+      225,
+      190,
+      170
+    ],
+    "config_c_silver": [
+      204,
+      203,
+      200
+    ],
+    "config_d_vintage": [
+      211,
+      207,
+      200
+    ],
+    "config_e_balanced": [
+      207,
+      205,
+      200
+    ]
+  },
+  "skin_olive_complexion": {
+    "input_rgb": [
+      195,
+      155,
+      125
+    ],
+    "config_c_silver": [
+      170,
+      168,
+      166
+    ],
+    "config_d_vintage": [
+      177,
+      173,
+      165
+    ],
+    "config_e_balanced": [
+      173,
+      171,
+      165
+    ]
+  },
+  "skin_deep_complexion": {
+    "input_rgb": [
+      130,
+      95,
+      75
+    ],
+    "config_c_silver": [
+      107,
+      106,
+      103
+    ],
+    "config_d_vintage": [
+      114,
+      110,
+      101
+    ],
+    "config_e_balanced": [
+      110,
+      108,
+      102
+    ]
+  },
+  "flash_forehead_highlight": {
+    "input_rgb": [
+      240,
+      220,
+      205
+    ],
+    "config_c_silver": [
+      236,
+      234,
+      231
+    ],
+    "config_d_vintage": [
+      244,
+      239,
+      229
+    ],
+    "config_e_balanced": [
+      240,
+      236,
+      230
+    ]
+  },
+  "white_shirt_creamy": {
+    "input_rgb": [
+      248,
+      248,
+      248
+    ],
+    "config_c_silver": [
+      244,
+      243,
+      239
+    ],
+    "config_d_vintage": [
+      252,
+      247,
+      236
+    ],
+    "config_e_balanced": [
+      248,
+      245,
+      237
+    ]
+  },
+  "pure_specular_white": {
+    "input_rgb": [
+      255,
+      255,
+      255
+    ],
+    "config_c_silver": [
+      246,
+      244,
+      240
+    ],
+    "config_d_vintage": [
+      253,
+      248,
+      237
+    ],
+    "config_e_balanced": [
+      249,
+      246,
+      238
+    ]
+  }
+}

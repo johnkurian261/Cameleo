@@ -1762,7 +1762,7 @@ void main() {
         "zero"                 -> "lut_zero.png"
         "analog_fxn_r", "fxnr", "fxn_r" -> "lut_fxn_r.png"
         "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" -> "lut_ccd_r.png"
-        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "lut_analog_35mm_classic.png"
+        "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm", "dazzclassic" -> "lut_dazzclassic.png"
         "ccd_grd", "analog_warm_film", "grd", "gr d" -> "lut_ccd_grd.png"
         "analog_soft_film", "analog_ct2f", "ct2f" -> "lut_ct2f.png"
         "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" -> "lut_olympus_mju2.png"

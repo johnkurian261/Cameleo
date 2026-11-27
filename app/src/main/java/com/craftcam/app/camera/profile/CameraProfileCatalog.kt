@@ -98,37 +98,38 @@ object CameraProfileCatalog {
         defaultRatio = AspectRatioMode.RATIO_3_2,
         filmProfile = FilmProfile(
             id = "film_35mm_classic",
-            name = "Classic 35mm Universal Negative",
-            lutAssetPath = "lut_analog_35mm_classic.png",
-            contrast = 1.14f,
-            saturation = 1.10f,
-            temperature = 0.12f,
-            tint = -0.01f,
-            toeLift = 0.035f,
-            shoulderClip = 0.965f,
-            highlightRollOff = 0.80f,
-            halationThreshold = 0.74f,
-            halationIntensity = 0.26f,
+            name = "D Classic Warm Monochrome",
+            lutAssetPath = "lut_dazzclassic.png",
+            contrast = 1.0f,
+            saturation = 1.0f,
+            temperature = 0.0f,
+            tint = 0.0f,
+            toeLift = 0.025f,
+            shoulderClip = 0.992f,
+            highlightRollOff = 0.92f,
+            halationThreshold = 0.82f,
+            halationIntensity = 0.18f,
             halationColorTintR = 1.0f,
-            halationColorTintG = 0.28f,
-            halationColorTintB = 0.06f
+            halationColorTintG = 0.88f,
+            halationColorTintB = 0.70f
         ),
         grainProfile = GrainProfile(
             id = "grain_35mm_fine",
             mode = GrainMode.SCANNED,
             assetPath = "grains/grain_dclassic.jpg",
-            intensity = 0.22f,
+            intensity = 0.18f,
             scale = 0.95f,
             luminanceWeightingEnabled = true,
             luminanceWeightingPower = 0.70f
         ),
         opticalProfile = OpticalProfile(
             id = "optical_dclassic",
-            vignetteStrength = 0.35f,
-            vignetteRadius = 0.80f,
-            chromaticAberration = 0.0025f,
-            edgeSoftness = 0.08f,
-            distortionStrength = 0.0f
+            vignetteStrength = 0.18f,
+            vignetteRadius = 0.86f,
+            chromaticAberration = 0.001f,
+            edgeSoftness = 0.045f,
+            distortionStrength = -0.004f,
+            flareStrength = 0.18f
         )
     )
 

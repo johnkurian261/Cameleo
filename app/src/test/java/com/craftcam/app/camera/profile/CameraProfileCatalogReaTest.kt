@@ -43,25 +43,25 @@ class CameraProfileCatalogReaTest {
 
         assertEquals("D Classic", profile.name)
         val film = profile.filmProfile
-        assertEquals("lut_analog_35mm_classic.png", film.lutAssetPath)
-        assertEquals(0.035f, film.toeLift, 0.001f)
-        assertEquals(0.965f, film.shoulderClip, 0.001f)
-        assertEquals(0.80f, film.highlightRollOff, 0.001f)
-        assertEquals(0.74f, film.halationThreshold, 0.001f)
-        assertEquals(0.26f, film.halationIntensity, 0.001f)
+        assertEquals("lut_dazzclassic.png", film.lutAssetPath)
+        assertEquals(0.025f, film.toeLift, 0.001f)
+        assertEquals(0.992f, film.shoulderClip, 0.001f)
+        assertEquals(0.92f, film.highlightRollOff, 0.001f)
+        assertEquals(0.82f, film.halationThreshold, 0.001f)
+        assertEquals(0.18f, film.halationIntensity, 0.001f)
         assertEquals(1.0f, film.halationColorTintR, 0.001f)
-        assertEquals(0.28f, film.halationColorTintG, 0.001f)
-        assertEquals(0.06f, film.halationColorTintB, 0.001f)
+        assertEquals(0.88f, film.halationColorTintG, 0.001f)
+        assertEquals(0.70f, film.halationColorTintB, 0.001f)
 
         val grain = profile.grainProfile
         assertEquals(GrainMode.SCANNED, grain.mode)
-        assertEquals(0.22f, grain.intensity, 0.001f)
+        assertEquals(0.18f, grain.intensity, 0.001f)
         assertTrue(grain.luminanceWeightingEnabled)
 
         val optics = profile.opticalProfile
-        assertEquals(0.35f, optics.vignetteStrength, 0.001f)
-        assertEquals(0.80f, optics.vignetteRadius, 0.001f)
-        assertEquals(0.0025f, optics.chromaticAberration, 0.0001f)
+        assertEquals(0.18f, optics.vignetteStrength, 0.001f)
+        assertEquals(0.86f, optics.vignetteRadius, 0.001f)
+        assertEquals(0.001f, optics.chromaticAberration, 0.0001f)
     }
 
     @Test
