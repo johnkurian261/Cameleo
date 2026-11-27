@@ -105,6 +105,8 @@ class GLViewfinderRenderer(
     private var uSaturationLoc = -1
     private var uTemperatureLoc = -1
     private var uTintLoc = -1
+    private var uCreativeTemperatureLoc = -1
+    private var uCreativeTempSkinProtectLoc = -1
     private var uGammaLoc = -1
     private var uFadeLoc = -1
     private var uHighlightRollOffLoc = -1
@@ -935,6 +937,8 @@ class GLViewfinderRenderer(
         uSaturationLoc = GLES30.glGetUniformLocation(programId, "uSaturation")
         uTemperatureLoc = GLES30.glGetUniformLocation(programId, "uTemperature")
         uTintLoc = GLES30.glGetUniformLocation(programId, "uTint")
+        uCreativeTemperatureLoc = GLES30.glGetUniformLocation(programId, "uCreativeTemperature")
+        uCreativeTempSkinProtectLoc = GLES30.glGetUniformLocation(programId, "uCreativeTempSkinProtect")
         uGammaLoc = GLES30.glGetUniformLocation(programId, "uGamma")
         uFadeLoc = GLES30.glGetUniformLocation(programId, "uFade")
         uHighlightRollOffLoc = GLES30.glGetUniformLocation(programId, "uHighlightRollOff")
@@ -1222,6 +1226,8 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uSaturationLoc, 1.0f)
             GLES30.glUniform1f(uTemperatureLoc, 0.0f)
             GLES30.glUniform1f(uTintLoc, 0.0f)
+            if (uCreativeTemperatureLoc != -1) GLES30.glUniform1f(uCreativeTemperatureLoc, 0.0f)
+            if (uCreativeTempSkinProtectLoc != -1) GLES30.glUniform1i(uCreativeTempSkinProtectLoc, 1)
             GLES30.glUniform1f(uHighlightRollOffLoc, 1.0f)
 
             if (uLensTypeLoc != -1) GLES30.glUniform1i(uLensTypeLoc, 0)
@@ -1347,6 +1353,14 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uSaturationLoc, naturalProfile.saturation)
             GLES30.glUniform1f(uTemperatureLoc, naturalProfile.temperature)
             GLES30.glUniform1f(uTintLoc, naturalProfile.tint)
+            val effNaturalCreative = com.craftcam.app.color.CreativeTemperatureEngine.resolveEffectiveTemperature(
+                creativeTemperature = currentTuning.creativeTemperature,
+                isMonochrome = false
+            )
+            if (uCreativeTemperatureLoc != -1) GLES30.glUniform1f(uCreativeTemperatureLoc, effNaturalCreative)
+            if (uCreativeTempSkinProtectLoc != -1) {
+                GLES30.glUniform1i(uCreativeTempSkinProtectLoc, if (currentTuning.creativeTempSkinProtection) 1 else 0)
+            }
             GLES30.glUniform1f(uHighlightRollOffLoc, naturalProfile.highlightRollOff)
 
             // Pass active lens profile properties so mounted accessories work in Natural mode
@@ -1562,6 +1576,14 @@ class GLViewfinderRenderer(
             GLES30.glUniform1f(uSaturationLoc, saturation)
             GLES30.glUniform1f(uTemperatureLoc, temperature)
             GLES30.glUniform1f(uTintLoc, tint)
+            val effCreativeTemp = com.craftcam.app.color.CreativeTemperatureEngine.resolveEffectiveTemperature(
+                creativeTemperature = tuning.creativeTemperature,
+                isMonochrome = isMono
+            )
+            if (uCreativeTemperatureLoc != -1) GLES30.glUniform1f(uCreativeTemperatureLoc, effCreativeTemp)
+            if (uCreativeTempSkinProtectLoc != -1) {
+                GLES30.glUniform1i(uCreativeTempSkinProtectLoc, if (tuning.creativeTempSkinProtection) 1 else 0)
+            }
             GLES30.glUniform1f(uGammaLoc, gamma)
             GLES30.glUniform1f(uFadeLoc, fade)
             GLES30.glUniform1f(uHighlightRollOffLoc, highlightRollOff)
@@ -1788,6 +1810,8 @@ class GLViewfinderRenderer(
             GLES30.glDeleteProgram(programId)
             programId = 0
         }
+        uCreativeTemperatureLoc = -1
+        uCreativeTempSkinProtectLoc = -1
         if (fallbackProgramId != 0) {
             GLES30.glDeleteProgram(fallbackProgramId)
             fallbackProgramId = 0

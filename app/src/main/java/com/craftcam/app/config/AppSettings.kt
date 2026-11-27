@@ -29,7 +29,8 @@ data class AppSettingsState(
     val tactileHaptics: Boolean = true,
     val preserveExif: Boolean = true,
     val golfMotion: com.craftcam.app.motion.GolfMotionConfig = com.craftcam.app.motion.GolfMotionConfig(),
-    val thermalVision: com.craftcam.app.thermal.ThermalVisionConfig = com.craftcam.app.thermal.ThermalVisionConfig()
+    val thermalVision: com.craftcam.app.thermal.ThermalVisionConfig = com.craftcam.app.thermal.ThermalVisionConfig(),
+    val creativeTempSkinProtection: Boolean = true
 )
 
 class AppSettingsStore private constructor(context: Context) {
@@ -78,7 +79,8 @@ class AppSettingsStore private constructor(context: Context) {
                 monochromeHud = prefs.getBoolean(KEY_THERMAL_MONO_HUD, false),
                 crosshairEnabled = prefs.getBoolean(KEY_THERMAL_CROSSHAIR, true),
                 segmentationEnabled = prefs.getBoolean(KEY_THERMAL_SEGMENTATION, true)
-            )
+            ),
+            creativeTempSkinProtection = prefs.getBoolean(KEY_CREATIVE_TEMP_SKIN_PROTECT, true)
         )
     )
 
@@ -210,6 +212,11 @@ class AppSettingsStore private constructor(context: Context) {
         _state.update { it.copy(thermalVision = config) }
     }
 
+    fun setCreativeTempSkinProtection(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CREATIVE_TEMP_SKIN_PROTECT, enabled).apply()
+        _state.update { it.copy(creativeTempSkinProtection = enabled) }
+    }
+
     companion object {
         private const val PREFS_NAME = "cameleo_settings"
         private const val KEY_EXPORT_TO_ALBUM = "export_to_album"
@@ -242,6 +249,7 @@ class AppSettingsStore private constructor(context: Context) {
         private const val KEY_THERMAL_MONO_HUD = "thermal_mono_hud"
         private const val KEY_THERMAL_CROSSHAIR = "thermal_crosshair"
         private const val KEY_THERMAL_SEGMENTATION = "thermal_segmentation"
+        private const val KEY_CREATIVE_TEMP_SKIN_PROTECT = "creative_temp_skin_protect"
 
         @Volatile
         private var instance: AppSettingsStore? = null

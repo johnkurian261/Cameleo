@@ -684,6 +684,12 @@ void main() {
         GLES30.glUniform1f(uLoc("uSaturation"), if (isMono) 0f else 1f + (rawSat - 1f) * intensity)
         GLES30.glUniform1f(uLoc("uTemperature"), if (isMono) 0f else ((baseTemp + adj.tempDelta + userTempOffset) * intensity).coerceIn(-1f, 1f))
         GLES30.glUniform1f(uLoc("uTint"), if (isMono) 0f else ((baseTint + adj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1f, 1f))
+        val effCreativeTemp = com.craftcam.app.color.CreativeTemperatureEngine.resolveEffectiveTemperature(
+            creativeTemperature = tuning.creativeTemperature,
+            isMonochrome = isMono
+        )
+        GLES30.glUniform1f(uLoc("uCreativeTemperature"), effCreativeTemp)
+        GLES30.glUniform1i(uLoc("uCreativeTempSkinProtect"), if (tuning.creativeTempSkinProtection) 1 else 0)
         GLES30.glUniform1f(uLoc("uGamma"), 1f + (color.gamma - 1f) * intensity)
         GLES30.glUniform1f(uLoc("uFade"), film.fadeAtIntensity(color.fade, adj.fadeDelta, intensity))
         GLES30.glUniform1f(uLoc("uToeLift"), film.toeLift * intensity)

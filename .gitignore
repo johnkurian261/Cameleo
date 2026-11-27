@@ -120,6 +120,7 @@ tools/dfuns/__pycache__/
 !tools/digicam_calibration/
 !tools/mju_ii/
 !tools/thermal/
+!tools/creative_temp/
 !app/src/main/assets/grains/
 app/src/main/assets/grains/*
 !app/src/main/assets/grains/fxnr_v2_density.png

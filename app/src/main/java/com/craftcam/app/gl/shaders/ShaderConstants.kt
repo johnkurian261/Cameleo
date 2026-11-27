@@ -22,6 +22,100 @@ uniform bool uThermalHasFace;
 uniform vec4 uThermalFaceRect;
 """
 
+    private const val CREATIVE_TEMPERATURE_UNIFORMS_GLSL = """
+// Creative Temperature Filter Uniforms (-100 Frozen Blue .. +100 Deep Red, independent from HW WB)
+uniform float uCreativeTemperature;
+uniform bool uCreativeTempSkinProtect;
+"""
+
+    private const val CREATIVE_TEMPERATURE_HELPERS_GLSL = """
+vec3 applyCreativeTemperature(vec3 cIn, float tempValue, bool skinProtect) {
+    float tNorm = clamp(tempValue / 100.0, -1.0, 1.0);
+    if (abs(tNorm) < 0.001) return cIn;
+
+    vec3 c = clamp(cIn, 0.0, 1.0);
+    float y0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
+
+    float skinW = 0.0;
+    if (skinProtect) {
+        float rgbSum = max(0.001, c.r + c.g + c.b);
+        float ng = c.g / rgbSum;
+        float sDom = smoothstep(0.01, 0.08, c.r - c.g) * smoothstep(0.02, 0.14, c.r - c.b);
+        float sGreen = smoothstep(0.22, 0.28, ng) * (1.0 - smoothstep(0.35, 0.40, ng));
+        float sLuma = smoothstep(0.08, 0.20, y0) * (1.0 - smoothstep(0.86, 0.96, y0));
+        skinW = clamp(sDom * sGreen * sLuma * 1.35, 0.0, 1.0);
+    }
+
+    float effT = (tNorm < 0.0) ? (tNorm * (1.0 - 0.56 * skinW)) : (tNorm * (1.0 - 0.52 * skinW));
+    float u = abs(effT);
+    float u2 = u * u;
+    float u3 = u2 * u;
+    bool isCold = effT < 0.0;
+
+    float shadowGuard = smoothstep(0.0, 0.15, y0);
+    float highlightGuard = 1.0 - 0.46 * smoothstep(0.68, 1.0, y0);
+    float chromaBell = 0.42 + 0.58 * (4.0 * y0 * (1.0 - y0));
+    float weight = shadowGuard * highlightGuard * chromaBell;
+
+    float dR;
+    float dG;
+    float dB;
+    if (isCold) {
+        dR = -(0.36 * u + 0.34 * u2);
+        dG = (0.11 * u - 0.22 * u2);
+        dB = (0.44 * u + 0.24 * u2);
+    } else {
+        dR = (0.36 * u + 0.24 * u2);
+        float gQuad = 0.44 - 0.16 * skinW;
+        float gCube = 0.42 - 0.24 * skinW;
+        dG = (0.26 * u - gQuad * u2 - gCube * u3);
+        dB = -(0.46 * u + 0.36 * u2);
+    }
+
+    float gainR = max(0.08, 1.0 + dR * (0.60 + 0.42 * weight));
+    float gainG = max(0.14, 1.0 + dG * (0.58 + 0.38 * weight));
+    float gainB = max(0.06, 1.0 + dB * (0.62 + 0.44 * weight));
+
+    float addR = (dR >= 0.0) ? (dR * 0.090 * weight) : (dR * 0.055 * weight * smoothstep(0.05, 0.35, c.r));
+    float addG = (dG >= 0.0) ? (dG * 0.070 * weight) : (dG * 0.040 * weight * smoothstep(0.05, 0.35, c.g));
+    float addB = (dB >= 0.0) ? (dB * 0.090 * weight) : (dB * 0.050 * weight * smoothstep(0.05, 0.35, c.b));
+
+    vec3 outCol = max(vec3(0.0), vec3(c.r * gainR + addR, c.g * gainG + addG, c.b * gainB + addB));
+
+    float y1 = dot(outCol, vec3(0.2126, 0.7152, 0.0722));
+    float lumPreserve = 0.74 * (1.0 - 0.34 * u2);
+    float rawRatio = (y1 > 0.0001) ? (y0 / y1) : 1.0;
+    float clampedRatio = clamp(rawRatio, 0.54, 1.55);
+    float scale = 1.0 + (clampedRatio - 1.0) * lumPreserve;
+    outCol *= scale;
+
+    if (!isCold && u > 0.65) {
+        float deepRedPull = ((u - 0.65) / 0.35) * 0.14 * (1.0 - 0.55 * skinW) * smoothstep(0.25, 0.90, y0);
+        outCol.r *= (1.0 - deepRedPull * 0.25);
+        outCol.g *= (1.0 - deepRedPull * 1.15);
+        outCol.b *= (1.0 - deepRedPull * 1.65);
+    }
+
+    const float knee = 0.84;
+    const float headroom = 1.0 - knee;
+    float maxCh = max(outCol.r, max(outCol.g, outCol.b));
+    if (maxCh > knee && maxCh > 0.0001) {
+        float over = maxCh - knee;
+        float rolledMax = knee + headroom * (over / (over + headroom * 0.55));
+        outCol *= (rolledMax / maxCh);
+    }
+
+    vec3 ex = max(vec3(0.0), outCol - vec3(knee));
+    vec3 compressed = knee + headroom * (ex / (ex + vec3(headroom * 0.65)));
+    outCol = vec3(
+        (outCol.r > knee) ? compressed.r : outCol.r,
+        (outCol.g > knee) ? compressed.g : outCol.g,
+        (outCol.b > knee) ? compressed.b : outCol.b
+    );
+    return clamp(outCol, 0.0, 1.0);
+}
+"""
+
     private const val THERMAL_HELPERS_GLSL = """
 float thermalSoftCompress(float v) {
     if (v <= 0.0) return 0.0;
@@ -267,6 +361,7 @@ uniform float uZebraTime;
 
 uniform int uDiagnosticMode;
 $THERMAL_UNIFORMS_GLSL
+$CREATIVE_TEMPERATURE_UNIFORMS_GLSL
 
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
@@ -339,6 +434,7 @@ vec3 sample3DLut(mediump sampler3D lut3d, vec3 rgb) {
     return texture(lut3d, lutCoord).rgb;
 }
 $THERMAL_HELPERS_GLSL
+$CREATIVE_TEMPERATURE_HELPERS_GLSL
 
 void main() {
     // Physical isotropic coordinates (aspect-corrected from uViewportSize)
@@ -749,6 +845,12 @@ void main() {
         }
     }
 
+    // 9b. Creative Temperature Filter (-100 Frozen Blue .. +100 Deep Red)
+    if (abs(uCreativeTemperature) > 0.05) {
+        color = applyCreativeTemperature(color, uCreativeTemperature, uCreativeTempSkinProtect);
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    }
+
     // 10. Concentric Dual-Radius Film Halation (Zero-Stall Analytical Preview Model for smooth 60fps)
     if (uHalationEnabled && uHalationIntensity > 0.01 && uDebugStageHalation) {
         float kThresh = uHalationThreshold;
@@ -1027,6 +1129,7 @@ uniform float uZebraTime;
 
 uniform int uDiagnosticMode;
 $THERMAL_UNIFORMS_GLSL
+$CREATIVE_TEMPERATURE_UNIFORMS_GLSL
 
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
@@ -1096,6 +1199,7 @@ vec3 sample3DLut(mediump sampler3D lut3d, vec3 rgb) {
     return texture(lut3d, lutCoord).rgb;
 }
 $THERMAL_HELPERS_GLSL
+$CREATIVE_TEMPERATURE_HELPERS_GLSL
 
 void main() {
     // Physical isotropic coordinates (aspect-corrected from uViewportSize or 3:4 fallback)
@@ -1489,6 +1593,12 @@ void main() {
         if (uFade > 0.001) {
             color = color * (1.0 - uFade) + uFade;
         }
+    }
+
+    // 9b. Creative Temperature Filter (-100 Frozen Blue .. +100 Deep Red)
+    if (abs(uCreativeTemperature) > 0.05) {
+        color = applyCreativeTemperature(color, uCreativeTemperature, uCreativeTempSkinProtect);
+        luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
 
     // 10. Concentric Dual-Radius Film Halation (Cadmium red-orange backscattering with boundary confinement)

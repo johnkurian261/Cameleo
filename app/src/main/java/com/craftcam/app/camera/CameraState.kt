@@ -29,7 +29,9 @@ const val IS_VIDEO_FEATURE_PAUSED = true
 data class UserTuningConfig(
     val filterIntensity: Float = 0.70f,     // 0.0 to 1.0 (default 70% for FXNR analog film grade)
     val exposureCompensation: Float = 0.0f, // -2.0 to +2.0 EV
-    val temperatureOffset: Float = 0.0f,    // -0.5 (cool) to +0.5 (warm)
+    val temperatureOffset: Float = 0.0f,    // -0.5 (cool) to +0.5 (warm) - SW fallback for HW Kelvin WB
+    val creativeTemperature: Float = 0.0f,// -100.0 (frozen blue) to +100.0 (deep red)
+    val creativeTempSkinProtection: Boolean = true,
     val tintOffset: Float = 0.0f,           // -0.5 (green) to +0.5 (magenta)
     val contrastOffset: Float = 0.0f,       // -0.3 to +0.3
     val saturationOffset: Float = 0.0f,     // -0.5 to +0.5

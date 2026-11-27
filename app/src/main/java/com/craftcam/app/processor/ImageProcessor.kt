@@ -202,7 +202,9 @@ object ImageProcessor {
                     colorProfile = naturalColorProfile,
                     compareWithOriginal = compareWithOriginal,
                     sensorIso = sensorIso,
-                    exposureTimeNs = exposureTimeNs
+                    exposureTimeNs = exposureTimeNs,
+                    creativeTemperature = tuning.creativeTemperature,
+                    creativeTempSkinProtection = tuning.creativeTempSkinProtection
                 )
                 uri = saveToGallery(context, workingBitmap, preset.name)
             } else if (engineMode == com.craftcam.app.model.CameraEngineMode.PRO) {
@@ -924,6 +926,12 @@ object ImageProcessor {
             val hasRollOff = rollOff < 1f && !isNatural
             val knee = 1f - rollOff
             val invKnee = if (hasRollOff) 1f / knee else 0f
+            val effCreativeTemp = com.craftcam.app.color.CreativeTemperatureEngine.resolveEffectiveTemperature(
+                creativeTemperature = tuning.creativeTemperature,
+                isMonochrome = isMono
+            )
+            val hasCreativeTemp = abs(effCreativeTemp) >= 0.05f
+            val creativeSkinProtect = tuning.creativeTempSkinProtection
 
             val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
             val rowsPerWorker = (height + numCores - 1) / numCores
@@ -934,6 +942,7 @@ object ImageProcessor {
                     async(Dispatchers.Default) {
                         val startRow = coreIndex * rowsPerWorker
                         val endRow = minOf(height, startRow + rowsPerWorker)
+                        val creativeRgbOut = FloatArray(3)
                         for (pxY in startRow until endRow) {
                             val row = pxY * width
                             val scanlineFactor = if (isCamcorder) {
@@ -1198,6 +1207,16 @@ object ImageProcessor {
                                     val peachWeight = (1.0f - abs(midLuma - 0.55f) * 2.2f).coerceIn(0.0f, 1.0f) * skinFactor
                                     r = (r + 0.025f * peachWeight).coerceIn(0f, 1f)
                                     g = (g + 0.010f * peachWeight).coerceIn(0f, 1f)
+                                }
+
+                                // 9b. Creative Temperature Filter (-100 Frozen Blue .. +100 Deep Red)
+                                if (hasCreativeTemp) {
+                                    com.craftcam.app.color.CreativeTemperatureEngine.applyRgbNormalized(
+                                        r, g, b, effCreativeTemp, creativeSkinProtect, creativeRgbOut
+                                    )
+                                    r = creativeRgbOut[0]
+                                    g = creativeRgbOut[1]
+                                    b = creativeRgbOut[2]
                                 }
 
                                 // Camcorder CRT scanline modulation
@@ -2404,6 +2423,12 @@ object ImageProcessor {
         val rawSat = if (lutPlan.isMonochrome) 0.0f else (adj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
         val effSat = if (lutPlan.isMonochrome) 0.0f else (1.0f + (rawSat - 1.0f) * intensity)
         val effFade = (adj.fadeDelta * intensity).coerceIn(0f, 0.5f)
+        val effCreativeTemp = com.craftcam.app.color.CreativeTemperatureEngine.resolveEffectiveTemperature(
+            creativeTemperature = tuning.creativeTemperature,
+            isMonochrome = lutPlan.isMonochrome
+        )
+        val hasCreativeTemp = abs(effCreativeTemp) >= 0.05f
+        val creativeSkinProtect = tuning.creativeTempSkinProtection
 
         val profileLutAsset = when {
             lutPlan.isMonochrome && lutPlan.isCustomProfile -> lutPlan.primaryLutAsset
@@ -2425,7 +2450,8 @@ object ImageProcessor {
             abs(tintShift) > 0.001f ||
             abs(effContrast - 1.0f) > 0.005f ||
             abs(effSat - 1.0f) > 0.005f ||
-            effFade > 0.001f
+            effFade > 0.001f ||
+            hasCreativeTemp
         if (!needsPass) return
 
         val sliceOffset = if (profileLut != null) {
@@ -2441,6 +2467,7 @@ object ImageProcessor {
                 async(Dispatchers.Default) {
                     val startRow = coreIndex * rowsPerWorker
                     val endRow = minOf(height, startRow + rowsPerWorker)
+                    val creativeRgbOut = FloatArray(3)
                     for (y in startRow until endRow) {
                         val rowOffset = y * width
                         for (x in 0 until width) {
@@ -2508,6 +2535,14 @@ object ImageProcessor {
                                 r = r * (1.0f - effFade) + effFade
                                 g = g * (1.0f - effFade) + effFade
                                 b = b * (1.0f - effFade) + effFade
+                            }
+                            if (hasCreativeTemp) {
+                                com.craftcam.app.color.CreativeTemperatureEngine.applyRgbNormalized(
+                                    r, g, b, effCreativeTemp, creativeSkinProtect, creativeRgbOut
+                                )
+                                r = creativeRgbOut[0]
+                                g = creativeRgbOut[1]
+                                b = creativeRgbOut[2]
                             }
                             val ir = (r.coerceIn(0f, 1f) * 255f).roundToInt()
                             val ig = (g.coerceIn(0f, 1f) * 255f).roundToInt()

@@ -11,7 +11,10 @@ import android.provider.MediaStore
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import com.craftcam.app.R
+import com.craftcam.app.color.CreativeTemperatureEngine
+import com.craftcam.app.color.profile.CameraProfileCompatibility
 import com.craftcam.app.config.AppSettingsStore
+import kotlin.math.abs
 import com.craftcam.app.ui.components.CameraExposureTemperatureControls
 import com.craftcam.app.ui.components.QuickControlMode
 import com.craftcam.app.ui.components.TemperatureState
@@ -139,6 +142,12 @@ fun ViewfinderScreen(
 
     val isGolfPreset = selectedPreset.id == "disp_classic"
     val isThermalPreset = selectedPreset.id == "thermal_vision"
+    val isMonoLocked = remember(selectedPreset.id, uiState.tuning.filmColorProfileIndex) {
+        CameraProfileCompatibility.resolveLutPlan(
+            presetId = selectedPreset.id,
+            colorProfileIndex = uiState.tuning.filmColorProfileIndex
+        ).isMonochrome
+    }
     val wheelPresets = remember {
         PresetCatalog.allPresets.filter { !IS_VIDEO_FEATURE_PAUSED || it.category != CameraCategory.CAMCORDER }
     }
@@ -238,6 +247,12 @@ fun ViewfinderScreen(
         CameraEngineMode.NATURAL -> uiState.naturalProfile != NaturalCameraProfile.S21_PROFILE || uiState.debugCompareOriginal
         CameraEngineMode.PRO -> uiState.proConfig.activeControl != null || uiState.proConfig.focusPeakingEnabled || uiState.proConfig.zebraEnabled
         CameraEngineMode.FILM -> uiState.tuning.temperatureOffset != 0f ||
+                abs(
+                    CreativeTemperatureEngine.resolveEffectiveTemperature(
+                        uiState.tuning.creativeTemperature,
+                        isMonoLocked
+                    )
+                ) >= 0.5f ||
                 uiState.tuning.tintOffset != 0f ||
                 uiState.tuning.contrastOffset != 0f ||
                 uiState.tuning.saturationOffset != 0f ||
@@ -566,6 +581,10 @@ fun ViewfinderScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (!isThermalPreset) {
+                val effCreativeTemp = CreativeTemperatureEngine.resolveEffectiveTemperature(
+                    uiState.tuning.creativeTemperature,
+                    isMonoLocked
+                )
                 // ── Expanded temperature and brightness controls ───────
                 CameraExposureTemperatureControls(
                     modifier = Modifier.fillMaxWidth(),
@@ -576,7 +595,10 @@ fun ViewfinderScreen(
                         minKelvin = uiState.minKelvin,
                         maxKelvin = uiState.maxKelvin,
                         tint = uiState.tuning.tintOffset,
-                        autoRecommended = uiState.whiteBalanceConfig.autoRecommended
+                        autoRecommended = uiState.whiteBalanceConfig.autoRecommended,
+                        creativeTemperature = uiState.tuning.creativeTemperature,
+                        creativeTempSkinProtection = uiState.tuning.creativeTempSkinProtection,
+                        isMonochromeLocked = isMonoLocked
                     ),
                     exposureState = ExposureState(
                         isAuto = uiState.exposureIndex == 0,
@@ -592,6 +614,15 @@ fun ViewfinderScreen(
                     },
                     onTemperatureReset = {
                         cameraManager.resetKelvin()
+                    },
+                    onCreativeTempChange = { newCreativeTemp ->
+                        cameraManager.setCreativeTemperature(newCreativeTemp)
+                    },
+                    onCreativeTempReset = {
+                        cameraManager.resetCreativeTemperature()
+                    },
+                    onCreativeTempSkinProtectionToggle = { enabled ->
+                        cameraManager.setCreativeTempSkinProtection(enabled)
                     },
                     onExposureChange = { newIdx ->
                         cameraManager.setExposureIndex(newIdx)
@@ -612,7 +643,10 @@ fun ViewfinderScreen(
                     flashMode = uiState.flashMode,
                     timerSeconds = uiState.timerSeconds,
                     showGrid = uiState.showGrid,
-                    isTuned = uiState.kelvin != 5500 || uiState.tuning.temperatureOffset != 0f || activeQuickControlMode == QuickControlMode.TEMPERATURE,
+                    isTuned = uiState.kelvin != uiState.whiteBalanceConfig.defaultKelvin ||
+                            abs(effCreativeTemp) >= 0.5f ||
+                            activeQuickControlMode == QuickControlMode.TEMPERATURE,
+                    creativeTemperature = effCreativeTemp,
                     engineMode = uiState.engineMode,
                     onFlashCycle = {
                         val nextMode = com.craftcam.app.camera.nextFlashMode(uiState.flashMode)
@@ -1076,6 +1110,7 @@ fun ViewfinderScreen(
         ColorTuningSheet(
             visible = showTuningSheet,
             tuning = uiState.tuning,
+            isMonochromeLocked = isMonoLocked,
             onTuningChange = { cameraManager.updateTuning(it) },
             onReset = { cameraManager.resetTuning() },
             onDismiss = { showTuningSheet = false }

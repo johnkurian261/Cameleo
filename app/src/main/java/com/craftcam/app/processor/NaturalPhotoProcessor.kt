@@ -66,7 +66,9 @@ object NaturalPhotoProcessor {
         sensorIso: Int = 100,
         exposureTimeNs: Long = 10_000_000L,
         wbKelvin: Int = 5500,
-        wbTint: Float = 0.0f
+        wbTint: Float = 0.0f,
+        creativeTemperature: Float = 0.0f,
+        creativeTempSkinProtection: Boolean = true
     ): Bitmap {
         val width = source.width
         val height = source.height
@@ -118,6 +120,18 @@ object NaturalPhotoProcessor {
                     microContrast = colorProfile.localContrastMicro,
                     macroContrast = colorProfile.localContrastMacro,
                     skinDampener = colorProfile.sharpeningSkinDampener
+                )
+            }
+
+            // ─── Stage 3b: Creative Temperature Filter (-100..+100, independent of HW WB) ──
+            if (abs(creativeTemperature) >= 0.05f) {
+                com.craftcam.app.color.CreativeTemperatureEngine.applyArgbPixelsInPlace(
+                    pixels = pixels,
+                    width = width,
+                    height = height,
+                    tempValue = creativeTemperature,
+                    skinProtect = creativeTempSkinProtection,
+                    isMonochrome = false
                 )
             }
 

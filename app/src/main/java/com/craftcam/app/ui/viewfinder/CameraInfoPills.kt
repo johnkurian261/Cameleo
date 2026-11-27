@@ -60,6 +60,7 @@ fun CameraInfoPills(
     timerSeconds: Int,
     showGrid: Boolean = false,
     isTuned: Boolean = false,
+    creativeTemperature: Float = 0.0f,
     engineMode: CameraEngineMode = CameraEngineMode.FILM,
     onFlashCycle: () -> Unit = {},
     onToggleExposure: () -> Unit = {},
@@ -116,11 +117,15 @@ fun CameraInfoPills(
         )
 
         // 3. Temperature / Warmth Tuning Button (🌡️)
+        val tempBadgeText = if (kotlin.math.abs(creativeTemperature) >= 0.5f) {
+            com.craftcam.app.color.CreativeTemperatureEngine.formatValue(creativeTemperature)
+        } else null
         QuickIconButton(
             icon = Icons.Default.DeviceThermostat,
             contentDescription = "Temperature / Tuning",
             isActive = isTuned,
             iconSize = 24.dp,
+            subscript = tempBadgeText,
             onClick = onOpenTuning
         )
 

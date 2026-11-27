@@ -63,9 +63,12 @@ data class TemperatureState(
     val minKelvin: Int = 2500,
     val maxKelvin: Int = 9500,
     val tint: Float = 0.0f,
-    val autoRecommended: Boolean = false
+    val autoRecommended: Boolean = false,
+    val creativeTemperature: Float = 0.0f,
+    val creativeTempSkinProtection: Boolean = true,
+    val isMonochromeLocked: Boolean = false
 ) {
-    val isDefault: Boolean get() = kelvin == defaultKelvin
+    val isDefault: Boolean get() = kelvin == defaultKelvin && kotlin.math.abs(creativeTemperature) < 0.5f
 }
 
 /**
@@ -95,6 +98,9 @@ fun CameraExposureTemperatureControls(
     onTemperatureChange: (Int) -> Unit,
     onTemperatureReset: () -> Unit = {},
     onTemperatureAuto: () -> Unit = onTemperatureReset,
+    onCreativeTempChange: (Float) -> Unit = {},
+    onCreativeTempReset: () -> Unit = {},
+    onCreativeTempSkinProtectionToggle: (Boolean) -> Unit = {},
     onExposureChange: (Int) -> Unit,
     onExposureAuto: () -> Unit
 ) {
@@ -106,7 +112,7 @@ fun CameraExposureTemperatureControls(
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ── 1. Expanded Temperature Panel ──────────────────────────────────
+        // ── 1. Expanded Temperature Panel (Creative Filter vs HW Kelvin WB) ─────
         AnimatedVisibility(
             visible = activeMode == QuickControlMode.TEMPERATURE,
             enter = fadeIn(tween(180)) + expandVertically(tween(180)),
@@ -121,6 +127,9 @@ fun CameraExposureTemperatureControls(
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onTemperatureReset()
                 },
+                onCreativeTempChange = onCreativeTempChange,
+                onCreativeTempReset = onCreativeTempReset,
+                onCreativeTempSkinProtectionToggle = onCreativeTempSkinProtectionToggle,
                 onClose = {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     onModeChange(QuickControlMode.COMPACT)
@@ -163,56 +172,91 @@ private fun ExpandedTemperaturePanel(
     state: TemperatureState,
     onKelvinChange: (Int) -> Unit,
     onReset: () -> Unit,
+    onCreativeTempChange: (Float) -> Unit,
+    onCreativeTempReset: () -> Unit,
+    onCreativeTempSkinProtectionToggle: (Boolean) -> Unit,
     onClose: () -> Unit
 ) {
     val view = LocalView.current
+    var showKelvinWb by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // ── Authentic Dazz Cam Centered Kelvin Readout (e.g. "5373K" or "5500K") ──
-        // Tapping the readout resets directly to default 5500K daylight baseline (no auto AWB toggle)
-        Text(
-            text = "${state.kelvin}K",
-            color = Color.White,
-            fontSize = 19.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
-            textAlign = TextAlign.Center,
+        // Mode switcher keeping Hardware Kelvin WB strictly independent from Creative Filter
+        Row(
             modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    onReset()
-                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xCC111319))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(8.dp))
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TempSubTabPill(
+                label = "FILTER ${com.craftcam.app.color.CreativeTemperatureEngine.formatValue(state.creativeTemperature)}",
+                selected = !showKelvinWb,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    showKelvinWb = false
                 }
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // ── Authentic Dazz Cam Gradient Slider with Dotted Line & Black/White Thumb ──
-        TemperatureGradientSlider(
-            kelvin = state.kelvin,
-            minKelvin = state.minKelvin,
-            maxKelvin = state.maxKelvin,
-            onKelvinChange = onKelvinChange,
-            onResetToDaylight = onReset
-        )
-
-        if (!state.autoRecommended) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Auto Color Temperature is not recommended for this camera.",
-                color = Color.White.copy(alpha = 0.55f),
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-                letterSpacing = 0.2.sp
+            )
+            TempSubTabPill(
+                label = "WB ${state.kelvin}K",
+                selected = showKelvinWb,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    showKelvinWb = true
+                }
             )
         }
+
+        if (!showKelvinWb) {
+            CreativeTemperatureControl(
+                value = state.creativeTemperature,
+                skinProtectionEnabled = state.creativeTempSkinProtection,
+                isMonochromeLocked = state.isMonochromeLocked,
+                onValueChange = onCreativeTempChange,
+                onReset = onCreativeTempReset,
+                onToggleSkinProtection = onCreativeTempSkinProtectionToggle
+            )
+        } else {
+            // Hardware White Balance Gradient Slider (independent of Creative Filter)
+            TemperatureGradientSlider(
+                kelvin = state.kelvin,
+                minKelvin = state.minKelvin,
+                maxKelvin = state.maxKelvin,
+                onKelvinChange = onKelvinChange,
+                onResetToDaylight = onReset
+            )
+        }
+    }
+}
+
+@Composable
+private fun TempSubTabPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) Color(0x38FF9F43) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) Color(0xFFFFCC80) else Color(0xFF9EA4B0)
+        )
     }
 }
 

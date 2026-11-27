@@ -236,6 +236,7 @@ class CameraManager(private val context: Context) {
 
             val savedMotion = AppSettingsStore.get(context).current.golfMotion
             val savedThermal = AppSettingsStore.get(context).current.thermalVision
+            val savedCreativeSkinProtect = AppSettingsStore.get(context).current.creativeTempSkinProtection
             _uiState.update {
                 it.copy(
                     rearLenses = discovered.rearLenses,
@@ -248,6 +249,10 @@ class CameraManager(private val context: Context) {
                     captureFrameState = it.captureFrameState.copy(baseFocalLengthMm = baseEq),
                     sensorTelemetry = telemetry,
                     showGrid = AppSettingsStore.get(context).current.assistiveGrid,
+                    tuning = it.tuning.copy(
+                        creativeTemperature = 0.0f,
+                        creativeTempSkinProtection = savedCreativeSkinProtect
+                    ),
                     golfMotion = com.craftcam.app.motion.GolfMotionUiState(
                         enabled = savedMotion.enabled,
                         duration = savedMotion.duration,
@@ -735,6 +740,8 @@ class CameraManager(private val context: Context) {
                     aspectRatio = initialRatio,
                     tuning = state.tuning.copy(
                         temperatureOffset = offset,
+                        creativeTemperature = 0.0f,
+                        creativeTempSkinProtection = com.craftcam.app.config.AppSettingsStore.get(context).current.creativeTempSkinProtection,
                         filmColorProfileIndex = initialColorProfile.index,
                         frameBorderEnabled = when {
                             isMju2 || isThermal -> false
@@ -800,7 +807,10 @@ class CameraManager(private val context: Context) {
         val clamped = index.coerceIn(0, maxIdx)
         val profile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(clamped)
         com.craftcam.app.config.AppSettingsStore.get(context).setColorProfileForCamera(currentPreset.id, profile.id)
-        updateTuning { it.copy(filmColorProfileIndex = clamped) }
+        updateTuning {
+            val nextCreativeTemp = if (profile.isMonochrome) 0.0f else it.creativeTemperature
+            it.copy(filmColorProfileIndex = clamped, creativeTemperature = nextCreativeTemp)
+        }
     }
 
     fun resetFilmColorProfile() {
@@ -1590,6 +1600,29 @@ class CameraManager(private val context: Context) {
         resetKelvin()
     }
 
+    /**
+     * Adjusts the independent Creative Temperature filter (-100 .. +100).
+     * Never modifies Camera2 COLOR_CORRECTION_GAINS or Kelvin white balance.
+     */
+    fun setCreativeTemperature(value: Float) {
+        val clamped = com.craftcam.app.color.CreativeTemperatureEngine.clampTemp(value)
+        val lutPlan = com.craftcam.app.color.profile.CameraProfileCompatibility.resolveLutPlan(
+            presetId = currentPreset.id,
+            colorProfileIndex = _uiState.value.tuning.filmColorProfileIndex
+        )
+        val eff = if (lutPlan.isMonochrome) 0.0f else clamped
+        updateTuning { it.copy(creativeTemperature = eff) }
+    }
+
+    fun resetCreativeTemperature() {
+        updateTuning { it.copy(creativeTemperature = 0.0f) }
+    }
+
+    fun setCreativeTempSkinProtection(enabled: Boolean) {
+        AppSettingsStore.get(context).setCreativeTempSkinProtection(enabled)
+        updateTuning { it.copy(creativeTempSkinProtection = enabled) }
+    }
+
     private fun resolveActiveCameraId(): String {
         val state = _uiState.value
         val boundId = try {
@@ -1860,6 +1893,8 @@ class CameraManager(private val context: Context) {
         val preservedTempOffset = state.tuning.temperatureOffset
         val defaultTuning = UserTuningConfig(
             temperatureOffset = if (state.isHardwareWbActive) preservedTempOffset else 0.0f,
+            creativeTemperature = 0.0f,
+            creativeTempSkinProtection = state.tuning.creativeTempSkinProtection,
             filmColorProfileIndex = defaultProfile.index,
             isHardwareWbActive = state.isHardwareWbActive
         )

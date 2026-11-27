@@ -131,12 +131,24 @@ object GolfMotionProcessor {
         config: GolfMotionConfig,
         aspectRatio: AspectRatioMode = AspectRatioMode.RATIO_4_3,
         lensProfile: LensProfile = LensProfile.NORMAL,
+        creativeTemperature: Float = 0.0f,
+        creativeTempSkinProtection: Boolean = true,
         onProgress: ((Float) -> Unit)? = null
     ): MotionDevelopResult? = withContext(Dispatchers.Default) {
         val golfPreset = PresetCatalog.getPresetById("disp_classic")
         val savedProfId = AppSettingsStore.get(context).getColorProfileForCamera(golfPreset.id)
+        val profileIdx = DazzColorProfileCatalog.getById(savedProfId).index
+        val lutPlan = com.craftcam.app.color.profile.CameraProfileCompatibility.resolveLutPlan(
+            presetId = golfPreset.id,
+            colorProfileIndex = profileIdx
+        )
         val tuning = UserTuningConfig(
-            filmColorProfileIndex = DazzColorProfileCatalog.getById(savedProfId).index,
+            filmColorProfileIndex = profileIdx,
+            creativeTemperature = com.craftcam.app.color.CreativeTemperatureEngine.resolveEffectiveTemperature(
+                creativeTemperature,
+                lutPlan.isMonochrome
+            ),
+            creativeTempSkinProtection = creativeTempSkinProtection,
             isHardwareWbActive = false
         )
         val fps = config.playback.targetFps

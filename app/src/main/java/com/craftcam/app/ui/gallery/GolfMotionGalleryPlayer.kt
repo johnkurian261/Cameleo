@@ -12,8 +12,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -779,10 +781,26 @@ internal fun GolfMotionImportDialog(
     probe: MotionPhotoImporter.ImportProbeResult.MotionAvailable,
     initialConfig: GolfMotionConfig,
     onDismiss: () -> Unit,
-    onDevelopMotion: (GolfMotionConfig) -> Unit,
+    onDevelopMotion: (GolfMotionConfig, Float, Boolean) -> Unit,
     onDevelopStillOnly: (() -> Unit)?
 ) {
+    val context = LocalContext.current
     var config by remember(probe) { mutableStateOf(initialConfig) }
+    var creativeTemp by remember(probe) { mutableStateOf(0.0f) }
+    var skinProtect by remember(probe) {
+        mutableStateOf(
+            com.craftcam.app.config.AppSettingsStore.get(context).state.value.creativeTempSkinProtection
+        )
+    }
+    val isMonoLocked = remember {
+        val savedProfileId = com.craftcam.app.config.AppSettingsStore.get(context)
+            .getColorProfileForCamera("disp_classic")
+        val profileIdx = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedProfileId).index
+        com.craftcam.app.color.profile.CameraProfileCompatibility.resolveLutPlan(
+            presetId = "disp_classic",
+            colorProfileIndex = profileIdx
+        ).isMonochrome
+    }
     val sourceLabel = when (probe.sourceKind) {
         "samsung_motion_photo" -> "Samsung Motion Photo"
         "google_motion_photo" -> "Google / Android Motion Photo"
@@ -804,7 +822,10 @@ internal fun GolfMotionImportDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text(
                     text = "Detected: $sourceLabel",
                     color = TextPrimary,
@@ -843,11 +864,25 @@ internal fun GolfMotionImportDialog(
                         selected = config.audioEnabled
                     ) { config = config.copy(audioEnabled = !config.audioEnabled) }
                 }
+
+                com.craftcam.app.ui.components.CreativeTemperatureControl(
+                    value = if (isMonoLocked) 0.0f else creativeTemp,
+                    skinProtectionEnabled = skinProtect,
+                    isMonochromeLocked = isMonoLocked,
+                    onValueChange = { creativeTemp = it },
+                    onReset = { creativeTemp = 0.0f },
+                    onToggleSkinProtection = { enabled ->
+                        skinProtect = enabled
+                        com.craftcam.app.config.AppSettingsStore.get(context)
+                            .setCreativeTempSkinProtection(enabled)
+                    },
+                    compact = true
+                )
             }
         },
         confirmButton = {
             Button(
-                onClick = { onDevelopMotion(config) },
+                onClick = { onDevelopMotion(config, if (isMonoLocked) 0.0f else creativeTemp, skinProtect) },
                 colors = ButtonDefaults.buttonColors(containerColor = VintageAmber, contentColor = Color.Black)
             ) {
                 Text("DEVELOP MOTION", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)

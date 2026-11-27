@@ -1,0 +1,791 @@
+{
+  "milestones": {
+    "-100": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          12,
+          25,
+          50
+        ],
+        "unprotected_rgb8": [
+          12,
+          25,
+          50
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          27,
+          116,
+          235
+        ],
+        "unprotected_rgb8": [
+          27,
+          116,
+          235
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          71,
+          146,
+          238
+        ],
+        "unprotected_rgb8": [
+          71,
+          146,
+          238
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          169,
+          172,
+          185
+        ],
+        "unprotected_rgb8": [
+          56,
+          144,
+          236
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          84,
+          72,
+          68
+        ],
+        "unprotected_rgb8": [
+          29,
+          72,
+          113
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          11,
+          85,
+          238
+        ],
+        "unprotected_rgb8": [
+          11,
+          85,
+          238
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          13,
+          124,
+          133
+        ],
+        "unprotected_rgb8": [
+          13,
+          124,
+          133
+        ]
+      }
+    },
+    "-65": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          18,
+          26,
+          39
+        ],
+        "unprotected_rgb8": [
+          18,
+          26,
+          39
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          77,
+          131,
+          198
+        ],
+        "unprotected_rgb8": [
+          77,
+          131,
+          198
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          131,
+          184,
+          237
+        ],
+        "unprotected_rgb8": [
+          131,
+          184,
+          237
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          187,
+          170,
+          166
+        ],
+        "unprotected_rgb8": [
+          139,
+          174,
+          220
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          93,
+          71,
+          60
+        ],
+        "unprotected_rgb8": [
+          68,
+          73,
+          82
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          40,
+          114,
+          237
+        ],
+        "unprotected_rgb8": [
+          40,
+          114,
+          237
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          41,
+          129,
+          99
+        ],
+        "unprotected_rgb8": [
+          41,
+          129,
+          99
+        ]
+      }
+    },
+    "-25": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          23,
+          26,
+          29
+        ],
+        "unprotected_rgb8": [
+          23,
+          26,
+          29
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          112,
+          130,
+          148
+        ],
+        "unprotected_rgb8": [
+          112,
+          130,
+          148
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          198,
+          221,
+          234
+        ],
+        "unprotected_rgb8": [
+          198,
+          221,
+          234
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          205,
+          168,
+          149
+        ],
+        "unprotected_rgb8": [
+          191,
+          170,
+          162
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          102,
+          70,
+          52
+        ],
+        "unprotected_rgb8": [
+          95,
+          71,
+          58
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          77,
+          144,
+          234
+        ],
+        "unprotected_rgb8": [
+          77,
+          144,
+          234
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          62,
+          129,
+          72
+        ],
+        "unprotected_rgb8": [
+          62,
+          129,
+          72
+        ]
+      }
+    },
+    "0": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          26,
+          26,
+          26
+        ],
+        "unprotected_rgb8": [
+          26,
+          26,
+          26
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          128,
+          128,
+          128
+        ],
+        "unprotected_rgb8": [
+          128,
+          128,
+          128
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          230,
+          230,
+          230
+        ],
+        "unprotected_rgb8": [
+          230,
+          230,
+          230
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          214,
+          166,
+          140
+        ],
+        "unprotected_rgb8": [
+          214,
+          166,
+          140
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          107,
+          69,
+          48
+        ],
+        "unprotected_rgb8": [
+          107,
+          69,
+          48
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          92,
+          148,
+          217
+        ],
+        "unprotected_rgb8": [
+          92,
+          148,
+          217
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          71,
+          128,
+          61
+        ],
+        "unprotected_rgb8": [
+          71,
+          128,
+          61
+        ]
+      }
+    },
+    "25": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          28,
+          26,
+          22
+        ],
+        "unprotected_rgb8": [
+          28,
+          26,
+          22
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          140,
+          128,
+          104
+        ],
+        "unprotected_rgb8": [
+          140,
+          128,
+          104
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          233,
+          225,
+          194
+        ],
+        "unprotected_rgb8": [
+          233,
+          225,
+          194
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          225,
+          169,
+          130
+        ],
+        "unprotected_rgb8": [
+          231,
+          166,
+          116
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          110,
+          69,
+          44
+        ],
+        "unprotected_rgb8": [
+          116,
+          69,
+          39
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          102,
+          150,
+          180
+        ],
+        "unprotected_rgb8": [
+          102,
+          150,
+          180
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          79,
+          128,
+          50
+        ],
+        "unprotected_rgb8": [
+          79,
+          128,
+          50
+        ]
+      }
+    },
+    "50": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          32,
+          24,
+          18
+        ],
+        "unprotected_rgb8": [
+          32,
+          24,
+          18
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          163,
+          122,
+          80
+        ],
+        "unprotected_rgb8": [
+          163,
+          122,
+          80
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          236,
+          199,
+          150
+        ],
+        "unprotected_rgb8": [
+          236,
+          199,
+          150
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          230,
+          168,
+          116
+        ],
+        "unprotected_rgb8": [
+          235,
+          144,
+          81
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          115,
+          69,
+          40
+        ],
+        "unprotected_rgb8": [
+          133,
+          65,
+          30
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          122,
+          145,
+          142
+        ],
+        "unprotected_rgb8": [
+          122,
+          145,
+          142
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          94,
+          123,
+          38
+        ],
+        "unprotected_rgb8": [
+          94,
+          123,
+          38
+        ]
+      }
+    },
+    "75": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          39,
+          22,
+          14
+        ],
+        "unprotected_rgb8": [
+          39,
+          22,
+          14
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          203,
+          103,
+          49
+        ],
+        "unprotected_rgb8": [
+          203,
+          103,
+          49
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          237,
+          149,
+          97
+        ],
+        "unprotected_rgb8": [
+          237,
+          149,
+          97
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          233,
+          163,
+          101
+        ],
+        "unprotected_rgb8": [
+          237,
+          100,
+          42
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          120,
+          69,
+          35
+        ],
+        "unprotected_rgb8": [
+          162,
+          54,
+          19
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          156,
+          125,
+          92
+        ],
+        "unprotected_rgb8": [
+          156,
+          125,
+          92
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          121,
+          106,
+          23
+        ],
+        "unprotected_rgb8": [
+          121,
+          106,
+          23
+        ]
+      }
+    },
+    "100": {
+      "black": {
+        "protected_rgb8": [
+          0,
+          0,
+          0
+        ],
+        "unprotected_rgb8": [
+          0,
+          0,
+          0
+        ]
+      },
+      "shadow_gray": {
+        "protected_rgb8": [
+          50,
+          16,
+          9
+        ],
+        "unprotected_rgb8": [
+          50,
+          16,
+          9
+        ]
+      },
+      "mid_gray": {
+        "protected_rgb8": [
+          236,
+          51,
+          6
+        ],
+        "unprotected_rgb8": [
+          236,
+          51,
+          6
+        ]
+      },
+      "bright_highlight": {
+        "protected_rgb8": [
+          238,
+          80,
+          44
+        ],
+        "unprotected_rgb8": [
+          238,
+          80,
+          44
+        ]
+      },
+      "skin_light": {
+        "protected_rgb8": [
+          235,
+          155,
+          84
+        ],
+        "unprotected_rgb8": [
+          238,
+          43,
+          8
+        ]
+      },
+      "skin_deep": {
+        "protected_rgb8": [
+          128,
+          68,
+          30
+        ],
+        "unprotected_rgb8": [
+          210,
+          30,
+          4
+        ]
+      },
+      "sky_blue": {
+        "protected_rgb8": [
+          202,
+          67,
+          21
+        ],
+        "unprotected_rgb8": [
+          202,
+          67,
+          21
+        ]
+      },
+      "foliage": {
+        "protected_rgb8": [
+          162,
+          59,
+          1
+        ],
+        "unprotected_rgb8": [
+          162,
+          59,
+          1
+        ]
+      }
+    }
+  },
+  "continuity": {
+    "max_single_step_delta_mid_gray": 0.020973
+  }
+}

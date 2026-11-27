@@ -36,6 +36,7 @@ import com.craftcam.app.ui.theme.*
 fun ColorTuningSheet(
     visible: Boolean,
     tuning: UserTuningConfig,
+    isMonochromeLocked: Boolean = false,
     onTuningChange: ((UserTuningConfig) -> UserTuningConfig) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit
@@ -121,15 +122,21 @@ fun ColorTuningSheet(
                     )
                 }
 
-                // 2. Warmth / Temperature
+                // 2. Creative Temperature Filter (-100 Frozen Blue .. +100 Deep Red, independent of HW WB)
                 item {
-                    TuningSlider(
-                        label = "WARMTH (TEMPERATURE)",
-                        value = tuning.temperatureOffset,
-                        valueDisplay = if (tuning.temperatureOffset > 0.05f) "Golden Amber" else if (tuning.temperatureOffset < -0.05f) "Cool Blue" else "Neutral",
-                        range = -0.5f..0.5f,
+                    CreativeTemperatureControl(
+                        value = tuning.creativeTemperature,
+                        skinProtectionEnabled = tuning.creativeTempSkinProtection,
+                        isMonochromeLocked = isMonochromeLocked,
                         onValueChange = { v ->
-                            onTuningChange { it.copy(temperatureOffset = v) }
+                            onTuningChange { it.copy(creativeTemperature = v) }
+                        },
+                        onReset = {
+                            onTuningChange { it.copy(creativeTemperature = 0.0f) }
+                        },
+                        onToggleSkinProtection = { enabled ->
+                            com.craftcam.app.config.AppSettingsStore.get(context).setCreativeTempSkinProtection(enabled)
+                            onTuningChange { it.copy(creativeTempSkinProtection = enabled) }
                         }
                     )
                 }

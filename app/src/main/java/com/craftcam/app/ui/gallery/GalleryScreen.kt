@@ -65,6 +65,9 @@ import androidx.exifinterface.media.ExifInterface
 import com.craftcam.app.R
 import com.craftcam.app.camera.AspectRatioMode
 import com.craftcam.app.camera.profile.LensProfile
+import com.craftcam.app.color.CreativeTemperatureEngine
+import com.craftcam.app.color.profile.CameraProfileCompatibility
+import com.craftcam.app.color.profile.DazzColorProfileCatalog
 import com.craftcam.app.config.AppSettingsStore
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
@@ -73,6 +76,7 @@ import com.craftcam.app.motion.GolfMotionStore
 import com.craftcam.app.motion.MotionPhotoImporter
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
+import com.craftcam.app.ui.components.CreativeTemperatureControl
 import com.craftcam.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -113,6 +117,7 @@ fun GalleryScreen(
     // Import Photo state
     var isImporting by remember { mutableStateOf(false) }
     var pendingMotionImport by remember { mutableStateOf<MotionPhotoImporter.ImportProbeResult.MotionAvailable?>(null) }
+    var pendingStillImport by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var exportMotionDialogItem by remember { mutableStateOf<Pair<GalleryItem, Long>?>(null) }
     var coverRevision by remember { mutableIntStateOf(0) }
 
@@ -140,17 +145,8 @@ fun GalleryScreen(
                             pendingMotionImport = probe
                         }
                         is MotionPhotoImporter.ImportProbeResult.StillOnly -> {
-                            val defaultPreset = PresetCatalog.allPresets.find { it.id == "analog_fxn_r" }
-                                ?: PresetCatalog.allPresets.first()
-                            val newUri = importAndDevelopPhoto(context, probe.imageUri, defaultPreset)
-                            if (newUri != null) {
-                                GalleryCache.invalidate()
-                                allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
-                                Toast.makeText(context, "Developed still with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Failed to import photo", Toast.LENGTH_SHORT).show()
-                            }
                             isImporting = false
+                            pendingStillImport = probe.imageUri to "analog_fxn_r"
                         }
                         is MotionPhotoImporter.ImportProbeResult.Unsupported -> {
                             Toast.makeText(context, probe.reason, Toast.LENGTH_SHORT).show()
@@ -482,7 +478,7 @@ fun GalleryScreen(
                     try { probe.extractedVideoFile.delete() } catch (_: Throwable) {}
                     pendingMotionImport = null
                 },
-                onDevelopMotion = { chosenConfig ->
+                onDevelopMotion = { chosenConfig, creativeTemp, skinProtect ->
                     pendingMotionImport = null
                     coroutineScope.launch {
                         isImporting = true
@@ -492,7 +488,9 @@ fun GalleryScreen(
                                 probe = probe,
                                 config = chosenConfig,
                                 aspectRatio = AspectRatioMode.RATIO_4_3,
-                                lensProfile = LensProfile.NORMAL
+                                lensProfile = LensProfile.NORMAL,
+                                creativeTemperature = creativeTemp,
+                                creativeTempSkinProtection = skinProtect
                             )
                             try { probe.extractedVideoFile.delete() } catch (_: Throwable) {}
                             if (result != null) {
@@ -513,22 +511,42 @@ fun GalleryScreen(
                     {
                         pendingMotionImport = null
                         try { probe.extractedVideoFile.delete() } catch (_: Throwable) {}
-                        coroutineScope.launch {
-                            isImporting = true
-                            try {
-                                val defaultPreset = PresetCatalog.allPresets.find { it.id == "disp_classic" }
-                                    ?: PresetCatalog.allPresets.first()
-                                val newUri = importAndDevelopPhoto(context, imgUri, defaultPreset)
-                                if (newUri != null) {
-                                    GalleryCache.invalidate()
-                                    allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
-                                    Toast.makeText(context, "Developed still with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "Failed to develop still photograph", Toast.LENGTH_SHORT).show()
-                                }
-                            } finally {
-                                isImporting = false
+                        pendingStillImport = imgUri to "disp_classic"
+                    }
+                }
+            )
+        }
+
+        // ─── IMPORT STILL PHOTO SHEET (WITH CREATIVE TEMPERATURE) ─────────────────
+        pendingStillImport?.let { (importUri, defaultPresetId) ->
+            DarkroomDevelopSheet(
+                title = "DEVELOP IMPORTED PHOTO",
+                subtitle = "Choose an analog camera and optional Creative Temperature",
+                defaultPresetId = defaultPresetId,
+                busyLabel = "DEVELOPING IMPORTED FRAME...",
+                isProcessing = isImporting,
+                onDismiss = { pendingStillImport = null },
+                onConfirm = { preset, creativeTemp, skinProtect ->
+                    pendingStillImport = null
+                    coroutineScope.launch {
+                        isImporting = true
+                        try {
+                            val newUri = importAndDevelopPhoto(
+                                context = context,
+                                uri = importUri,
+                                preset = preset,
+                                creativeTemperature = creativeTemp,
+                                creativeTempSkinProtection = skinProtect
+                            )
+                            if (newUri != null) {
+                                GalleryCache.invalidate()
+                                allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
+                                Toast.makeText(context, "Developed still with ${preset.name}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to develop still photograph", Toast.LENGTH_SHORT).show()
                             }
+                        } finally {
+                            isImporting = false
                         }
                     }
                 }
@@ -537,14 +555,23 @@ fun GalleryScreen(
 
         // ─── REDEVELOP FILM SHEET ─────────────────────────────────────────────────
         redevelopingItem?.let { item ->
-            RedevelopFilmSheet(
-                item = item,
-                isRedeveloping = isRedeveloping,
+            DarkroomDevelopSheet(
+                title = "REDEVELOP FILM NEGATIVE",
+                subtitle = "Select an analog camera and optional Creative Temperature",
+                defaultPresetId = null,
+                busyLabel = "DEVELOPING NEGATIVE...",
+                isProcessing = isRedeveloping,
                 onDismiss = { redevelopingItem = null },
-                onConfirmRedevelop = { preset ->
+                onConfirm = { preset, creativeTemp, skinProtect ->
                     coroutineScope.launch {
                         isRedeveloping = true
-                        val newUri = redevelopPhoto(context, item, preset)
+                        val newUri = redevelopPhoto(
+                            context = context,
+                            item = item,
+                            preset = preset,
+                            creativeTemperature = creativeTemp,
+                            creativeTempSkinProtection = skinProtect
+                        )
                         isRedeveloping = false
                         redevelopingItem = null
                         if (newUri != null) {
@@ -1025,16 +1052,34 @@ internal fun DazzFullScreenPhotoPage(
 // ─── REDEVELOP FILM MODAL SHEET ──────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RedevelopFilmSheet(
-    item: GalleryItem,
-    isRedeveloping: Boolean,
+private fun DarkroomDevelopSheet(
+    title: String,
+    subtitle: String,
+    defaultPresetId: String?,
+    busyLabel: String,
+    isProcessing: Boolean,
     onDismiss: () -> Unit,
-    onConfirmRedevelop: (CameraPreset) -> Unit
+    onConfirm: (CameraPreset, Float, Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     val presets = remember {
         PresetCatalog.allPresets.filter { it.category != CameraCategory.CAMCORDER }
     }
-    var selectedPreset by remember { mutableStateOf(presets.first()) }
+    var selectedPreset by remember(defaultPresetId) {
+        mutableStateOf(presets.find { it.id == defaultPresetId } ?: presets.first())
+    }
+    var creativeTemperature by remember { mutableStateOf(0.0f) }
+    var skinProtection by remember {
+        mutableStateOf(AppSettingsStore.get(context).state.value.creativeTempSkinProtection)
+    }
+    val isMonoLocked = remember(selectedPreset.id) {
+        val savedProfileId = AppSettingsStore.get(context).getColorProfileForCamera(selectedPreset.id)
+        val profileIdx = DazzColorProfileCatalog.getById(savedProfileId).index
+        CameraProfileCompatibility.resolveLutPlan(
+            presetId = selectedPreset.id,
+            colorProfileIndex = profileIdx
+        ).isMonochrome
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1053,6 +1098,7 @@ private fun RedevelopFilmSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
@@ -1061,9 +1107,9 @@ private fun RedevelopFilmSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "REDEVELOP FILM NEGATIVE",
+                        text = title,
                         color = VintageAmber,
                         fontSize = 16.sp,
                         fontFamily = FontFamily.Monospace,
@@ -1071,7 +1117,7 @@ private fun RedevelopFilmSheet(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Select an analog camera emulsion to re-render this frame",
+                        text = subtitle,
                         color = TextSecondary,
                         fontSize = 12.sp
                     )
@@ -1086,7 +1132,7 @@ private fun RedevelopFilmSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Presets Horizontal Row
             LazyRow(
@@ -1125,12 +1171,29 @@ private fun RedevelopFilmSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Confirm Redevelop Button
+            CreativeTemperatureControl(
+                value = if (isMonoLocked) 0.0f else creativeTemperature,
+                skinProtectionEnabled = skinProtection,
+                isMonochromeLocked = isMonoLocked,
+                onValueChange = { creativeTemperature = it },
+                onReset = { creativeTemperature = 0.0f },
+                onToggleSkinProtection = { enabled ->
+                    skinProtection = enabled
+                    AppSettingsStore.get(context).setCreativeTempSkinProtection(enabled)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Confirm Develop Button
             Button(
-                onClick = { onConfirmRedevelop(selectedPreset) },
-                enabled = !isRedeveloping,
+                onClick = {
+                    val eff = if (isMonoLocked) 0.0f else creativeTemperature
+                    onConfirm(selectedPreset, eff, skinProtection)
+                },
+                enabled = !isProcessing,
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = VintageAmber,
@@ -1140,7 +1203,7 @@ private fun RedevelopFilmSheet(
                     .fillMaxWidth()
                     .height(48.dp)
             ) {
-                if (isRedeveloping) {
+                if (isProcessing) {
                     CircularProgressIndicator(
                         color = Color.Black,
                         strokeWidth = 2.dp,
@@ -1148,7 +1211,7 @@ private fun RedevelopFilmSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "DEVELOPING NEGATIVE...",
+                        text = busyLabel,
                         fontSize = 13.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
@@ -1298,11 +1361,25 @@ internal suspend fun decodeOrientedMutableBitmap(
     }
 }
 
-private fun buildGalleryTuningForPreset(context: Context, preset: CameraPreset): com.craftcam.app.camera.UserTuningConfig {
-    val savedProfileId = com.craftcam.app.config.AppSettingsStore.get(context).getColorProfileForCamera(preset.id)
-    val profile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedProfileId)
+private fun buildGalleryTuningForPreset(
+    context: Context,
+    preset: CameraPreset,
+    creativeTemperature: Float = 0.0f,
+    creativeTempSkinProtection: Boolean = true
+): com.craftcam.app.camera.UserTuningConfig {
+    val savedProfileId = AppSettingsStore.get(context).getColorProfileForCamera(preset.id)
+    val profile = DazzColorProfileCatalog.getById(savedProfileId)
+    val lutPlan = CameraProfileCompatibility.resolveLutPlan(
+        presetId = preset.id,
+        colorProfileIndex = profile.index
+    )
     return com.craftcam.app.camera.UserTuningConfig(
         filmColorProfileIndex = profile.index,
+        creativeTemperature = CreativeTemperatureEngine.resolveEffectiveTemperature(
+            creativeTemperature,
+            lutPlan.isMonochrome
+        ),
+        creativeTempSkinProtection = creativeTempSkinProtection,
         isHardwareWbActive = false
     )
 }
@@ -1321,7 +1398,9 @@ private fun readExifFlashFired(openStream: () -> java.io.InputStream?): Boolean 
 private suspend fun redevelopPhoto(
     context: Context,
     item: GalleryItem,
-    preset: CameraPreset
+    preset: CameraPreset,
+    creativeTemperature: Float = 0.0f,
+    creativeTempSkinProtection: Boolean = true
 ): Uri? = withContext(Dispatchers.IO) {
     try {
         val negativeFile = java.io.File(context.filesDir, "negatives/neg_${item.id}.jpg")
@@ -1334,7 +1413,12 @@ private suspend fun redevelopPhoto(
         val bitmap = decodeOrientedMutableBitmap(context, openSrc) ?: return@withContext null
         val flashFired = readExifFlashFired(openSrc)
 
-        val tuning = buildGalleryTuningForPreset(context, preset)
+        val tuning = buildGalleryTuningForPreset(
+            context = context,
+            preset = preset,
+            creativeTemperature = creativeTemperature,
+            creativeTempSkinProtection = creativeTempSkinProtection
+        )
         try {
             ImageProcessor.developBitmap(
                 context = context,
@@ -1356,7 +1440,9 @@ private suspend fun redevelopPhoto(
 private suspend fun importAndDevelopPhoto(
     context: Context,
     uri: Uri,
-    preset: CameraPreset
+    preset: CameraPreset,
+    creativeTemperature: Float = 0.0f,
+    creativeTempSkinProtection: Boolean = true
 ): Uri? = withContext(Dispatchers.IO) {
     try {
         val bitmap = decodeOrientedMutableBitmap(context) {
@@ -1366,7 +1452,12 @@ private suspend fun importAndDevelopPhoto(
             context.contentResolver.openInputStream(uri)
         }
 
-        val tuning = buildGalleryTuningForPreset(context, preset)
+        val tuning = buildGalleryTuningForPreset(
+            context = context,
+            preset = preset,
+            creativeTemperature = creativeTemperature,
+            creativeTempSkinProtection = creativeTempSkinProtection
+        )
         try {
             ImageProcessor.developBitmap(
                 context = context,
