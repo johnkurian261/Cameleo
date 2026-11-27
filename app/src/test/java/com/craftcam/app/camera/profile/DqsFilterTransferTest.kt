@@ -70,16 +70,20 @@ class DqsFilterTransferTest {
         assertEquals(0.90f, dqsProfile.opticalProfile.vignetteRadius, 1e-4f)
         assertEquals(dfunsProfile.opticalProfile.chromaticAberration, dqsProfile.opticalProfile.chromaticAberration, 1e-5f)
 
-        // 4. Color Grading Invariant (Neutral base to prevent double grading)
-        assertEquals(dfunsPreset.colorGrading.contrast, dqsPreset.colorGrading.contrast, 1e-4f)
+        // 4. Color Grading Independence & DQS Preservation
         assertEquals(1.0f, dqsPreset.colorGrading.contrast, 1e-4f)
-        assertEquals(dfunsPreset.colorGrading.saturation, dqsPreset.colorGrading.saturation, 1e-4f)
         assertEquals(1.0f, dqsPreset.colorGrading.saturation, 1e-4f)
-        assertEquals(dfunsPreset.colorGrading.temperature, dqsPreset.colorGrading.temperature, 1e-4f)
         assertEquals(0.0f, dqsPreset.colorGrading.temperature, 1e-4f)
-        assertEquals(dfunsPreset.colorGrading.tint, dqsPreset.colorGrading.tint, 1e-4f)
-        assertEquals(dfunsPreset.colorGrading.fade, dqsPreset.colorGrading.fade, 1e-4f)
-        assertEquals(dfunsPreset.colorGrading.highlightRollOff, dqsPreset.colorGrading.highlightRollOff, 1e-4f)
+        assertEquals(0.0f, dqsPreset.colorGrading.tint, 1e-4f)
+        assertEquals(0.0f, dqsPreset.colorGrading.fade, 1e-4f)
+        assertEquals(1.0f, dqsPreset.colorGrading.highlightRollOff, 1e-4f)
+        // DFUNS has its restored historical parameters
+        assertEquals(1.08f, dfunsPreset.colorGrading.contrast, 1e-4f)
+        assertEquals(1.06f, dfunsPreset.colorGrading.saturation, 1e-4f)
+        assertEquals(0.04f, dfunsPreset.colorGrading.temperature, 1e-4f)
+        assertEquals(0.01f, dfunsPreset.colorGrading.tint, 1e-4f)
+        assertEquals(0.02f, dfunsPreset.colorGrading.fade, 1e-4f)
+        assertEquals(0.90f, dfunsPreset.colorGrading.highlightRollOff, 1e-4f)
 
         // 5. Preset Grain and Lens configs
         assertEquals(dfunsPreset.grain.intensity, dqsPreset.grain.intensity, 1e-4f)
@@ -149,8 +153,10 @@ class DqsFilterTransferTest {
         assertEquals("1995", dfuns.year)
         assertEquals(CameraCategory.DISPOSABLE, dfuns.category)
         assertEquals("cam_dfuns", dfuns.iconResName)
-        assertEquals(1.0f, dfuns.colorGrading.contrast, 1e-4f)
-        assertEquals(1.0f, dfuns.colorGrading.saturation, 1e-4f)
+        assertEquals(1.08f, dfuns.colorGrading.contrast, 1e-4f)
+        assertEquals(1.06f, dfuns.colorGrading.saturation, 1e-4f)
+        assertEquals(0.04f, dfuns.colorGrading.temperature, 1e-4f)
+        assertEquals(com.craftcam.app.model.WhiteBalancePolicy.AUTO, dfuns.whiteBalance.policy)
         assertEquals(0.22f, dfuns.grain.intensity, 1e-4f)
         assertEquals("grains/grain_dfuns.jpg", dfuns.grain.assetPath)
 

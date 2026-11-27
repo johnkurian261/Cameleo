@@ -41,14 +41,25 @@ class WhiteBalanceCalibrationTest {
             assertTrue("defaultKelvin must be in [2500..9500]", wb.defaultKelvin in 2500..9500)
             assertTrue("minKelvin <= maxKelvin", wb.minKelvin <= wb.maxKelvin)
 
-            // Disposable cameras must strictly enforce FIXED_DAYLIGHT
-            if (preset.id in listOf("ccd_flash", "ccd_retro_compact", "disp_flash", "disp_classic")) {
+            // Fixed daylight cameras (DQS, CPM35, Golf) must strictly enforce FIXED_DAYLIGHT
+            if (preset.id in listOf("ccd_retro_compact", "disp_flash", "disp_classic")) {
                 assertEquals(
-                    "Disposable camera ${preset.id} must use FIXED_DAYLIGHT policy",
+                    "Camera ${preset.id} must use FIXED_DAYLIGHT policy",
                     WhiteBalancePolicy.FIXED_DAYLIGHT,
                     wb.policy
                 )
-                assertFalse("Disposable camera must not recommend auto WB", wb.autoRecommended)
+                assertFalse("Fixed daylight camera must not recommend auto WB", wb.autoRecommended)
+                assertEquals(5500, wb.defaultKelvin)
+            }
+
+            // D FUNS restored historical November 26 policy: AUTO AWB
+            if (preset.id == "ccd_flash") {
+                assertEquals(
+                    "D FUNS must use AUTO policy to match original November 26 captures",
+                    WhiteBalancePolicy.AUTO,
+                    wb.policy
+                )
+                assertTrue("D FUNS must recommend auto WB", wb.autoRecommended)
                 assertEquals(5500, wb.defaultKelvin)
             }
 
@@ -132,23 +143,35 @@ class WhiteBalanceCalibrationTest {
 
     @Test
     fun testSingleApplicationInvariant() {
-        val dfuns = PresetCatalog.getPresetById("ccd_flash")
+        val dqs = PresetCatalog.getPresetById("ccd_retro_compact")
 
-        // 1. When hardware WB is supported, execution must mark isHardwareApplied = true
+        // 1. When hardware WB is supported, fixed daylight cameras execute hardware WB
         val hwExec = HardwareWhiteBalanceCalibrator.resolveExecution(
+            policy = dqs.whiteBalance.policy,
+            requestedKelvin = dqs.whiteBalance.defaultKelvin,
+            supportsManualWb = true,
+            brand = DeviceBrand.SAMSUNG,
+            cameraId = "0"
+        )
+        assertTrue("Hardware WB must be active when supported for fixed daylight", hwExec.isHardwareApplied)
+        assertNotNull("Hardware gains must be provided", hwExec.colorCorrectionGains)
+        assertNotNull("ColorSpaceTransform must be provided", hwExec.colorSpaceTransform)
+
+        // 2. D FUNS restored to AUTO policy yields native AWB
+        val dfuns = PresetCatalog.getPresetById("ccd_flash")
+        val autoExec = HardwareWhiteBalanceCalibrator.resolveExecution(
             policy = dfuns.whiteBalance.policy,
             requestedKelvin = dfuns.whiteBalance.defaultKelvin,
             supportsManualWb = true,
             brand = DeviceBrand.SAMSUNG,
             cameraId = "0"
         )
-        assertTrue("Hardware WB must be active when supported", hwExec.isHardwareApplied)
-        assertNotNull("Hardware gains must be provided", hwExec.colorCorrectionGains)
-        assertNotNull("ColorSpaceTransform must be provided", hwExec.colorSpaceTransform)
+        assertFalse("D FUNS AUTO policy must not lock hardware gains", autoExec.isHardwareApplied)
+        assertEquals(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO, autoExec.captureRequestAwbMode)
 
-        // Inspector check: verifies no duplicate software shift
+        // Inspector check: verifies no duplicate software shift on fixed daylight camera
         val snapshot = WhiteBalanceInspector.inspect(
-            preset = dfuns,
+            preset = dqs,
             kelvin = 5500,
             supportsManualWb = true,
             brand = DeviceBrand.SAMSUNG,
@@ -157,10 +180,10 @@ class WhiteBalanceCalibrationTest {
         assertTrue("Single application invariant must pass", snapshot.singleApplicationVerified)
         assertTrue("Hardware must be applied", snapshot.isHardwareApplied)
 
-        // 2. Fallback when hardware WB is unsupported
+        // 3. Fallback when hardware WB is unsupported
         val fallbackExec = HardwareWhiteBalanceCalibrator.resolveExecution(
-            policy = dfuns.whiteBalance.policy,
-            requestedKelvin = dfuns.whiteBalance.defaultKelvin,
+            policy = dqs.whiteBalance.policy,
+            requestedKelvin = dqs.whiteBalance.defaultKelvin,
             supportsManualWb = false,
             brand = DeviceBrand.GENERIC,
             cameraId = "0"

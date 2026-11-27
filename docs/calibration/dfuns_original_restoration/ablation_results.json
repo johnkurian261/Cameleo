@@ -1,0 +1,80 @@
+{
+  "Ablation_A_Historical_Complete": {
+    "description": "Historical LUT + Native AWB + Historical Grading",
+    "portraitForeheadRGB": [
+      173,
+      170,
+      163
+    ],
+    "indoorWallRGB": [
+      247,
+      223,
+      157
+    ]
+  },
+  "Ablation_B_Current_Complete": {
+    "description": "Working LUT + Fixed Daylight WB (5500K) + Flat Grading",
+    "portraitForeheadRGB": [
+      213,
+      172,
+      124
+    ],
+    "indoorWallRGB": [
+      252,
+      220,
+      126
+    ]
+  },
+  "Ablation_C_Historical_LUT_Only": {
+    "description": "Historical LUT + Fixed Daylight WB (5500K) + Flat Grading",
+    "portraitForeheadRGB": [
+      216,
+      169,
+      119
+    ],
+    "indoorWallRGB": [
+      249,
+      220,
+      116
+    ]
+  },
+  "Ablation_D_Historical_WB_Only": {
+    "description": "Working LUT + Native AWB + Flat Grading",
+    "portraitForeheadRGB": [
+      170,
+      168,
+      162
+    ],
+    "indoorWallRGB": [
+      235,
+      216,
+      163
+    ]
+  },
+  "Ablation_E_Historical_LUT_and_WB": {
+    "description": "Historical LUT + Native AWB + Flat Grading",
+    "portraitForeheadRGB": [
+      167,
+      165,
+      159
+    ],
+    "indoorWallRGB": [
+      237,
+      216,
+      155
+    ]
+  },
+  "Ablation_F_Restored_Final": {
+    "description": "Complete Verified Restored D FUNS (Historical LUT + Native AWB + Nov 26 Grading)",
+    "portraitForeheadRGB": [
+      173,
+      170,
+      163
+    ],
+    "indoorWallRGB": [
+      247,
+      223,
+      157
+    ]
+  }
+}

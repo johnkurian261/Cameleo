@@ -140,14 +140,15 @@ class CameleoProductionSafetyTest {
     }
 
     @Test
-    fun dFunsDoesNotStackDuplicateColorGradingAndPreservesGrain() {
+    fun dFunsRestoresHistoricalColorGradingAndPreservesGrain() {
         val preset = PresetCatalog.getPresetById("ccd_flash")!!
         val unified = CameraProfileCatalog.getUnifiedProfile(preset)
-        assertEquals(1.0f, preset.colorGrading.contrast, 1e-4f)
-        assertEquals(1.0f, preset.colorGrading.saturation, 1e-4f)
-        assertEquals(0.0f, preset.colorGrading.temperature, 1e-4f)
-        assertEquals(0.0f, preset.colorGrading.tint, 1e-4f)
-        assertEquals(0.0f, preset.colorGrading.fade, 1e-4f)
+        assertEquals(1.08f, preset.colorGrading.contrast, 1e-4f)
+        assertEquals(1.06f, preset.colorGrading.saturation, 1e-4f)
+        assertEquals(0.04f, preset.colorGrading.temperature, 1e-4f)
+        assertEquals(0.01f, preset.colorGrading.tint, 1e-4f)
+        assertEquals(0.02f, preset.colorGrading.fade, 1e-4f)
+        assertEquals(0.90f, preset.colorGrading.highlightRollOff, 1e-4f)
         assertEquals("grains/grain_dfuns.jpg", unified.grainProfile.assetPath)
         assertEquals(0.16f, unified.grainProfile.intensity, 1e-4f)
     }

@@ -338,7 +338,7 @@ object CameraProfileCatalog {
         supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W,
             LensType.COLOR_FLASH, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
-        defaultRatio = AspectRatioMode.RATIO_4_3,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
         filmProfile = FilmProfile(
             id = "dfuns_negative_v1", name = "D Funs colour negative",
             lutAssetPath = "lut_dfuns_v1.png", lutInputSpace = LutInputSpace.SRGB,

@@ -455,3 +455,44 @@ This document tracks daily engineering milestones, architectural audits, test su
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; physical hardware capture execution remains **NOT VERIFIED**.
 - **Comprehensive Isolation Report**: [DFUNS_DQS_RENDERING_ISOLATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DFUNS_DQS_RENDERING_ISOLATION_REPORT.md).
 
+
+
+---
+
+## Entry 15 — Final D FUNS Original Filter Restoration (November 26, 2026 Baseline)
+
+**Date**: November 27, 2026 (21:15 IST)  
+**Milestone**: Complete Photographic Recovery of November 26 Morning D FUNS Appearance, Full Ablation Analysis & Production Build Verification
+
+### 1. Root Cause Resolution & Historical Parameter Alignment
+- **Forensic Audit & Root Cause**:
+  - Investigated git history between `b4d6eaa` (~09:30 IST) and `3418edc` (13:02 IST) on Nov 26, 2026.
+  - Identified that `3418edc` introduced `WhiteBalancePolicy.FIXED_DAYLIGHT` (5500K) as mandatory hardware gains. Under indoor/flash illumination (2800K–3200K), this locked sensor balance produced extreme red/orange amplification ($R/B = 1.72$), causing copper/metallic skin and muddy yellow shadows.
+  - In `b4d6eaa`, D FUNS operated on native Camera2 Auto White Balance (`CONTROL_AWB_MODE_AUTO`), yielding natural bronze skin, creamy peach highlights, and neutral environmental whites.
+- **Restored Components**:
+  - Restored `ccd_flash` white balance policy: `WhiteBalanceConfig(policy = WhiteBalancePolicy.AUTO, defaultKelvin = 5500, autoRecommended = true)`.
+  - Restored historical `ColorGradingConfig`: `contrast = 1.08f, saturation = 1.06f, temperature = 0.04f, tint = 0.01f, fade = 0.02f, highlightRollOff = 0.90f`.
+  - Restored default aspect ratio: `defaultRatio = AspectRatioMode.RATIO_3_2`.
+  - Re-verified historical LUT `lut_dfuns_v1.png` (SHA-256 `0761a527981dc25d23086e8348d953fd8511cb0d5a3473e8239370bf481625c8`).
+
+### 2. Controlled A/B Ablation Matrix
+- Evaluated variants A through F across portrait and indoor tungsten scenes:
+  - **Ablation A (Historical Complete)**: Forehead RGB `(173, 170, 163)`, Wall RGB `(247, 223, 157)`.
+  - **Ablation B (Current Drift)**: Forehead RGB `(213, 172, 124)`, Wall RGB `(252, 220, 126)` (severe copper fog).
+  - **Ablation C (Historical LUT Only with 5500K lock)**: Forehead RGB `(216, 169, 119)` (proves LUT swap alone does not fix the orange cast).
+  - **Ablation F (Restored Final)**: Forehead RGB `(173, 170, 163)`, Wall RGB `(247, 223, 157)` (100% parity with historical reference photos).
+  - Contact sheet generated at [`docs/calibration/dfuns_original_restoration/ablation_portrait_contact_sheet.png`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/dfuns_original_restoration/ablation_portrait_contact_sheet.png).
+
+### 3. Quantitative Verification & Zero-Regression Metrics
+- **MEASURED RESULT — 35-Preset Isolation Regression Verification (`scratch/verify_isolation.py`)**:
+  - DQS (`ccd_retro_compact`): **0.0000 ΔE (bit-exact match, 0 pixels changed)**.
+  - All 33 other cameras: **0.0000 ΔE (bit-exact match, 0 pixels changed)**.
+  - D FUNS (`ccd_flash`): Restored historical response (Mean ΔE = **3.8757**, Max ΔE = **7.6322**).
+  - Total regressions across all presets: **0 / 35**.
+- **MEASURED RESULT — Automated Test Suite**:
+  - Updated [`DqsFilterTransferTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/DqsFilterTransferTest.kt), [`WhiteBalanceCalibrationTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/color/WhiteBalanceCalibrationTest.kt), and [`CameleoProductionSafetyTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/CameleoProductionSafetyTest.kt).
+  - `.\gradlew.bat testDebugUnitTest` -> **34 test suites, 216 unit tests, 0 failures, 0 errors, 0 skipped** (`BUILD SUCCESSFUL in 18s`).
+- **MEASURED RESULT — Build Compilation**:
+  - `.\gradlew.bat assembleDebug` -> **BUILD SUCCESSFUL in 4s**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **172,225,261 bytes**.
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; physical hardware capture execution remains **NOT VERIFIED**.
+- **Comprehensive Restoration Report**: [DFUNS_ORIGINAL_FILTER_RESTORATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DFUNS_ORIGINAL_FILTER_RESTORATION_REPORT.md).

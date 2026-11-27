@@ -431,18 +431,23 @@ object PresetCatalog {
             year = "1995",
             description = "Iconic 35mm single-use disposable camera. Organic colour negative film response, soft highlight compression, and natural flash warmth.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.0f,
-                saturation = 1.0f,
-                temperature = 0.0f,
-                tint = 0.0f,
-                fade = 0.0f,
-                highlightRollOff = 1.0f
+                contrast = 1.08f,
+                saturation = 1.06f,
+                temperature = 0.04f,
+                tint = 0.01f,
+                fade = 0.02f,
+                highlightRollOff = 0.90f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.34f, highlightStrength = 0.15f),
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.82f, chromaticAberration = 0.004f),
             dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
-            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -23)
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -23),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.AUTO,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         ),
 
         CameraPreset(
