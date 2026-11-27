@@ -345,3 +345,9 @@ This document tracks daily engineering milestones, architectural audits, test su
 - **MEASURED RESULT — Unit Tests & Build**: Added [`CreativeTemperatureTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/color/CreativeTemperatureTest.kt) (`8` tests). `.\gradlew.bat :app:testDebugUnitTest assembleDebug --offline` -> **`33` suites, `208` tests, `0` failures, `0` errors, `0` skipped** (`BUILD SUCCESSFUL`), [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **`172,225,187` bytes**.
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` empty; on-device live preview/capture/video shader execution remains **NOT VERIFIED**.
 - **Detailed Report**: [CREATIVE_TEMPERATURE_FILTER_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/CREATIVE_TEMPERATURE_FILTER_REPORT.md).
+
+## November 27 — D3D subject anchoring and depth parallax
+
+**MEASURED RESULT** — Four original MP4s confirmed the 10 fps four-view bounce. Extreme-view bridge motion in the two off-centre portraits fell from 33.51 to 2.29 px and from 14.11 to 0.01 px in annotated geometry replays. The other two clips retained less background motion.
+
+**OBSERVED FACT** — D3D now uses capture-aligned convergence metadata and an adaptive virtual baseline. The complete debug and release unit suites passed, with 210 tests each. **NOT VERIFIED** — No S21 was connected for live capture. [Correction report](D3D_STEREOSCOPIC_PARALLAX_CORRECTION_REPORT.md) · [Comparison video](calibration/d3d/comparison.mp4)

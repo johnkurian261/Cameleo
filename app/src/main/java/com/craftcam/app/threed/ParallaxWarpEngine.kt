@@ -34,7 +34,8 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
      */
     fun generateViewpoints(
         sourceBitmap: Bitmap,
-        disparityMap: DisparityMap
+        disparityMap: DisparityMap,
+        face: com.craftcam.app.portrait.FaceRegion? = null
     ): List<Bitmap> {
         val width = sourceBitmap.width
         val height = sourceBitmap.height
@@ -44,20 +45,42 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
         sourceBitmap.getPixels(srcPixels, 0, width, 0, 0, width, height)
 
         val dispGrid = resampleDisparity(srcPixels, width, height, disparityMap)
-        val maxDisplacementPx = width * config.maxParallaxDisplacement
+        val maxDisplacementPx = baselinePixels(width, disparityMap, face)
         val pivot = disparityMap.pivot
 
         // Generate 4 distinct viewpoint Bitmaps
-        return List(LENS_OFFSETS.size) { i ->
-            warpViewpoint(
-                srcPixels = srcPixels,
-                dispGrid = dispGrid,
-                width = width,
-                height = height,
-                deltaX = maxDisplacementPx * LENS_OFFSETS[i],
-                pivot = pivot
-            )
+        val views = ArrayList<Bitmap>(LENS_OFFSETS.size)
+        try {
+            for (offset in LENS_OFFSETS) {
+                views.add(warpViewpoint(srcPixels, dispGrid, width, height, maxDisplacementPx * offset, pivot))
+            }
+            return views
+        } catch (failure: Throwable) {
+            views.forEach { it.recycle() }
+            throw failure
         }
+    }
+
+    internal fun baselinePixels(width: Int, map: DisparityMap, face: com.craftcam.app.portrait.FaceRegion?): Float {
+        val bounds = face?.bounds
+        val faceArea = if (bounds == null) 0f else (bounds.right-bounds.left)*(bounds.bottom-bounds.top)
+        val span = (map.foregroundDisparity - map.backgroundDisparity).coerceIn(0f, 1f)
+        val portraitScale = 1f - 0.4f * (faceArea / 0.35f).coerceIn(0f, 1f)
+        val confidenceScale = if (map.backendUsed == DepthBackend.CURRENT) 0.65f else 1f
+        // Bound the width between extreme views without boosting a nearly flat depth map.
+        val requested = width * config.maxParallaxDisplacement
+        val budget = minOf(requested, requested * 0.45f / span.coerceAtLeast(0.01f)) * portraitScale * confidenceScale
+        if (bounds == null) return budget
+        // Reduce the entire camera baseline if the model stretches the central facial features.
+        // Sampling inside the face avoids mistaking the hair/background boundary for facial relief.
+        val samples = FloatArray(81) { i ->
+            val u = bounds.left + (bounds.right - bounds.left) * (0.2f + 0.6f * (i % 9) / 8)
+            val v = bounds.top + (bounds.bottom - bounds.top) * (0.28f + 0.44f * (i / 9) / 8)
+            map.sampleBilinear(u,v)
+        }
+        samples.sort()
+        val relief = samples[72] - samples[8]
+        return if (relief > 0f) minOf(budget, width * 0.0025f / relief) else budget
     }
 
     private fun colorWeight(a: Int, b: Int): Float {

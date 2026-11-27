@@ -258,9 +258,11 @@ object ImageProcessor {
         onProgress: ((String) -> Unit)? = null
     ): Uri? = processingSemaphore.withPermit {
         withContext(Dispatchers.Default) {
+        val geometry: com.craftcam.app.threed.CaptureConvergence.Metadata
         val rawBitmap: Bitmap
         val rotation: Int
         try {
+            geometry = com.craftcam.app.threed.CaptureConvergence.inBuffer(imageProxy)
             rotation = imageProxy.imageInfo.rotationDegrees
             rawBitmap = imageProxyToBitmap(imageProxy)
         } finally {
@@ -352,13 +354,16 @@ object ImageProcessor {
             val uri = threeDProcessor.processAndSaveThreeDPhoto(
                 context = context,
                 sourceBitmap = workingBitmap,
-                faces = mappedFaces,
+                focus = geometry.workingFocus(matrix, workingBitmap.width, workingBitmap.height),
+                faces = geometry.workingFaces(matrix, workingBitmap.width, workingBitmap.height),
                 gradeInPlace = { bitmap ->
                     applyPresetEffects(context, bitmap, preset, tuning, effectiveLensProfile, isFlashActive, applyGrain = false, cameraId = cameraId, faces = mappedFaces)
                 },
                 onProgress = onProgress
             )
             uri
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (t: Throwable) {
             Log.e(TAG, "Error in 3D wigglegram pipeline", t)
             null

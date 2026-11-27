@@ -257,11 +257,12 @@ class DepthAnythingV2Engine(private val context: Context? = null) {
 
             // 3. Run ONNX Inference
             val inferStart = System.currentTimeMillis()
-            val outputs = session.run(mapOf("pixel_values" to inputTensor))
+            val outValue = inputTensor.use { tensor ->
+                session.run(mapOf("pixel_values" to tensor)).use { outputs ->
+                    (outputs.get("predicted_depth").get() as OnnxTensor).value
+                }
+            }
             val inferenceTime = System.currentTimeMillis() - inferStart
-
-            val outputTensor = outputs.get("predicted_depth").get() as OnnxTensor
-            val outValue = outputTensor.value
 
             // 4. Extract raw predicted depth map
             val rawDepth = FloatArray(totalModelPixels)
@@ -276,6 +277,7 @@ class DepthAnythingV2Engine(private val context: Context? = null) {
                     val rowIdx = y * modelW
                     for (x in 0 until modelW) {
                         val v = row[x]
+                        if (!v.isFinite()) return null
                         rawDepth[rowIdx + x] = v
                         if (v < minRaw) minRaw = v
                         if (v > maxRaw) maxRaw = v
@@ -284,13 +286,9 @@ class DepthAnythingV2Engine(private val context: Context? = null) {
                 }
             } else {
                 Log.e(TAG, "Unexpected output tensor value format: ${outValue?.javaClass}")
-                inputTensor.close()
-                outputs.close()
                 return null
             }
 
-            inputTensor.close()
-            outputs.close()
 
             val meanRaw = (sumRaw / totalModelPixels).toFloat()
 

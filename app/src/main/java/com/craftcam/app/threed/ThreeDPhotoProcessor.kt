@@ -10,6 +10,8 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import com.craftcam.app.portrait.FaceRegion
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -44,6 +46,7 @@ class ThreeDPhotoProcessor(
         context: Context,
         sourceBitmap: Bitmap,
         faces: List<FaceRegion> = emptyList(),
+        focus: ConvergencePoint? = null,
         gradeInPlace: suspend (Bitmap) -> Unit = {},
         onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.Default) {
@@ -67,21 +70,38 @@ class ThreeDPhotoProcessor(
 
         val tempVideoFile = File(context.cacheDir, "cameleo_3d_${System.currentTimeMillis()}.mp4")
 
+        var rawFrames = emptyList<Bitmap>()
+        var styledFrames = emptyList<Bitmap>()
         try {
             onProgress?.invoke("Analyzing Depth Geometry...")
             val depthEngine = ThreeDDepthEngine(context, config)
-            val disparityMap = depthEngine.computeDisparity(workingBitmap, faces)
+            // Detect in the exact oriented, mirrored and cropped image passed to depth inference.
+            // Prefer capture-matched regions when available; run bitmap detection only as a fallback.
+            val anchorFace = depthEngine.primaryFace(faces) ?: run {
+                val scale = minOf(1f, 480f / maxOf(workingBitmap.width, workingBitmap.height))
+                val probe = Bitmap.createScaledBitmap(workingBitmap,
+                    (workingBitmap.width * scale).roundToInt().coerceAtLeast(2),
+                    (workingBitmap.height * scale).roundToInt().coerceAtLeast(1), true)
+                try {
+                    depthEngine.primaryFace(com.craftcam.app.portrait.ImageFaceDetectorFallback.detectInBitmap(probe))
+                } finally {
+                    if (probe !== workingBitmap) probe.recycle()
+                }
+            }
+            val disparityMap = depthEngine.computeDisparity(workingBitmap, listOfNotNull(anchorFace), focus)
 
             onProgress?.invoke("Synthesizing Stereoscopic Viewpoints...")
             gradeInPlace(workingBitmap)
-            val rawFrames = warpEngine.generateViewpoints(workingBitmap, disparityMap)
+            ensureActive()
+            rawFrames = warpEngine.generateViewpoints(workingBitmap, disparityMap, anchorFace)
 
             onProgress?.invoke("Applying Vintage Emulsion...")
             val retroRenderer = RetroFrameRenderer(context, config)
-            val styledFrames = retroRenderer.processFrames(rawFrames)
+            ensureActive()
+            styledFrames = retroRenderer.processFrames(rawFrames)
 
             if (config.exportDebugMaps) {
-                exportDebugMaps(context, disparityMap, rawFrames)
+                exportDebugMaps(context, disparityMap, rawFrames, anchorFace)
             }
 
             // Free unstyled raw frames
@@ -92,6 +112,7 @@ class ThreeDPhotoProcessor(
             }
 
             onProgress?.invoke("Encoding Looping Video...")
+            ensureActive()
             val success = videoEncoder.encodeFramesToMp4(
                 frames = ParallaxWarpEngine.bounce(styledFrames),
                 outputFile = tempVideoFile,
@@ -127,10 +148,15 @@ class ThreeDPhotoProcessor(
             }
             Log.i(TAG, "3D Wigglegram video successfully saved: $savedUri (${tempVideoFile.length()} bytes)")
             savedUri
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (t: Throwable) {
             Log.e(TAG, "Error generating 3D Wigglegram", t)
             null
         } finally {
+            for (frame in rawFrames + styledFrames) {
+                if (frame !== workingBitmap && !frame.isRecycled) frame.recycle()
+            }
             if (shouldRecycleWorking && !workingBitmap.isRecycled) {
                 workingBitmap.recycle()
             }
@@ -181,7 +207,8 @@ class ThreeDPhotoProcessor(
     private fun exportDebugMaps(
         context: Context,
         disparityMap: DisparityMap,
-        rawFrames: List<Bitmap>
+        rawFrames: List<Bitmap>,
+        face: FaceRegion?
     ) {
         try {
             val debugDir = context.getExternalFilesDir(null) ?: context.cacheDir
@@ -251,9 +278,9 @@ class ThreeDPhotoProcessor(
                 }
                 diffBmp.recycle()
 
-                val maxPx = fw * config.d3dParallaxStrength
-                val fgStep = (disparityMap.foregroundDisparity - disparityMap.pivot) * (maxPx * 0.667f)
-                val bgStep = (disparityMap.backgroundDisparity - disparityMap.pivot) * (maxPx * 0.667f)
+                val maxPx = warpEngine.baselinePixels(fw, disparityMap, face)
+                val fgStep = (disparityMap.foregroundDisparity - disparityMap.pivot) * (maxPx * 0.667f) / (1f + .35f * (1f - disparityMap.foregroundDisparity))
+                val bgStep = (disparityMap.backgroundDisparity - disparityMap.pivot) * (maxPx * 0.667f) / (1f + .35f * (1f - disparityMap.backgroundDisparity))
                 Log.i(TAG, "=== D3D Depth-Region Motion Audit ===")
                 Log.i(TAG, "Foreground Step (L1->L2): +${fgStep}px, Background Step: ${bgStep}px, Subject Step: ~0.0px")
                 Log.i(TAG, "Net relative foreground <-> background separation per frame step: ${fgStep - bgStep}px")

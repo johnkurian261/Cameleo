@@ -68,13 +68,15 @@ class RetroFrameRenderer(
         val outFrames = ArrayList<Bitmap>(count)
         val grains = if (config.grainIntensity > 0f) getOrLoadGrains() else emptyList()
 
-        for (i in 0 until count) {
-            val src = frames[i]
-            val processed = processSingleFrame(src, frameIndex = i, totalFrames = count, grains = grains)
-            outFrames.add(processed)
+        try {
+            for (i in frames.indices) {
+                outFrames.add(processSingleFrame(frames[i], frameIndex = i, totalFrames = count, grains = grains))
+            }
+            return outFrames
+        } catch (failure: Throwable) {
+            outFrames.forEach { it.recycle() }
+            throw failure
         }
-
-        return outFrames
     }
 
     private fun processSingleFrame(

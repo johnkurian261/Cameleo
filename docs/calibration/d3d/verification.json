@@ -1,0 +1,21 @@
+{
+  "testDebugUnitTest": {
+    "tests": 210,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "testReleaseUnitTest": {
+    "tests": 210,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "assets": {
+    "lut_d3d.png": "17c7759f9ec0bb41518dc11ff1f410276b0b8878e97e7e787744b970f50767e9",
+    "grain_d3d1.jpg": "98b9717bfdb52968a306d179a03037f7fdba84dea79574c89a2a03f9ec7b1bb8",
+    "grain_d3d2.jpg": "6f68276ea1da7dae99f0ca7f7bf12ed3a8d24a91b65627f02e9d154c187871b1",
+    "grain_d3d3.jpg": "d63e6991ebb9a4d94be55f6c69f656e9869b49c33e6bccc933bd452a4b4b3dc2",
+    "lut_analog_cinema_film.png": "17c7759f9ec0bb41518dc11ff1f410276b0b8878e97e7e787744b970f50767e9"
+  }
+}

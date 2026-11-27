@@ -6,6 +6,29 @@ import org.junit.Test
 
 class ThreeDModeTest {
     @Test
+    fun lockedFocusOverridesCenterAndRejectsInvalidDepth() {
+        val engine = ThreeDDepthEngine()
+        val values = FloatArray(10000) { if (it % 100 < 30) 0.85f else 0.2f }
+        assertEquals(.85f, engine.calculatePivot(100,100,values,emptyList(),ConvergencePoint(.14f,.6f)),.0001f)
+        values.fill(Float.NaN)
+        assertEquals(.5f, engine.calculatePivot(100,100,values,emptyList(),ConvergencePoint(.14f,.6f)),.0001f)
+    }
+
+    @Test
+    fun motionBudgetRespectsFaceSizeAndDepthConfidence() {
+        val warp = ParallaxWarpEngine(ThreeDConfig())
+        val map = DisparityMap(1,1,floatArrayOf(.5f),foregroundDisparity=.95f,backgroundDisparity=.05f)
+        val regular = warp.baselinePixels(800,map,null)
+        assertTrue(regular * 2f * .9f <= 24f)
+        val face = com.craftcam.app.portrait.FaceRegion(android.graphics.RectF().apply {
+            left = .1f; top = .1f; right = .9f; bottom = .9f
+        },1f)
+        assertTrue(warp.baselinePixels(800,map,face) < regular)
+        assertTrue(warp.baselinePixels(800,map.copy(backendUsed=DepthBackend.CURRENT),null) < regular)
+        assertEquals(regular*2,warp.baselinePixels(1600,map,null),.001f)
+    }
+
+    @Test
     fun upsamplingKeepsAStrongSilhouetteAndSmoothSameColorGradients() {
         val engine = ParallaxWarpEngine(ThreeDConfig())
         val map = DisparityMap(2, 1, floatArrayOf(0f, 1f))

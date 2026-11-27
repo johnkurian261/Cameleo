@@ -1,0 +1,7 @@
+allprojects {
+    plugins.withId("com.android.application") {
+        androidComponents.finalizeDsl { dsl ->
+            dsl.sourceSets.test.java.srcDir(rootProject.file("docs/calibration/d3d/replay"))
+        }
+    }
+}

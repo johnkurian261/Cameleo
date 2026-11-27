@@ -102,14 +102,15 @@ class ThreeDDepthEngine(
      */
     fun computeDisparity(
         source: Bitmap,
-        faces: List<FaceRegion> = emptyList()
+        faces: List<FaceRegion> = emptyList(),
+        focus: ConvergencePoint? = null
     ): DisparityMap {
         val w = source.width
         val h = source.height
         val total = w * h
         val pixels = IntArray(total)
         source.getPixels(pixels, 0, w, 0, 0, w, h)
-        return computeDisparityFromPixels(pixels, w, h, faces)
+        return computeDisparityFromPixels(pixels, w, h, faces, focus)
     }
 
     /**
@@ -120,7 +121,8 @@ class ThreeDDepthEngine(
         pixels: IntArray,
         srcW: Int,
         srcH: Int,
-        faces: List<FaceRegion> = emptyList()
+        faces: List<FaceRegion> = emptyList(),
+        focus: ConvergencePoint? = null
     ): DisparityMap {
         // Mode 1: Depth Anything V2 Small (when configured and available)
         if (config.depthBackend == DepthBackend.DEPTH_ANYTHING_V2) {
@@ -134,7 +136,7 @@ class ThreeDDepthEngine(
                     val disparityValues = aiResult.refinedDepth
 
                     // Calculate convergence pivot disparity
-                    val pivot = calculatePivot(w, h, disparityValues, faces)
+                    val pivot = calculatePivot(w, h, disparityValues, faces, focus)
 
                     // Export diagnostic debug passes if requested
                     if (config.d3dDebugDepth && context != null) {
@@ -189,7 +191,7 @@ class ThreeDDepthEngine(
 
         // Mode 2: Legacy Defocus + Perspective Prior Fallback
         Log.i(TAG, "Using Legacy MonocularDepthEstimator (defocus + perspective prior)")
-        return computeLegacyDisparityFromPixels(pixels, srcW, srcH, faces)
+        return computeLegacyDisparityFromPixels(pixels, srcW, srcH, faces, focus)
     }
 
     /**
@@ -199,7 +201,8 @@ class ThreeDDepthEngine(
         pixels: IntArray,
         srcW: Int,
         srcH: Int,
-        faces: List<FaceRegion>
+        faces: List<FaceRegion>,
+        focus: ConvergencePoint? = null
     ): DisparityMap {
         try {
             val depthW = 320
@@ -258,7 +261,7 @@ class ThreeDDepthEngine(
                 }
             }
 
-            val pivot = calculatePivot(depthW, depthH, disparityValues, faces)
+            val pivot = calculatePivot(depthW, depthH, disparityValues, faces, focus)
 
             val sortedDisp = disparityValues.clone().apply { sort() }
             val foregroundDisparity = sortedDisp[(total * 0.90f).toInt().coerceIn(0, total - 1)]
@@ -282,7 +285,7 @@ class ThreeDDepthEngine(
             )
         } catch (t: Throwable) {
             Log.e(TAG, "Legacy depth estimation failed; falling back to mathematical gradient prior", t)
-            return createPerspectiveFallback(320, 240)
+            return createPerspectiveFallback(320, 240, faces, focus)
         }
     }
 
@@ -291,19 +294,70 @@ class ThreeDDepthEngine(
      * The subject at this disparity plane remains perfectly stationary in physical space
      * while foreground and background exhibit stereoscopic parallax around them.
      */
+    internal fun primaryFace(faces: List<FaceRegion>): FaceRegion? = faces.filter {
+        val b = it.bounds
+        it.confidence >= 0.3f && b.left in 0f..1f && b.top in 0f..1f &&
+            b.right in 0f..1f && b.bottom in 0f..1f && b.right > b.left && b.bottom > b.top
+    }.maxByOrNull { (it.bounds.right - it.bounds.left) * (it.bounds.bottom - it.bounds.top) * it.confidence }
+
+    private fun depthSubject(w: Int, h: Int, values: FloatArray): ConvergencePoint? {
+        // Look for a coherent near surface inside the composition. A single bright depth outlier
+        // or an isolated hand at the frame boundary is insufficient to move convergence.
+        val tiles = 9
+        val grid = FloatArray(tiles * tiles) { i ->
+            val x = ((i % tiles + 0.5f) * w / tiles).toInt().coerceIn(0, w - 1)
+            val y = ((i / tiles + 0.5f) * h / tiles).toInt().coerceIn(0, h - 1)
+            values[y * w + x]
+        }
+        val valid = grid.filter { it in 0f..1f }.sorted()
+        if (valid.size < grid.size / 2) return null
+        val far = valid[valid.size / 5]
+        val near = valid[valid.size * 4 / 5]
+        if (near - far < 0.18f) return null
+        val threshold = far + (near - far) * 0.75f
+        var best = -1f
+        var point: ConvergencePoint? = null
+        for (y in 1 until tiles - 1) for (x in 1 until tiles - 1) {
+            val depth = grid[y * tiles + x]
+            if (depth !in threshold..1f) continue
+            var coherent = 0
+            for (dy in -1..1) for (dx in -1..1) {
+                if (kotlin.math.abs(grid[(y + dy) * tiles + x + dx] - depth) < 0.12f) coherent++
+            }
+            if (coherent < 6) continue
+            val distance = (x - 4) * (x - 4) + (y - 4) * (y - 4)
+            val score = coherent - 0.4f * distance
+            if (score > best) {
+                best = score
+                point = ConvergencePoint((x + 0.5f) / tiles, (y + 0.5f) / tiles)
+            }
+        }
+        return point
+    }
+
     internal fun calculatePivot(
         w: Int,
         h: Int,
         disparityValues: FloatArray,
-        faces: List<FaceRegion>
+        faces: List<FaceRegion>,
+        focus: ConvergencePoint? = null
     ): Float {
         // Anchor a real surface. Averaging a foreground face with a distant wall
         // creates a convergence plane that neither object actually occupies.
-        val face = faces.maxByOrNull { it.areaFraction * it.confidence }?.bounds
-        val cx = if (face == null) 0.5f else (face.left + face.right) * 0.5f
-        val cy = if (face == null) 0.5f else (face.top + face.bottom) * 0.5f
-        val rx = if (face == null) 0.04f else (face.right - face.left) * 0.25f
-        val ry = if (face == null) 0.04f else (face.bottom - face.top) * 0.25f
+        val target = focus?.takeIf { it.x in 0f..1f && it.y in 0f..1f }
+        val primary = if (target == null) primaryFace(faces) else null
+        val face = primary?.bounds
+        val left = primary?.leftEye
+        val right = primary?.rightEye
+        val eyes = if (face != null && left != null && right != null &&
+            left.x in face.left..face.right && right.x in face.left..face.right &&
+            left.y in face.top..face.bottom && right.y in face.top..face.bottom)
+            ConvergencePoint((left.x + right.x) * 0.5f, (left.y + right.y) * 0.5f) else null
+        val sceneTarget = target ?: if (face == null) depthSubject(w, h, disparityValues) else null
+        val cx = if (face == null) sceneTarget?.x ?: 0.5f else eyes?.x ?: (face.left + face.right) * 0.5f
+        val cy = if (face == null) sceneTarget?.y ?: 0.5f else eyes?.y ?: (face.top + (face.bottom - face.top) * 0.46f)
+        val rx = if (face == null) 0.04f else (face.right - face.left) * 0.18f
+        val ry = if (face == null) 0.04f else (face.bottom - face.top) * 0.12f
         val x0 = ((cx - rx) * w).toInt().coerceIn(0, w - 1)
         val x1 = ((cx + rx) * w).toInt().coerceIn(x0, w - 1)
         val y0 = ((cy - ry) * h).toInt().coerceIn(0, h - 1)
@@ -311,10 +365,15 @@ class ThreeDDepthEngine(
         val samples = FloatArray((x1 - x0 + 1) * (y1 - y0 + 1))
         var index = 0
         for (y in y0..y1) {
-            for (x in x0..x1) samples[index++] = disparityValues[y * w + x]
+            for (x in x0..x1) {
+                val value = disparityValues[y * w + x]
+                if (value in 0f..1f) samples[index++] = value
+            }
         }
-        samples.sort()
-        return samples[samples.size / 2].coerceIn(0f, 1f)
+        if (index == 0 && target != null) return calculatePivot(w, h, disparityValues, faces)
+        if (index == 0) return if (face != null) calculatePivot(w, h, disparityValues, emptyList()) else config.pivotDisparity
+        samples.sort(0, index)
+        return samples[index / 2]
     }
 
     /**
@@ -402,7 +461,7 @@ class ThreeDDepthEngine(
     /**
      * Fallback perspective gradient prior when depth estimation is unavailable.
      */
-    private fun createPerspectiveFallback(w: Int, h: Int): DisparityMap {
+    private fun createPerspectiveFallback(w: Int, h: Int, faces: List<FaceRegion>, focus: ConvergencePoint?): DisparityMap {
         val total = w * h
         val values = FloatArray(total)
         for (y in 0 until h) {
@@ -416,7 +475,7 @@ class ThreeDDepthEngine(
                 values[row + x] = (base + centerBonus).coerceIn(0f, 1f)
             }
         }
-        val pivot = calculatePivot(w, h, values, emptyList())
+        val pivot = calculatePivot(w, h, values, faces, focus)
         return DisparityMap(w, h, values, pivot, backendUsed = DepthBackend.CURRENT)
     }
 }
