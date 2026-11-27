@@ -6,6 +6,19 @@ import org.junit.Test
 
 class ThreeDModeTest {
     @Test
+    fun distantLayersGainMotionWhileFacialReliefAndFallbackStayStable() {
+        val map = DisparityMap(1,1,floatArrayOf(.8f),pivot=.8f,backgroundDisparity=.1f)
+        val gain = ParallaxWarpEngine.backgroundGain(map)
+        fun shift(d: Float, g: Float) = ParallaxWarpEngine.projectedOffset(d,.8f,10f,g)
+        assertEquals(0f, shift(.8f,gain), 0f)
+        assertEquals(shift(.7f,0f), shift(.7f,gain), 0f)
+        assertTrue(shift(.7f,gain) < 0f && shift(.9f,gain) > 0f)
+        assertEquals(1.75f, shift(.1f,gain)/shift(.1f,0f), .0001f)
+        assertEquals(0f, ParallaxWarpEngine.backgroundGain(map.copy(backendUsed=DepthBackend.CURRENT)), 0f)
+        assertEquals(0f, ParallaxWarpEngine.backgroundGain(map.copy(backgroundDisparity=.75f)), 0f)
+    }
+
+    @Test
     fun lockedFocusOverridesCenterAndRejectsInvalidDepth() {
         val engine = ThreeDDepthEngine()
         val values = FloatArray(10000) { if (it % 100 < 30) 0.85f else 0.2f }

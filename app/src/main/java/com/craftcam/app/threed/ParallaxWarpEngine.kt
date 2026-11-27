@@ -19,6 +19,20 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
     companion object {
         // Quad-lens normalized horizontal baseline positions
         private val LENS_OFFSETS = floatArrayOf(-1.0f, -0.333f, 0.333f, 1.0f)
+        internal fun projectedOffset(depth: Float, pivot: Float, baseline: Float, backgroundGain: Float): Float {
+            // Relative inverse depth. Keep the local slope through the subject and recover
+            // separation progressively beyond it, without creating a discontinuity at the face.
+            val separation = pivot - depth
+            val t = ((separation - 0.18f) / 0.40f).coerceIn(0f, 1f)
+            val gain = 1f + backgroundGain * t * t * (3f - 2f * t)
+            return baseline * (depth - pivot) * gain / (1f + 0.35f * (1f - depth))
+        }
+
+        internal fun backgroundGain(map: DisparityMap): Float {
+            if (map.backendUsed != DepthBackend.DEPTH_ANYTHING_V2) return 0f
+            return ((map.pivot - map.backgroundDisparity - 0.20f) / 0.40f).coerceIn(0f, 1f) * 0.75f
+        }
+
         // Authentic 6-frame bounce sequence: Lens 1 -> 2 -> 3 -> 4 -> 3 -> 2
         internal fun <T> bounce(viewpoints: List<T>): List<T> {
             require(viewpoints.size == LENS_OFFSETS.size)
@@ -52,7 +66,7 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
         val views = ArrayList<Bitmap>(LENS_OFFSETS.size)
         try {
             for (offset in LENS_OFFSETS) {
-                views.add(warpViewpoint(srcPixels, dispGrid, width, height, maxDisplacementPx * offset, pivot))
+                views.add(warpViewpoint(srcPixels, dispGrid, width, height, maxDisplacementPx * offset, pivot, backgroundGain(disparityMap)))
             }
             return views
         } catch (failure: Throwable) {
@@ -150,15 +164,16 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
         width: Int,
         height: Int,
         deltaX: Float,
-        pivot: Float
+        pivot: Float,
+        backgroundGain: Float
     ): Bitmap {
-        val pixels = warpPixels(srcPixels, dispGrid, width, height, deltaX, pivot)
+        val pixels = warpPixels(srcPixels, dispGrid, width, height, deltaX, pivot, backgroundGain)
         return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     internal fun warpPixels(
         srcPixels: IntArray, dispGrid: FloatArray, width: Int, height: Int,
-        deltaX: Float, pivot: Float
+        deltaX: Float, pivot: Float, backgroundGain: Float = 0f
     ): IntArray {
         val outPixels = IntArray(width * height)
         val tgtDisparity = FloatArray(width)
@@ -173,9 +188,7 @@ class ParallaxWarpEngine(private val config: ThreeDConfig = ThreeDConfig()) {
 
             for (x in 0 until width) {
                 val d = dispGrid[rowOffset + x]
-                // Perspective-projective disparity: d(Z) = deltaX * (d - pivot) / (1 + 0.35 * (1 - d))
-                // Accelerates foreground pop while smoothly dampening background shifts
-                val dx = deltaX * (d - pivot) / (1.0f + 0.35f * (1.0f - d))
+                val dx = projectedOffset(d, pivot, deltaX, backgroundGain)
                 shiftByColumn[x] = dx
                 val xt = x + dx
                 val xt0 = floor(xt).toInt()

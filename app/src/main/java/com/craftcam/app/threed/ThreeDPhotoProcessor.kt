@@ -279,8 +279,9 @@ class ThreeDPhotoProcessor(
                 diffBmp.recycle()
 
                 val maxPx = warpEngine.baselinePixels(fw, disparityMap, face)
-                val fgStep = (disparityMap.foregroundDisparity - disparityMap.pivot) * (maxPx * 0.667f) / (1f + .35f * (1f - disparityMap.foregroundDisparity))
-                val bgStep = (disparityMap.backgroundDisparity - disparityMap.pivot) * (maxPx * 0.667f) / (1f + .35f * (1f - disparityMap.backgroundDisparity))
+                val gain = ParallaxWarpEngine.backgroundGain(disparityMap)
+                val fgStep = ParallaxWarpEngine.projectedOffset(disparityMap.foregroundDisparity, disparityMap.pivot, maxPx * 0.667f, gain)
+                val bgStep = ParallaxWarpEngine.projectedOffset(disparityMap.backgroundDisparity, disparityMap.pivot, maxPx * 0.667f, gain)
                 Log.i(TAG, "=== D3D Depth-Region Motion Audit ===")
                 Log.i(TAG, "Foreground Step (L1->L2): +${fgStep}px, Background Step: ${bgStep}px, Subject Step: ~0.0px")
                 Log.i(TAG, "Net relative foreground <-> background separation per frame step: ${fgStep - bgStep}px")

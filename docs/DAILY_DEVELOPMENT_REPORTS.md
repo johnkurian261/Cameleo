@@ -562,3 +562,7 @@ This document tracks daily engineering milestones, architectural audits, test su
   - Confirmed `assets/lut_dazzclassic.png` is packaged inside the APK.
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty / adb not found; physical hardware capture execution on Samsung Galaxy S21 5G remains **NOT VERIFIED**.
 - **Comprehensive Calibration Report**: [DAZZCLASSIC_MONOCHROME_PHOTOBOOTH_CALIBRATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DAZZCLASSIC_MONOCHROME_PHOTOBOOTH_CALIBRATION_REPORT.md).
+
+## 2026-11-28 — D3D hybrid motion
+
+The four-scene replay measured 69–93% more bridge-to-background motion with the hybrid projection. Peak interior fill increased from 0.089% to 0.268%. The chosen 100 ms cadence matches both reference generations. All 220 debug and 220 release tests passed. The APK built. Physical S21 capture remains unverified. [Measurements and comparison videos](D3D_HYBRID_MOTION_RESTORATION_REPORT.md)
