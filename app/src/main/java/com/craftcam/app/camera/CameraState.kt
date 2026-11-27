@@ -127,7 +127,8 @@ data class CameraUIState(
     val isZebraWarningEnabled: Boolean = false,
     val deviceSensorProfile: com.craftcam.app.color.DeviceSensorProfile? = null,
     val focusTelemetry: com.craftcam.app.camera.focus.FocusTelemetry = com.craftcam.app.camera.focus.FocusTelemetry(),
-    val showFocusInspector: Boolean = false
+    val showFocusInspector: Boolean = false,
+    val golfMotion: com.craftcam.app.motion.GolfMotionUiState = com.craftcam.app.motion.GolfMotionUiState()
 ) {
     val availableLenses: List<CameraLens>
         get() = if (lensFacing == CameraSelector.LENS_FACING_FRONT) frontLenses else rearLenses

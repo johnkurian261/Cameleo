@@ -66,6 +66,7 @@ import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
 import com.craftcam.app.captureframe.CaptureFrameOverlay
 import com.craftcam.app.gl.GLViewfinderRenderer
 import com.craftcam.app.model.*
+import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.ui.components.*
 import com.craftcam.app.ui.theme.*
 import com.craftcam.app.util.SoundManager
@@ -120,9 +121,16 @@ fun ViewfinderScreen(
     var showTuningSheet by remember { mutableStateOf(false) }
     var showNaturalTuningSheet by remember { mutableStateOf(false) }
     var showLensSheet by remember { mutableStateOf(false) }
+    var showGolfMotionDrawer by remember { mutableStateOf(false) }
+    var showGolfWheel by remember { mutableStateOf(true) }
     var activeQuickControlMode by remember { mutableStateOf(QuickControlMode.COMPACT) }
     var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
+
+    val isGolfPreset = selectedPreset.id == "disp_classic"
+    val wheelPresets = remember {
+        PresetCatalog.allPresets.filter { !IS_VIDEO_FEATURE_PAUSED || it.category != CameraCategory.CAMCORDER }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -174,60 +182,76 @@ fun ViewfinderScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            // ── 1. Minimal Top Bar: Camera Switch (Left) & Menu Button (Right) ─────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Top-left: Camera Switch Button (Rear / Front) - Pure floating icon, no bubble
-                Box(
+            // ── 1. Top Toolbar (Dedicated Golf Bar when disp_classic active) ──────────
+            if (isGolfPreset) {
+                GolfTopToolbar(
+                    golfState = uiState.golfMotion,
+                    flashMode = uiState.flashMode,
+                    onToggleMotion = {
+                        cameraManager.setGolfMotionEnabled(!uiState.golfMotion.enabled)
+                    },
+                    onCycleFlash = {
+                        val nextMode = com.craftcam.app.camera.nextFlashMode(uiState.flashMode)
+                        cameraManager.setFlashMode(nextMode)
+                    },
+                    onOpenSettingsMenu = { showControlMenu = !showControlMenu },
+                    onOpenDrawer = { showGolfMotionDrawer = true }
+                )
+            } else {
+                Row(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            if (!uiState.isRecording) {
-                                switchRotation += 180f
-                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                cameraManager.switchCamera()
-                            }
-                        },
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_dazz_switchcamera),
-                        contentDescription = "Switch Camera",
+                    // Top-left: Camera Switch Button (Rear / Front) - Pure floating icon, no bubble
+                    Box(
                         modifier = Modifier
-                            .size(32.dp)
-                            .rotate(animatedRotation),
-                        contentScale = ContentScale.Fit
-                    )
-                }
+                            .size(48.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                if (!uiState.isRecording) {
+                                    switchRotation += 180f
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    cameraManager.switchCamera()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_dazz_switchcamera),
+                            contentDescription = "Switch Camera",
+                            modifier = Modifier
+                                .size(32.dp)
+                                .rotate(animatedRotation),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
 
-                // Top-right: Subtle settings/more menu button - Pure floating icon, no bubble
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            showControlMenu = !showControlMenu
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_dazz_more),
-                        contentDescription = "Menu",
-                        modifier = Modifier.size(28.dp),
-                        contentScale = ContentScale.Fit
-                    )
+                    // Top-right: Subtle settings/more menu button - Pure floating icon, no bubble
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                showControlMenu = !showControlMenu
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_dazz_more),
+                            contentDescription = "Menu",
+                            modifier = Modifier.size(28.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 }
             }
 
@@ -364,6 +388,14 @@ fun ViewfinderScreen(
                         )
                     }
 
+                    // Golf Motion unobtrusive status & hairline progress overlay
+                    if (isGolfPreset) {
+                        GolfViewfinderOverlay(
+                            golfState = uiState.golfMotion,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
                     // Focus Inspector Diagnostic Overlay
                     if (uiState.showFocusInspector) {
                         com.craftcam.app.ui.components.FocusInspectorOverlay(
@@ -497,8 +529,102 @@ fun ViewfinderScreen(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(if (isGolfPreset) 6.dp else 14.dp))
 
+                if (isGolfPreset) {
+                    GolfModeAndSettingsStrip(
+                        golfState = uiState.golfMotion,
+                        isWheelExpanded = showGolfWheel,
+                        onSelectStill = { cameraManager.setGolfMotionEnabled(false) },
+                        onSelectMotion = { cameraManager.setGolfMotionEnabled(true) },
+                        onOpenMotionDrawer = { showGolfMotionDrawer = true },
+                        onToggleWheel = { showGolfWheel = !showGolfWheel }
+                    )
+
+                    AnimatedVisibility(visible = showGolfWheel) {
+                        CameraWheelSelector(
+                            presets = wheelPresets,
+                            selectedPreset = selectedPreset,
+                            onPresetSelected = onPresetChange,
+                            onOpenCollection = onNavigateToCollection
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    GolfBottomControlRow(
+                        selectedPreset = selectedPreset,
+                        latestThumbnail = latestThumbnail,
+                        isCapturing = uiState.isCapturing || countdown != null,
+                        switchRotationDeg = animatedRotation,
+                        onGalleryClick = onNavigateToGallery,
+                        onSwitchCamera = {
+                            if (!uiState.isRecording) {
+                                switchRotation += 180f
+                                cameraManager.switchCamera()
+                            }
+                        },
+                        onOpenCollection = onNavigateToCollection,
+                        onShutterClick = {
+                            scope.launch {
+                                if (uiState.timerSeconds > 0) {
+                                    for (i in uiState.timerSeconds downTo 1) {
+                                        countdown = i
+                                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                        delay(1000)
+                                    }
+                                    countdown = null
+                                }
+                                val mirrorFront = (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) &&
+                                    AppSettingsStore.get(context).current.mirrorFrontCamera
+                                if (uiState.golfMotion.enabled) {
+                                    cameraManager.captureGolfMotionPhoto(
+                                        preset = selectedPreset,
+                                        aspectRatio = uiState.aspectRatio,
+                                        mirrorFrontCamera = mirrorFront,
+                                        onMotionSaved = { uri, meta ->
+                                            val label = if (meta != null) "Saved Golf Motion (${meta.durationMs / 1000}s)" else "Saved to dazzz album"
+                                            Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+                                            val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+                                            val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
+                                            if (prewarmed != null) {
+                                                latestThumbnail = prewarmed
+                                            } else {
+                                                scope.launch {
+                                                    latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                }
+                                            }
+                                        },
+                                        onError = { exc ->
+                                            Toast.makeText(context, "Golf capture failed: $exc", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                } else {
+                                    cameraManager.captureAndProcessPhoto(
+                                        preset = selectedPreset,
+                                        aspectRatio = uiState.aspectRatio,
+                                        mirrorFrontCamera = mirrorFront,
+                                        onPhotoSaved = { uri ->
+                                            Toast.makeText(context, "Saved to dazzz album", Toast.LENGTH_SHORT).show()
+                                            val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+                                            val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
+                                            if (prewarmed != null) {
+                                                latestThumbnail = prewarmed
+                                            } else {
+                                                scope.launch {
+                                                    latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                }
+                                            }
+                                        },
+                                        onError = { exc ->
+                                            Toast.makeText(context, "Capture failed: $exc", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    )
+                } else {
                 // Primary Bottom Actions Bar (Gallery Thumbnail, White Shutter Button, Current Camera Icon)
                 Row(
                     modifier = Modifier
@@ -648,6 +774,7 @@ fun ViewfinderScreen(
                         }
                     }
                 }
+                }
             }
         }
 
@@ -777,6 +904,20 @@ fun ViewfinderScreen(
                     )
                 }
             }
+        }
+
+        // ── 13. Golf Motion Settings Drawer (when disp_classic is active) ─────────
+        if (isGolfPreset) {
+            GolfMotionSettingsDrawer(
+                visible = showGolfMotionDrawer,
+                golfState = uiState.golfMotion,
+                onDurationChange = { cameraManager.setGolfMotionDuration(it) },
+                onPlaybackChange = { cameraManager.setGolfMotionPlayback(it) },
+                onFlashEffectChange = { cameraManager.setGolfMotionFlashEffect(it) },
+                onLoopChange = { cameraManager.setGolfMotionLoop(it) },
+                onAudioChange = { cameraManager.setGolfMotionAudio(it) },
+                onDismiss = { showGolfMotionDrawer = false }
+            )
         }
     }
 }

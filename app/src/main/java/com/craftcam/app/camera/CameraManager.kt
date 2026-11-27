@@ -90,28 +90,50 @@ class CameraManager(private val context: Context) {
     private var previewSurface: Surface? = null
 
     private val isCapturingInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val captureGeneration = java.util.concurrent.atomic.AtomicLong(0L)
     private var captureWatchdogJob: Job? = null
     private var pendingRebindAfterCapture = false
+    private val rollingMotionRingBuffer = com.craftcam.app.motion.RollingMotionRingBuffer()
+    private val rollingAudioRingBuffer = com.craftcam.app.motion.RollingAudioRingBuffer()
+    private var motionCaptureJob: Job? = null
     private val naturalExposureController = com.craftcam.app.camera.exposure.NaturalExposureController()
     val autofocusController = com.craftcam.app.camera.focus.AutofocusController(context, processingScope)
 
-    private fun startCaptureWatchdog(timeoutMs: Long = 5000L) {
+    private fun startCaptureWatchdog(timeoutMs: Long = 5000L): Long {
+        val generation = captureGeneration.incrementAndGet()
         captureWatchdogJob?.cancel()
         captureWatchdogJob = processingScope.launch {
             delay(timeoutMs)
-            if (isCapturingInProgress.get() || _uiState.value.isCapturing || _uiState.value.isComputationalProcessing) {
-                Log.w(TAG, "Capture watchdog triggered: capture operation timed out after ${timeoutMs}ms, unlocking capture state")
+            if (captureGeneration.get() == generation &&
+                (isCapturingInProgress.get() || _uiState.value.isCapturing || _uiState.value.isComputationalProcessing)
+            ) {
+                Log.w(TAG, "Capture watchdog triggered (gen=$generation): capture timed out after ${timeoutMs}ms, unlocking capture state")
                 lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                 isCapturingInProgress.set(false)
-                _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false, threeDProgressMessage = null) }
+                _uiState.update { state ->
+                    state.copy(
+                        isCapturing = false,
+                        isComputationalProcessing = false,
+                        threeDProgressMessage = null,
+                        golfMotion = state.golfMotion.copy(
+                            phase = if (isGolfMotionArmedNow()) com.craftcam.app.motion.GolfMotionCapturePhase.ARMED else com.craftcam.app.motion.GolfMotionCapturePhase.IDLE,
+                            progressFraction = 0f,
+                            remainingMs = 0L
+                        )
+                    )
+                }
                 checkPendingRebind()
             }
         }
+        return generation
     }
 
-    private fun cancelCaptureWatchdog() {
-        captureWatchdogJob?.cancel()
-        captureWatchdogJob = null
+    private fun cancelCaptureWatchdog(generation: Long? = null) {
+        if (generation == null || captureGeneration.get() == generation) {
+            captureGeneration.incrementAndGet()
+            captureWatchdogJob?.cancel()
+            captureWatchdogJob = null
+        }
     }
 
     private var lastTelemetryUpdateTime = 0L
@@ -212,6 +234,7 @@ class CameraManager(private val context: Context) {
                 isDebugVisible = false
             )
 
+            val savedMotion = AppSettingsStore.get(context).current.golfMotion
             _uiState.update {
                 it.copy(
                     rearLenses = discovered.rearLenses,
@@ -223,7 +246,15 @@ class CameraManager(private val context: Context) {
                     zoomState = initialZoomState,
                     captureFrameState = it.captureFrameState.copy(baseFocalLengthMm = baseEq),
                     sensorTelemetry = telemetry,
-                    showGrid = AppSettingsStore.get(context).current.assistiveGrid
+                    showGrid = AppSettingsStore.get(context).current.assistiveGrid,
+                    golfMotion = com.craftcam.app.motion.GolfMotionUiState(
+                        enabled = savedMotion.enabled,
+                        duration = savedMotion.duration,
+                        playback = savedMotion.playback,
+                        flashEffectEnabled = savedMotion.flashEffectEnabled,
+                        loopPlayback = savedMotion.loopPlayback,
+                        audioEnabled = savedMotion.audioEnabled
+                    )
                 )
             }
             lastSelectedRearLens = defaultRear
@@ -254,8 +285,11 @@ class CameraManager(private val context: Context) {
         if (active) {
             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
             startPreviewWatchdog()
+            syncGolfMotionArming()
         } else {
             stopPreviewWatchdog()
+            cancelGolfMotionCapture()
+            syncGolfMotionArming()
         }
     }
 
@@ -278,6 +312,7 @@ class CameraManager(private val context: Context) {
 
     fun clearGLRenderer(renderer: GLViewfinderRenderer) {
         if (glRenderer === renderer) {
+            renderer.setMotionFrameSink(false, null)
             glRenderer?.onHistogramUpdated = null
             glRenderer?.onFrameAvailableListener = null
             glRenderer = null
@@ -289,15 +324,6 @@ class CameraManager(private val context: Context) {
         glRenderer?.onFrameAvailableListener = {
             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
         }
-
-    fun setPreviewDiagnosticMode(mode: Int) {
-        glRenderer?.diagnosticMode = mode.coerceIn(0, 6)
-        glRenderer?.requestRenderSafe()
-    }
-
-    fun getPreviewDiagnosticMode(): Int {
-        return glRenderer?.diagnosticMode ?: 0
-    }
         glRenderer?.setMirrorFrontPreview(AppSettingsStore.get(context).current.mirrorFrontCamera)
         glRenderer?.updatePreset(currentPreset)
         glRenderer?.updateTuning(_uiState.value.tuning)
@@ -317,6 +343,16 @@ class CameraManager(private val context: Context) {
         glRenderer?.onHistogramUpdated = { bins ->
             _uiState.update { it.copy(histogramBins = bins) }
         }
+        syncGolfMotionArming()
+    }
+
+    fun setPreviewDiagnosticMode(mode: Int) {
+        glRenderer?.diagnosticMode = mode.coerceIn(0, 6)
+        glRenderer?.requestRenderSafe()
+    }
+
+    fun getPreviewDiagnosticMode(): Int {
+        return glRenderer?.diagnosticMode ?: 0
     }
 
     fun setEngineMode(mode: CameraEngineMode) {
@@ -343,6 +379,8 @@ class CameraManager(private val context: Context) {
                 }
                 camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
             }
+            cancelGolfMotionCapture()
+            syncGolfMotionArming()
         }
     }
 
@@ -473,12 +511,29 @@ class CameraManager(private val context: Context) {
 
             // 3. White Balance
             if (config.wbMode == WhiteBalanceMode.MANUAL && (caps?.supportsManualWb == true)) {
+                val activeId = resolveActiveCameraId()
+                val chars = getCameraCharacteristicsSafe(activeId)
+                val brand = com.craftcam.app.color.DeviceCalibrationManager.detectDeviceBrand()
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
                 builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
-                val gains = kelvinToRggbGains(config.kelvin, config.tint)
+                val gains = com.craftcam.app.color.HardwareWhiteBalanceCalibrator.computeRggbGains(
+                    kelvin = config.kelvin,
+                    tintOffset = config.tint,
+                    brand = brand,
+                    cameraId = activeId,
+                    characteristics = chars
+                )
+                val ccm = com.craftcam.app.color.HardwareWhiteBalanceCalibrator.computeColorSpaceTransform(
+                    kelvin = config.kelvin,
+                    brand = brand,
+                    cameraId = activeId,
+                    characteristics = chars
+                )
                 builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_GAINS, gains)
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_TRANSFORM, ccm)
             } else {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                builder.setCaptureRequestOption(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_FAST)
             }
 
             camera2Control.setCaptureRequestOptions(builder.build())
@@ -680,6 +735,10 @@ class CameraManager(private val context: Context) {
             if (_uiState.value.captureMode == CaptureMode.VIDEO || changedDFuns) {
                 bindCameraUseCases()
             }
+            if (preset.id != "disp_classic") {
+                cancelGolfMotionCapture()
+            }
+            syncGolfMotionArming()
         }
     }
 
@@ -820,6 +879,8 @@ class CameraManager(private val context: Context) {
         if (_uiState.value.captureMode != mode) {
             _uiState.update { it.copy(captureMode = mode) }
             bindCameraUseCases()
+            cancelGolfMotionCapture()
+            syncGolfMotionArming()
         }
     }
 
@@ -1252,7 +1313,7 @@ class CameraManager(private val context: Context) {
             }
 
             // Query dynamic hardware capabilities for active camera and apply active mode controls
-            val activeCamId = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
+            val activeCamId = resolveActiveCameraId()
             val caps = queryHardwareCapabilities(activeCamId)
             _uiState.update { it.copy(hardwareCapabilities = caps) }
             if (_uiState.value.engineMode == CameraEngineMode.PRO) {
@@ -1357,6 +1418,8 @@ class CameraManager(private val context: Context) {
             }
         }
         bindCameraUseCases()
+        cancelGolfMotionCapture()
+        syncGolfMotionArming()
     }
 
     fun selectLens(lens: CameraLens) {
@@ -1459,6 +1522,26 @@ class CameraManager(private val context: Context) {
         resetKelvin()
     }
 
+    private fun resolveActiveCameraId(): String {
+        val state = _uiState.value
+        val boundId = try {
+            camera?.cameraInfo?.let { androidx.camera.camera2.interop.Camera2CameraInfo.from(it).cameraId }
+        } catch (_: Throwable) {
+            null
+        }
+        val selectedLensId = state.selectedLens?.takeIf { it.facing == state.lensFacing }?.cameraId
+        return selectedLensId ?: boundId ?: if (state.lensFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
+    }
+
+    private fun getCameraCharacteristicsSafe(cameraId: String): android.hardware.camera2.CameraCharacteristics? {
+        return try {
+            val service = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+            service?.getCameraCharacteristics(cameraId)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun applyCamera2Wb(
         policy: com.craftcam.app.model.WhiteBalancePolicy,
         kelvin: Int,
@@ -1471,7 +1554,8 @@ class CameraManager(private val context: Context) {
             val caps = _uiState.value.hardwareCapabilities
             val supportsManual = caps?.supportsManualWb == true
             val brand = com.craftcam.app.color.DeviceCalibrationManager.detectDeviceBrand()
-            val activeCameraId = if (_uiState.value.lensFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
+            val activeCameraId = resolveActiveCameraId()
+            val characteristics = getCameraCharacteristicsSafe(activeCameraId)
 
             val execution = com.craftcam.app.color.HardwareWhiteBalanceCalibrator.resolveExecution(
                 policy = policy,
@@ -1479,7 +1563,8 @@ class CameraManager(private val context: Context) {
                 tintOffset = tint,
                 supportsManualWb = supportsManual,
                 brand = brand,
-                cameraId = activeCameraId
+                cameraId = activeCameraId,
+                characteristics = characteristics
             )
 
             builder.setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, execution.captureRequestAwbMode)
@@ -1520,6 +1605,7 @@ class CameraManager(private val context: Context) {
             ?: _uiState.value.zoomState.baseFocalLength35mm
         val displayMm = zoomModel.calculateDisplayFocalLengthMm(baseEq, clamped)
 
+        val previousCameraId = _uiState.value.selectedLens?.cameraId
         _uiState.update { state ->
             state.copy(
                 zoomRatio = clamped,
@@ -1528,7 +1614,8 @@ class CameraManager(private val context: Context) {
                     zoomRatio = clamped,
                     displayFocalLengthMm = displayMm,
                     minZoomRatio = minZ,
-                    maxZoomRatio = maxZ
+                    maxZoomRatio = maxZ,
+                    activeCameraId = closest?.cameraId ?: state.zoomState.activeCameraId
                 )
             )
         }
@@ -1536,6 +1623,19 @@ class CameraManager(private val context: Context) {
             lastSelectedRearLens = closest
         }
         camera?.cameraControl?.setZoomRatio(clamped)
+        if (closest?.cameraId != null && closest.cameraId != previousCameraId) {
+            val updatedCaps = queryHardwareCapabilities(closest.cameraId)
+            _uiState.update { it.copy(hardwareCapabilities = updatedCaps) }
+            if (_uiState.value.engineMode == CameraEngineMode.PRO) {
+                applyProCameraControls()
+            } else {
+                applyCamera2Wb(
+                    policy = _uiState.value.whiteBalancePolicy,
+                    kelvin = _uiState.value.kelvin,
+                    tint = _uiState.value.tuning.tintOffset
+                )
+            }
+        }
 
         if (triggerOverlay) {
             triggerZoomOverlay()
@@ -1686,7 +1786,14 @@ class CameraManager(private val context: Context) {
     }
 
     fun resetTuning() {
-        val defaultTuning = UserTuningConfig()
+        val state = _uiState.value
+        val defaultProfile = com.craftcam.app.color.profile.CameraProfileCompatibility.getDefaultProfile(currentPreset.id)
+        val preservedTempOffset = state.tuning.temperatureOffset
+        val defaultTuning = UserTuningConfig(
+            temperatureOffset = if (state.isHardwareWbActive) preservedTempOffset else 0.0f,
+            filmColorProfileIndex = defaultProfile.index,
+            isHardwareWbActive = state.isHardwareWbActive
+        )
         glRenderer?.updateTuning(defaultTuning)
         camera?.cameraControl?.setExposureCompensationIndex(0)
         _uiState.update { it.copy(tuning = defaultTuning, exposureIndex = 0) }
@@ -1763,8 +1870,8 @@ class CameraManager(private val context: Context) {
             }
         }
 
+        val captureGen = startCaptureWatchdog()
         _uiState.update { it.copy(isCapturing = true) }
-        startCaptureWatchdog()
 
         processingScope.launch {
             try {
@@ -1776,7 +1883,7 @@ class CameraManager(private val context: Context) {
                         cameraExecutor,
                         object : ImageCapture.OnImageCapturedCallback() {
                         override fun onCaptureSuccess(image: ImageProxy) {
-                            cancelCaptureWatchdog()
+                            cancelCaptureWatchdog(captureGen)
                             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                             isCapturingInProgress.set(false)
                             _uiState.update { it.copy(isCapturing = false) }
@@ -1841,7 +1948,7 @@ class CameraManager(private val context: Context) {
                                 executeCapture(attempt + 1)
                                 return
                             }
-                            cancelCaptureWatchdog()
+                            cancelCaptureWatchdog(captureGen)
                             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                             isCapturingInProgress.set(false)
                             _uiState.update { it.copy(isCapturing = false) }
@@ -1865,7 +1972,7 @@ class CameraManager(private val context: Context) {
                 executeCapture(0)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to initiate photo capture", t)
-                cancelCaptureWatchdog()
+                cancelCaptureWatchdog(captureGen)
                 lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                 isCapturingInProgress.set(false)
                 _uiState.update { it.copy(isCapturing = false) }
@@ -1899,8 +2006,8 @@ class CameraManager(private val context: Context) {
         val isFrameZoom = com.craftcam.app.config.AppSettingsStore.get(context).current.zoomMode == "Frame"
         val frameSnapshot = if (isFrameZoom) createCaptureFrameSnapshot(aspectRatio) else null
 
+        val captureGen = startCaptureWatchdog(timeoutMs = 15000L)
         _uiState.update { it.copy(isCapturing = true, threeDProgressMessage = "Capturing 3D...") }
-        startCaptureWatchdog(timeoutMs = 15000L)
 
         processingScope.launch {
             try {
@@ -1912,7 +2019,7 @@ class CameraManager(private val context: Context) {
                         cameraExecutor,
                         object : ImageCapture.OnImageCapturedCallback() {
                         override fun onCaptureSuccess(image: ImageProxy) {
-                            cancelCaptureWatchdog()
+                            cancelCaptureWatchdog(captureGen)
                             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                             isCapturingInProgress.set(false)
                             _uiState.update { it.copy(threeDProgressMessage = "Developing 3D Wigglegram...") }
@@ -1966,7 +2073,7 @@ class CameraManager(private val context: Context) {
                                 execute3DCapture(attempt + 1)
                                 return
                             }
-                            cancelCaptureWatchdog()
+                            cancelCaptureWatchdog(captureGen)
                             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                             isCapturingInProgress.set(false)
                             _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
@@ -1981,7 +2088,7 @@ class CameraManager(private val context: Context) {
                 execute3DCapture(0)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to initiate 3D photo capture", t)
-                cancelCaptureWatchdog()
+                cancelCaptureWatchdog(captureGen)
                 lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
                 isCapturingInProgress.set(false)
                 _uiState.update { it.copy(isCapturing = false, threeDProgressMessage = null) }
@@ -2014,15 +2121,15 @@ class CameraManager(private val context: Context) {
         val evOffsets = compConfig.evOffsets
         val tapTime = SystemClock.elapsedRealtime()
 
+        val captureGen = startCaptureWatchdog(timeoutMs = 12000L)
         _uiState.update { it.copy(isCapturing = true, isComputationalProcessing = true) }
-        startCaptureWatchdog(timeoutMs = 12000L)
 
         val capturedFrames = ArrayList<CapturedFrame>()
         val cam = camera
         val previousExposureIndex = captureState.exposureIndex
 
         fun processCapturedSequence() {
-            cancelCaptureWatchdog()
+            cancelCaptureWatchdog(captureGen)
             isCapturingInProgress.set(false)
             _uiState.update { it.copy(isCapturing = false) }
             checkPendingRebind()
@@ -2136,7 +2243,7 @@ class CameraManager(private val context: Context) {
                             cam?.cameraControl?.setExposureCompensationIndex(previousExposureIndex)
                             processCapturedSequence()
                         } else {
-                            cancelCaptureWatchdog()
+                            cancelCaptureWatchdog(captureGen)
                             isCapturingInProgress.set(false)
                             cam?.cameraControl?.setExposureCompensationIndex(previousExposureIndex)
                             _uiState.update { it.copy(isCapturing = false, isComputationalProcessing = false) }
@@ -2289,11 +2396,337 @@ class CameraManager(private val context: Context) {
     fun shutdown() {
         stopPreviewWatchdog()
         cancelCaptureWatchdog()
+        cancelGolfMotionCapture()
+        glRenderer?.setMotionFrameSink(false, null)
+        rollingMotionRingBuffer.clear()
+        rollingAudioRingBuffer.stopAndClear()
         isCapturingInProgress.set(false)
         previewSurface?.release()
         previewSurface = null
         stopRecording()
         cameraExecutor.shutdown()
         processingScope.cancel()
+    }
+
+    // ─── Golf Camera Motion Photo Capture & Lifecycle ───────────────────────
+
+    private fun isGolfMotionArmedNow(): Boolean =
+        currentPreset.id == "disp_classic" &&
+            _uiState.value.engineMode == CameraEngineMode.FILM &&
+            _uiState.value.captureMode == CaptureMode.PHOTO &&
+            _uiState.value.golfMotion.enabled &&
+            isCameraActive
+
+    fun syncGolfMotionArming() {
+        val shouldArm = isGolfMotionArmedNow()
+        val motionCfg = _uiState.value.golfMotion
+        if (shouldArm) {
+            glRenderer?.setMotionFrameSink(true, rollingMotionRingBuffer)
+            if (motionCfg.audioEnabled) {
+                rollingAudioRingBuffer.startIfPermitted(context)
+            } else {
+                rollingAudioRingBuffer.stopAndClear()
+            }
+            _uiState.update { state ->
+                if (state.golfMotion.phase == com.craftcam.app.motion.GolfMotionCapturePhase.IDLE) {
+                    state.copy(golfMotion = state.golfMotion.copy(phase = com.craftcam.app.motion.GolfMotionCapturePhase.ARMED))
+                } else state
+            }
+        } else {
+            glRenderer?.setMotionFrameSink(false, null)
+            rollingMotionRingBuffer.clear()
+            rollingAudioRingBuffer.stopAndClear()
+            _uiState.update { state ->
+                if (!state.golfMotion.isRecordingMotion) {
+                    state.copy(
+                        golfMotion = state.golfMotion.copy(
+                            phase = com.craftcam.app.motion.GolfMotionCapturePhase.IDLE,
+                            progressFraction = 0f,
+                            remainingMs = 0L
+                        )
+                    )
+                } else state
+            }
+        }
+    }
+
+    fun setGolfMotionEnabled(enabled: Boolean) {
+        AppSettingsStore.get(context).setGolfMotionEnabled(enabled)
+        _uiState.update { state ->
+            state.copy(golfMotion = state.golfMotion.copy(enabled = enabled))
+        }
+        if (!enabled) cancelGolfMotionCapture()
+        syncGolfMotionArming()
+    }
+
+    fun setGolfMotionDuration(duration: com.craftcam.app.motion.GolfMotionDuration) {
+        AppSettingsStore.get(context).setGolfMotionDuration(duration)
+        _uiState.update { state ->
+            state.copy(golfMotion = state.golfMotion.copy(duration = duration))
+        }
+    }
+
+    fun setGolfMotionPlayback(playback: com.craftcam.app.motion.GolfPlaybackCadence) {
+        AppSettingsStore.get(context).setGolfMotionPlayback(playback)
+        _uiState.update { state ->
+            state.copy(golfMotion = state.golfMotion.copy(playback = playback))
+        }
+    }
+
+    fun setGolfMotionFlashEffect(enabled: Boolean) {
+        AppSettingsStore.get(context).setGolfMotionFlashEffect(enabled)
+        _uiState.update { state ->
+            state.copy(golfMotion = state.golfMotion.copy(flashEffectEnabled = enabled))
+        }
+    }
+
+    fun setGolfMotionLoop(enabled: Boolean) {
+        AppSettingsStore.get(context).setGolfMotionLoop(enabled)
+        _uiState.update { state ->
+            state.copy(golfMotion = state.golfMotion.copy(loopPlayback = enabled))
+        }
+    }
+
+    fun setGolfMotionAudio(enabled: Boolean) {
+        AppSettingsStore.get(context).setGolfMotionAudio(enabled)
+        _uiState.update { state ->
+            state.copy(golfMotion = state.golfMotion.copy(audioEnabled = enabled))
+        }
+        syncGolfMotionArming()
+    }
+
+    fun cancelGolfMotionCapture() {
+        val activeJob = motionCaptureJob
+        if (activeJob != null && activeJob.isActive) {
+            activeJob.cancel()
+            motionCaptureJob = null
+            cancelCaptureWatchdog()
+            isCapturingInProgress.set(false)
+            _uiState.update { state ->
+                state.copy(
+                    isCapturing = false,
+                    golfMotion = state.golfMotion.copy(
+                        phase = if (isGolfMotionArmedNow()) {
+                            com.craftcam.app.motion.GolfMotionCapturePhase.ARMED
+                        } else com.craftcam.app.motion.GolfMotionCapturePhase.IDLE,
+                        progressFraction = 0f,
+                        remainingMs = 0L
+                    )
+                )
+            }
+            checkPendingRebind()
+        }
+    }
+
+    fun captureGolfMotionPhoto(
+        preset: CameraPreset,
+        aspectRatio: AspectRatioMode,
+        mirrorFrontCamera: Boolean,
+        onMotionSaved: (Uri, com.craftcam.app.motion.GolfMotionMetadata?) -> Unit = { _, _ -> },
+        onError: (String) -> Unit = {}
+    ) {
+        val capture = imageCapture ?: run {
+            onError("Camera capture not ready")
+            return
+        }
+        if (preset.id != "disp_classic" || !_uiState.value.golfMotion.enabled) {
+            captureAndProcessPhoto(
+                preset = preset,
+                aspectRatio = aspectRatio,
+                mirrorFrontCamera = mirrorFrontCamera,
+                onPhotoSaved = { uri -> onMotionSaved(uri, null) },
+                onError = onError
+            )
+            return
+        }
+
+        if (!isCapturingInProgress.compareAndSet(false, true)) {
+            Log.d(TAG, "Capture already in progress, ignoring duplicate tap")
+            return
+        }
+
+        val captureState = _uiState.value
+        val motionState = captureState.golfMotion
+        val motionCfg = com.craftcam.app.motion.GolfMotionConfig(
+            enabled = true,
+            duration = motionState.duration,
+            playback = motionState.playback,
+            flashEffectEnabled = motionState.flashEffectEnabled,
+            loopPlayback = motionState.loopPlayback,
+            audioEnabled = motionState.audioEnabled
+        )
+        val cameraId = resolveActiveCameraId()
+        val isFrameZoom = AppSettingsStore.get(context).current.zoomMode == "Frame"
+        val frameSnapshot = if (isFrameZoom) createCaptureFrameSnapshot(aspectRatio) else null
+        val captureGen = startCaptureWatchdog(timeoutMs = 15_000L)
+        val shutterTimeNs = SystemClock.elapsedRealtimeNanos()
+        val preWindowStartNs = shutterTimeNs - motionCfg.duration.preShutterMs * 1_000_000L
+        val postDurationMs = motionCfg.duration.postShutterMs
+
+        _uiState.update { state ->
+            state.copy(
+                isCapturing = true,
+                golfMotion = state.golfMotion.copy(
+                    phase = com.craftcam.app.motion.GolfMotionCapturePhase.CAPTURING_POST_SHUTTER,
+                    progressFraction = 0f,
+                    remainingMs = postDurationMs
+                )
+            )
+        }
+
+        motionCaptureJob?.cancel()
+        motionCaptureJob = processingScope.launch {
+            val stillUriDeferred = CompletableDeferred<Uri?>()
+            try {
+                // 1. Trigger untouched Golf still capture in parallel
+                capture.takePicture(
+                    cameraExecutor,
+                    object : ImageCapture.OnImageCapturedCallback() {
+                        override fun onCaptureSuccess(image: ImageProxy) {
+                            lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
+                            processingScope.launch {
+                                val savedUri = try {
+                                    ImageProcessor.processAndSaveImage(
+                                        context = context,
+                                        imageProxy = image,
+                                        preset = preset,
+                                        tuning = captureState.tuning,
+                                        aspectRatio = aspectRatio,
+                                        mirrorFrontCamera = mirrorFrontCamera,
+                                        engineMode = captureState.engineMode,
+                                        naturalProfile = captureState.naturalProfile,
+                                        naturalColorProfile = captureState.naturalColorProfile,
+                                        compareWithOriginal = captureState.debugCompareOriginal,
+                                        captureFrameSnapshot = frameSnapshot,
+                                        lensProfile = captureState.shootingState.selectedLens,
+                                        isFlashActive = captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                        sensorIso = captureState.liveIso,
+                                        exposureTimeNs = captureState.liveExposureNs,
+                                        cameraId = cameraId,
+                                        faces = captureState.detectedFaces
+                                    )
+                                } catch (t: Throwable) {
+                                    Log.e(TAG, "Golf still capture inside motion shot failed", t)
+                                    null
+                                }
+                                stillUriDeferred.complete(savedUri)
+                            }
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            Log.e(TAG, "Hardware still capture failed during Golf motion: ${exception.message}", exception)
+                            stillUriDeferred.complete(null)
+                        }
+                    }
+                )
+
+                // 2. Gather bounded post-shutter rolling frames without sleeping past cancellation
+                val postStartMs = SystemClock.elapsedRealtime()
+                while (isActive) {
+                    val elapsed = SystemClock.elapsedRealtime() - postStartMs
+                    val rem = (postDurationMs - elapsed).coerceAtLeast(0L)
+                    val frac = (elapsed.toFloat() / maxOf(1L, postDurationMs)).coerceIn(0f, 1f)
+                    _uiState.update { state ->
+                        state.copy(
+                            golfMotion = state.golfMotion.copy(
+                                phase = com.craftcam.app.motion.GolfMotionCapturePhase.CAPTURING_POST_SHUTTER,
+                                progressFraction = frac * 0.55f,
+                                remainingMs = rem
+                            )
+                        )
+                    }
+                    if (elapsed >= postDurationMs) break
+                    delay(45L)
+                }
+
+                val postEndNs = SystemClock.elapsedRealtimeNanos()
+                val rawFrames = rollingMotionRingBuffer.snapshotWindow(preWindowStartNs, postEndNs)
+                    .ifEmpty { rollingMotionRingBuffer.snapshotAll() }
+                val rawAudio = if (motionCfg.audioEnabled) {
+                    rollingAudioRingBuffer.snapshotPcmWindow(preWindowStartNs, postEndNs)
+                } else ShortArray(0)
+
+                val stillUri = stillUriDeferred.await()
+                cancelCaptureWatchdog(captureGen)
+                isCapturingInProgress.set(false)
+                checkPendingRebind()
+
+                if (stillUri == null) {
+                    _uiState.update { state ->
+                        state.copy(
+                            isCapturing = false,
+                            golfMotion = state.golfMotion.copy(
+                                phase = if (isGolfMotionArmedNow()) com.craftcam.app.motion.GolfMotionCapturePhase.ARMED else com.craftcam.app.motion.GolfMotionCapturePhase.IDLE,
+                                progressFraction = 0f,
+                                remainingMs = 0L
+                            )
+                        )
+                    }
+                    withContext(Dispatchers.Main) { onError("Failed to capture Golf still photograph") }
+                    return@launch
+                }
+
+                // Clear capturing flag once shutter & window finish so preview unlocks quickly
+                _uiState.update { state ->
+                    state.copy(
+                        isCapturing = false,
+                        golfMotion = state.golfMotion.copy(
+                            phase = com.craftcam.app.motion.GolfMotionCapturePhase.DEVELOPING_MOTION,
+                            progressFraction = 0.6f,
+                            remainingMs = 0L
+                        )
+                    )
+                }
+
+                val mediaId = try { android.content.ContentUris.parseId(stillUri) } catch (_: Exception) { 0L }
+                val metadata = if (mediaId > 0L && rawFrames.size >= 2) {
+                    com.craftcam.app.motion.GolfMotionProcessor.developCapturedMotionClip(
+                        context = context,
+                        mediaId = mediaId,
+                        imageUri = stillUri,
+                        frames = rawFrames,
+                        audioPcm = rawAudio,
+                        shutterTimestampNs = shutterTimeNs,
+                        config = motionCfg,
+                        preset = preset,
+                        tuning = captureState.tuning,
+                        aspectRatio = aspectRatio,
+                        lensProfile = captureState.shootingState.selectedLens,
+                        onProgress = { encProg ->
+                            _uiState.update { state ->
+                                state.copy(
+                                    golfMotion = state.golfMotion.copy(
+                                        progressFraction = 0.6f + encProg * 0.4f
+                                    )
+                                )
+                            }
+                        }
+                    )
+                } else null
+
+                withContext(Dispatchers.Main) {
+                    onMotionSaved(stillUri, metadata)
+                }
+            } catch (_: CancellationException) {
+                Log.d(TAG, "Golf motion capture cancelled cleanly")
+            } catch (t: Throwable) {
+                Log.e(TAG, "Golf motion capture failed", t)
+                withContext(Dispatchers.Main) { onError(t.message ?: "Golf motion capture failed") }
+            } finally {
+                cancelCaptureWatchdog(captureGen)
+                isCapturingInProgress.set(false)
+                _uiState.update { state ->
+                    state.copy(
+                        isCapturing = false,
+                        golfMotion = state.golfMotion.copy(
+                            phase = if (isGolfMotionArmedNow()) com.craftcam.app.motion.GolfMotionCapturePhase.ARMED else com.craftcam.app.motion.GolfMotionCapturePhase.IDLE,
+                            progressFraction = 0f,
+                            remainingMs = 0L
+                        )
+                    )
+                }
+                checkPendingRebind()
+            }
+        }
     }
 }

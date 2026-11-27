@@ -27,7 +27,8 @@ data class AppSettingsState(
     val saveFilmNegatives: Boolean = true,
     val highResolutionExport: Boolean = true,
     val tactileHaptics: Boolean = true,
-    val preserveExif: Boolean = true
+    val preserveExif: Boolean = true,
+    val golfMotion: com.craftcam.app.motion.GolfMotionConfig = com.craftcam.app.motion.GolfMotionConfig()
 )
 
 class AppSettingsStore private constructor(context: Context) {
@@ -49,7 +50,19 @@ class AppSettingsStore private constructor(context: Context) {
             saveFilmNegatives = prefs.getBoolean(KEY_SAVE_FILM_NEGATIVES, true),
             highResolutionExport = prefs.getBoolean(KEY_HIGH_RESOLUTION_EXPORT, true),
             tactileHaptics = prefs.getBoolean(KEY_TACTILE_HAPTICS, true),
-            preserveExif = prefs.getBoolean(KEY_PRESERVE_EXIF, true)
+            preserveExif = prefs.getBoolean(KEY_PRESERVE_EXIF, true),
+            golfMotion = com.craftcam.app.motion.GolfMotionConfig(
+                enabled = prefs.getBoolean(KEY_GOLF_MOTION_ENABLED, false),
+                duration = com.craftcam.app.motion.GolfMotionDuration.fromSeconds(
+                    prefs.getInt(KEY_GOLF_MOTION_DURATION_SEC, 2)
+                ),
+                playback = com.craftcam.app.motion.GolfPlaybackCadence.fromName(
+                    prefs.getString(KEY_GOLF_MOTION_PLAYBACK, com.craftcam.app.motion.GolfPlaybackCadence.VINTAGE.name)
+                ),
+                flashEffectEnabled = prefs.getBoolean(KEY_GOLF_MOTION_FLASH, true),
+                loopPlayback = prefs.getBoolean(KEY_GOLF_MOTION_LOOP, true),
+                audioEnabled = prefs.getBoolean(KEY_GOLF_MOTION_AUDIO, true)
+            )
         )
     )
 
@@ -134,6 +147,36 @@ class AppSettingsStore private constructor(context: Context) {
         prefs.edit().putString("color_profile_$presetId", profileId).apply()
     }
 
+    fun setGolfMotionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GOLF_MOTION_ENABLED, enabled).apply()
+        _state.update { it.copy(golfMotion = it.golfMotion.copy(enabled = enabled)) }
+    }
+
+    fun setGolfMotionDuration(duration: com.craftcam.app.motion.GolfMotionDuration) {
+        prefs.edit().putInt(KEY_GOLF_MOTION_DURATION_SEC, duration.seconds).apply()
+        _state.update { it.copy(golfMotion = it.golfMotion.copy(duration = duration)) }
+    }
+
+    fun setGolfMotionPlayback(playback: com.craftcam.app.motion.GolfPlaybackCadence) {
+        prefs.edit().putString(KEY_GOLF_MOTION_PLAYBACK, playback.name).apply()
+        _state.update { it.copy(golfMotion = it.golfMotion.copy(playback = playback)) }
+    }
+
+    fun setGolfMotionFlashEffect(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GOLF_MOTION_FLASH, enabled).apply()
+        _state.update { it.copy(golfMotion = it.golfMotion.copy(flashEffectEnabled = enabled)) }
+    }
+
+    fun setGolfMotionLoop(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GOLF_MOTION_LOOP, enabled).apply()
+        _state.update { it.copy(golfMotion = it.golfMotion.copy(loopPlayback = enabled)) }
+    }
+
+    fun setGolfMotionAudio(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GOLF_MOTION_AUDIO, enabled).apply()
+        _state.update { it.copy(golfMotion = it.golfMotion.copy(audioEnabled = enabled)) }
+    }
+
     companion object {
         private const val PREFS_NAME = "cameleo_settings"
         private const val KEY_EXPORT_TO_ALBUM = "export_to_album"
@@ -149,6 +192,12 @@ class AppSettingsStore private constructor(context: Context) {
         private const val KEY_HIGH_RESOLUTION_EXPORT = "high_resolution_export"
         private const val KEY_TACTILE_HAPTICS = "tactile_haptics"
         private const val KEY_PRESERVE_EXIF = "preserve_exif"
+        private const val KEY_GOLF_MOTION_ENABLED = "golf_motion_enabled"
+        private const val KEY_GOLF_MOTION_DURATION_SEC = "golf_motion_duration_sec"
+        private const val KEY_GOLF_MOTION_PLAYBACK = "golf_motion_playback"
+        private const val KEY_GOLF_MOTION_FLASH = "golf_motion_flash"
+        private const val KEY_GOLF_MOTION_LOOP = "golf_motion_loop"
+        private const val KEY_GOLF_MOTION_AUDIO = "golf_motion_audio"
 
         @Volatile
         private var instance: AppSettingsStore? = null

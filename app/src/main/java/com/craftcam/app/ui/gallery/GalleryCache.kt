@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import androidx.collection.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.craftcam.app.motion.GolfMotionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -87,6 +88,7 @@ object GalleryCache {
      */
     internal fun queryCameleoMedia(context: Context): List<GalleryItem> {
         val items = mutableListOf<GalleryItem>()
+        val motionIds = GolfMotionStore.listMotionMediaIds(context)
         val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
         val selectionArgs = arrayOf("CAMELEO_%", "CRAFTCAM_%")
         val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
@@ -122,7 +124,8 @@ object GalleryCache {
                             name = name,
                             dateAdded = date,
                             cameraModel = null,
-                            isVideo = false
+                            isVideo = false,
+                            hasMotionClip = id in motionIds
                         )
                     )
                 }

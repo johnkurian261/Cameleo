@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.MotionPhotosOn
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,8 +63,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.exifinterface.media.ExifInterface
 import com.craftcam.app.R
+import com.craftcam.app.camera.AspectRatioMode
+import com.craftcam.app.camera.profile.LensProfile
+import com.craftcam.app.config.AppSettingsStore
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.motion.GolfMotionProcessor
+import com.craftcam.app.motion.GolfMotionStore
+import com.craftcam.app.motion.MotionPhotoImporter
 import com.craftcam.app.presets.PresetCatalog
 import com.craftcam.app.processor.ImageProcessor
 import com.craftcam.app.ui.theme.*
@@ -77,7 +84,8 @@ data class GalleryItem(
     val name: String,
     val dateAdded: Long,
     val cameraModel: String? = null,
-    val isVideo: Boolean = false
+    val isVideo: Boolean = false,
+    val hasMotionClip: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +112,9 @@ fun GalleryScreen(
 
     // Import Photo state
     var isImporting by remember { mutableStateOf(false) }
+    var pendingMotionImport by remember { mutableStateOf<MotionPhotoImporter.ImportProbeResult.MotionAvailable?>(null) }
+    var exportMotionDialogItem by remember { mutableStateOf<Pair<GalleryItem, Long>?>(null) }
+    var coverRevision by remember { mutableIntStateOf(0) }
 
     // Refresh photos non-blocking in background
     LaunchedEffect(Unit) {
@@ -112,25 +123,42 @@ fun GalleryScreen(
         isLoading = false
     }
 
-    // Photo picker launcher for importing photos
+    // Multi-format picker launcher (JPEG, Samsung/Google Motion Photos, Apple Live Photo pairs, MP4/MOV clips)
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
+        contract = ActivityResultContracts.PickMultipleVisualMedia(2)
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
             coroutineScope.launch {
                 isImporting = true
                 try {
-                    val defaultPreset = PresetCatalog.allPresets.find { it.id == "analog_fxn_r" }
-                        ?: PresetCatalog.allPresets.first()
-                    val newUri = importAndDevelopPhoto(context, uri, defaultPreset)
-                    if (newUri != null) {
-                        GalleryCache.invalidate()
-                        allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
-                        Toast.makeText(context, "Developed with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
+                    val probe = withContext(Dispatchers.IO) {
+                        MotionPhotoImporter.probeAndExtract(context, uris)
+                    }
+                    when (probe) {
+                        is MotionPhotoImporter.ImportProbeResult.MotionAvailable -> {
+                            isImporting = false
+                            pendingMotionImport = probe
+                        }
+                        is MotionPhotoImporter.ImportProbeResult.StillOnly -> {
+                            val defaultPreset = PresetCatalog.allPresets.find { it.id == "analog_fxn_r" }
+                                ?: PresetCatalog.allPresets.first()
+                            val newUri = importAndDevelopPhoto(context, probe.imageUri, defaultPreset)
+                            if (newUri != null) {
+                                GalleryCache.invalidate()
+                                allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
+                                Toast.makeText(context, "Developed still with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to import photo", Toast.LENGTH_SHORT).show()
+                            }
+                            isImporting = false
+                        }
+                        is MotionPhotoImporter.ImportProbeResult.Unsupported -> {
+                            Toast.makeText(context, probe.reason, Toast.LENGTH_SHORT).show()
+                            isImporting = false
+                        }
                     }
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Failed to import photo", Toast.LENGTH_SHORT).show()
-                } finally {
+                    Toast.makeText(context, "Failed to import media", Toast.LENGTH_SHORT).show()
                     isImporting = false
                 }
             }
@@ -161,6 +189,7 @@ fun GalleryScreen(
     // Delete single photo
     val onDeletePhoto: (GalleryItem) -> Unit = { item ->
         deletePhoto(context, item.uri)
+        GolfMotionStore.deleteMotionAssets(context, item.id)
         GalleryCache.remove(item.id)
         val updated = allPhotos.filter { it.id != item.id }
         allPhotos = updated
@@ -240,6 +269,7 @@ fun GalleryScreen(
                                 item = item,
                                 isSelectionMode = isSelectionMode,
                                 isSelected = isSelected,
+                                coverRevision = coverRevision,
                                 onClick = {
                                     if (isSelectionMode) {
                                         selectedIds = if (isSelected) {
@@ -346,10 +376,11 @@ fun GalleryScreen(
                     }
                     TextButton(onClick = {
                         expanded = false
-                        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Icon(painterResource(R.drawable.ic_dazz_importphoto), null, Modifier.size(24.dp), tint = Color.White)
-                        Text("Import photo", color = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Import photo / Motion", color = Color.White)
                     }
                 }
             }
@@ -381,7 +412,10 @@ fun GalleryScreen(
                             showBatchDeleteConfirm = false
                             val toDelete = allPhotos.filter { selectedIds.contains(it.uri) }
                             deletePhotos(context, toDelete.map { it.uri })
-                            toDelete.forEach { GalleryCache.remove(it.id) }
+                            toDelete.forEach {
+                                GolfMotionStore.deleteMotionAssets(context, it.id)
+                                GalleryCache.remove(it.id)
+                            }
                             val updated = allPhotos.filter { !selectedIds.contains(it.uri) }
                             allPhotos = updated
                             GalleryCache.cachedItems = updated
@@ -409,11 +443,94 @@ fun GalleryScreen(
                 onDelete = { photoToDelete ->
                     onDeletePhoto(photoToDelete)
                 },
-                onShare = { photoToShare ->
-                    sharePhoto(context, photoToShare)
+                onShare = { photoToShare, extractMs ->
+                    if (photoToShare.hasMotionClip) {
+                        exportMotionDialogItem = photoToShare to extractMs
+                    } else {
+                        sharePhoto(context, photoToShare)
+                    }
                 },
                 onRedevelop = { photoToRedevelop ->
                     redevelopingItem = photoToRedevelop
+                },
+                onCoverChanged = { coverRevision++ }
+            )
+        }
+
+        // ─── GOLF MOTION EXPORT / SHARE DIALOG ────────────────────────────────────
+        exportMotionDialogItem?.let { (motionItem, extractMs) ->
+            GolfMotionExportDialog(
+                item = motionItem,
+                extractTimeMs = extractMs,
+                onDismiss = { exportMotionDialogItem = null },
+                onGalleryRefreshNeeded = {
+                    coroutineScope.launch {
+                        GalleryCache.invalidate()
+                        allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
+                    }
+                }
+            )
+        }
+
+        // ─── GOLF MOTION IMPORT OPTIONS DIALOG ────────────────────────────────────
+        pendingMotionImport?.let { probe ->
+            val currentMotionConfig = AppSettingsStore.get(context).state.value.golfMotion
+            GolfMotionImportDialog(
+                probe = probe,
+                initialConfig = currentMotionConfig,
+                onDismiss = {
+                    try { probe.extractedVideoFile.delete() } catch (_: Throwable) {}
+                    pendingMotionImport = null
+                },
+                onDevelopMotion = { chosenConfig ->
+                    pendingMotionImport = null
+                    coroutineScope.launch {
+                        isImporting = true
+                        try {
+                            val result = GolfMotionProcessor.importAndDevelopWithGolf(
+                                context = context,
+                                probe = probe,
+                                config = chosenConfig,
+                                aspectRatio = AspectRatioMode.RATIO_4_3,
+                                lensProfile = LensProfile.NORMAL
+                            )
+                            try { probe.extractedVideoFile.delete() } catch (_: Throwable) {}
+                            if (result != null) {
+                                GalleryCache.invalidate()
+                                allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
+                                Toast.makeText(context, "Developed Golf Motion Photo", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to develop Golf motion clip", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Golf motion import failed", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isImporting = false
+                        }
+                    }
+                },
+                onDevelopStillOnly = probe.primaryImageUri?.let { imgUri ->
+                    {
+                        pendingMotionImport = null
+                        try { probe.extractedVideoFile.delete() } catch (_: Throwable) {}
+                        coroutineScope.launch {
+                            isImporting = true
+                            try {
+                                val defaultPreset = PresetCatalog.allPresets.find { it.id == "disp_classic" }
+                                    ?: PresetCatalog.allPresets.first()
+                                val newUri = importAndDevelopPhoto(context, imgUri, defaultPreset)
+                                if (newUri != null) {
+                                    GalleryCache.invalidate()
+                                    allPhotos = withContext(Dispatchers.IO) { GalleryCache.queryCameleoMedia(context) }
+                                    Toast.makeText(context, "Developed still with ${defaultPreset.name}", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Failed to develop still photograph", Toast.LENGTH_SHORT).show()
+                                }
+                            } finally {
+                                isImporting = false
+                            }
+                        }
+                    }
                 }
             )
         }
@@ -477,19 +594,23 @@ private fun DazzGalleryThumbnail(
     item: GalleryItem,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    coverRevision: Int = 0,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
-    var bitmap by remember(item.id) {
+    var bitmap by remember(item.id, coverRevision) {
         mutableStateOf(GalleryCache.getThumbnail(item.id))
     }
 
-    LaunchedEffect(item.id, item.uri) {
+    LaunchedEffect(item.id, item.uri, coverRevision) {
         if (bitmap != null) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             try {
-                val bmp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val overrideBmp = if (item.hasMotionClip) {
+                    GolfMotionStore.loadCoverOverride(context, item.id)
+                } else null
+                val bmp = overrideBmp ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     context.contentResolver.loadThumbnail(item.uri, android.util.Size(256, 256), null)
                 } else {
                     context.contentResolver.openInputStream(item.uri)?.use { stream ->
@@ -499,7 +620,10 @@ private fun DazzGalleryThumbnail(
                         BitmapFactory.decodeStream(stream, null, options)
                     }
                 }
-                bmp?.asImageBitmap()?.also { ib ->
+                bmp?.let { raw ->
+                    val ib = if (overrideBmp != null) {
+                        GalleryCache.createThumbnail(raw, 256)
+                    } else raw.asImageBitmap()
                     GalleryCache.putThumbnail(item.id, ib)
                     bitmap = ib
                 }
@@ -532,6 +656,38 @@ private fun DazzGalleryThumbnail(
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = TextMuted)
+        }
+
+        // Motion Photo Badge
+        if (item.hasMotionClip) {
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xC814151A),
+                border = BorderStroke(0.5.dp, VintageAmber.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(5.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MotionPhotosOn,
+                        contentDescription = "Motion photo",
+                        tint = VintageAmber,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Text(
+                        text = "MOTION",
+                        color = TextPrimary,
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
         // Selection Checkmark Overlay
@@ -568,8 +724,9 @@ private fun DazzFullScreenViewer(
     initialIndex: Int,
     onDismiss: () -> Unit,
     onDelete: (GalleryItem) -> Unit,
-    onShare: (GalleryItem) -> Unit,
-    onRedevelop: (GalleryItem) -> Unit
+    onShare: (GalleryItem, Long) -> Unit,
+    onRedevelop: (GalleryItem) -> Unit,
+    onCoverChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val safeInitial = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
@@ -580,6 +737,7 @@ private fun DazzFullScreenViewer(
 
     val currentPage = pagerState.currentPage.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
     val currentItem = photos.getOrNull(currentPage)
+    var activeExtractTimeMs by remember(currentItem?.id) { mutableLongStateOf(0L) }
 
     val filmTag = remember(currentItem?.name, currentItem?.cameraModel) {
         resolveFilterName(currentItem?.name, currentItem?.cameraModel)
@@ -600,10 +758,23 @@ private fun DazzFullScreenViewer(
         ) { page ->
             val item = photos.getOrNull(page)
             if (item != null) {
-                if (item.isVideo) {
-                    if (page == currentPage) key(item.uri) { GalleryVideoPage(item) }
-                } else {
-                    DazzFullScreenPhotoPage(item = item, active = page == currentPage)
+                when {
+                    item.isVideo -> {
+                        if (page == currentPage) key(item.uri) { GalleryVideoPage(item) }
+                    }
+                    item.hasMotionClip -> {
+                        GolfMotionGalleryPage(
+                            item = item,
+                            active = page == currentPage,
+                            onActiveExtractTimeChanged = { timeMs ->
+                                if (page == currentPage) activeExtractTimeMs = timeMs
+                            },
+                            onCoverChanged = onCoverChanged
+                        )
+                    }
+                    else -> {
+                        DazzFullScreenPhotoPage(item = item, active = page == currentPage)
+                    }
                 }
             }
         }
@@ -646,7 +817,7 @@ private fun DazzFullScreenViewer(
             ) {
                 // 1. Share
                 IconButton(
-                    onClick = { currentItem?.let { onShare(it) } },
+                    onClick = { currentItem?.let { onShare(it, activeExtractTimeMs) } },
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
@@ -728,12 +899,27 @@ private fun DazzFullScreenViewer(
 
 // ─── FULL SCREEN PHOTO PAGE ─────────────────────────────────────────────────
 @Composable
-private fun DazzFullScreenPhotoPage(item: GalleryItem, active: Boolean) {
+internal fun DazzFullScreenPhotoPage(
+    item: GalleryItem,
+    active: Boolean,
+    overrideBitmap: Bitmap? = null,
+    onTapMedia: (() -> Unit)? = null,
+    onLongPressMedia: (() -> Unit)? = null
+) {
     val context = LocalContext.current
-    var fullBitmap by remember(item.uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
-    var isImageLoading by remember(item.uri) { mutableStateOf(true) }
+    var fullBitmap by remember(item.uri, overrideBitmap) {
+        mutableStateOf(overrideBitmap?.asImageBitmap())
+    }
+    var isImageLoading by remember(item.uri, overrideBitmap) {
+        mutableStateOf(overrideBitmap == null)
+    }
 
-    LaunchedEffect(item.uri) {
+    LaunchedEffect(item.uri, overrideBitmap) {
+        if (overrideBitmap != null) {
+            fullBitmap = overrideBitmap.asImageBitmap()
+            isImageLoading = false
+            return@LaunchedEffect
+        }
         withContext(Dispatchers.IO) {
             try {
                 context.contentResolver.openInputStream(item.uri)?.use { boundsStream ->
@@ -788,10 +974,14 @@ private fun DazzFullScreenPhotoPage(item: GalleryItem, active: Boolean) {
             }
 
             Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged { viewport = it }
-                .pointerInput(item.uri, active, viewport) {
-                    detectTapGestures(onDoubleTap = { focus ->
-                        transform(if (zoom > 1f) 1f else 2f, focus, Offset.Zero)
-                    })
+                .pointerInput(item.uri, active, viewport, onTapMedia, onLongPressMedia) {
+                    detectTapGestures(
+                        onTap = if (onTapMedia != null) { { onTapMedia() } } else null,
+                        onLongPress = if (onLongPressMedia != null) { { onLongPressMedia() } } else null,
+                        onDoubleTap = { focus ->
+                            transform(if (zoom > 1f) 1f else 2f, focus, Offset.Zero)
+                        }
+                    )
                 }
                 .pointerInput(item.uri, active, viewport) {
                     awaitEachGesture {
@@ -1049,28 +1239,97 @@ private fun sharePhotos(context: Context, items: List<GalleryItem>) {
     context.startActivity(Intent.createChooser(shareIntent, "Share ${items.size} Photographs"))
 }
 
+private suspend fun decodeOrientedMutableBitmap(
+    context: Context,
+    openStream: () -> java.io.InputStream?
+): Bitmap? {
+    val orientation = try {
+        openStream()?.use { s ->
+            ExifInterface(s).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    } catch (_: Exception) {
+        ExifInterface.ORIENTATION_NORMAL
+    }
+
+    val decoded = openStream()?.use { stream ->
+        val options = BitmapFactory.Options().apply {
+            inMutable = true
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        BitmapFactory.decodeStream(stream, null, options)
+    } ?: return null
+
+    val ensureMutableArgb: Bitmap = if (decoded.config == Bitmap.Config.ARGB_8888 && decoded.isMutable) {
+        decoded
+    } else {
+        decoded.copy(Bitmap.Config.ARGB_8888, true).also {
+            if (it != decoded) try { decoded.recycle() } catch (_: Throwable) {}
+        }
+    }
+
+    val matrix = android.graphics.Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            matrix.postRotate(90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            matrix.postRotate(270f)
+            matrix.postScale(-1f, 1f)
+        }
+        else -> return ensureMutableArgb
+    }
+
+    val rotated = Bitmap.createBitmap(
+        ensureMutableArgb, 0, 0, ensureMutableArgb.width, ensureMutableArgb.height, matrix, true
+    )
+    if (rotated != ensureMutableArgb) {
+        try { ensureMutableArgb.recycle() } catch (_: Throwable) {}
+    }
+    return if (rotated.isMutable) rotated else rotated.copy(Bitmap.Config.ARGB_8888, true).also {
+        try { rotated.recycle() } catch (_: Throwable) {}
+    }
+}
+
+private fun buildGalleryTuningForPreset(context: Context, preset: CameraPreset): com.craftcam.app.camera.UserTuningConfig {
+    val savedProfileId = com.craftcam.app.config.AppSettingsStore.get(context).getColorProfileForCamera(preset.id)
+    val profile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedProfileId)
+    return com.craftcam.app.camera.UserTuningConfig(
+        filmColorProfileIndex = profile.index,
+        isHardwareWbActive = false
+    )
+}
+
 private suspend fun redevelopPhoto(
     context: Context,
     item: GalleryItem,
     preset: CameraPreset
 ): Uri? = withContext(Dispatchers.IO) {
     try {
-        val bitmap = context.contentResolver.openInputStream(item.uri)?.use { stream ->
-            val options = BitmapFactory.Options().apply {
-                inMutable = true
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            BitmapFactory.decodeStream(stream, null, options)
+        val negativeFile = java.io.File(context.filesDir, "negatives/neg_${item.id}.jpg")
+        val hasNegative = item.id > 0L && negativeFile.exists() && negativeFile.length() > 0L
+        val bitmap = if (hasNegative) {
+            decodeOrientedMutableBitmap(context) { negativeFile.inputStream() }
+        } else {
+            decodeOrientedMutableBitmap(context) { context.contentResolver.openInputStream(item.uri) }
         } ?: return@withContext null
 
+        val tuning = buildGalleryTuningForPreset(context, preset)
         try {
             ImageProcessor.developBitmap(
                 context = context,
                 sourceBitmap = bitmap,
-                preset = preset
+                preset = preset,
+                tuning = tuning,
+                skipDecorationsIfBaked = !hasNegative
             )
         } finally {
-            try { bitmap.recycle() } catch (_: Throwable) {}
+            try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Throwable) {}
         }
     } catch (e: Exception) {
         android.util.Log.e("GalleryScreen", "Failed to redevelop photo", e)
@@ -1084,22 +1343,21 @@ private suspend fun importAndDevelopPhoto(
     preset: CameraPreset
 ): Uri? = withContext(Dispatchers.IO) {
     try {
-        val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
-            val options = BitmapFactory.Options().apply {
-                inMutable = true
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            BitmapFactory.decodeStream(stream, null, options)
+        val bitmap = decodeOrientedMutableBitmap(context) {
+            context.contentResolver.openInputStream(uri)
         } ?: return@withContext null
 
+        val tuning = buildGalleryTuningForPreset(context, preset)
         try {
             ImageProcessor.developBitmap(
                 context = context,
                 sourceBitmap = bitmap,
-                preset = preset
+                preset = preset,
+                tuning = tuning,
+                skipDecorationsIfBaked = false
             )
         } finally {
-            try { bitmap.recycle() } catch (_: Throwable) {}
+            try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Throwable) {}
         }
     } catch (e: Exception) {
         android.util.Log.e("GalleryScreen", "Failed to import photo", e)
