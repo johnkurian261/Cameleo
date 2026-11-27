@@ -6,7 +6,8 @@ enum class CameraCategory(val displayName: String, val description: String) {
     CCD_DIGITAL("CCD Digital", "Crisp 2000s sensor aesthetic with punchy primary colors and digital clarity"),
     DISPOSABLE("Disposable", "High contrast, plastic lens aberrations and vintage party flash falloff"),
     INSTANT("Instant", "Soft pastel tones, lifted black point and iconic white paper borders"),
-    CAMCORDER("Camcorder", "Magnetic tape scanlines, horizontal color bleeding and retro OSD stamps")
+    CAMCORDER("Camcorder", "Magnetic tape scanlines, horizontal color bleeding and retro OSD stamps"),
+    EXPERIMENTAL("Experimental", "Simulated infrared thermography and experimental optical imaging sensors")
 }
 
 data class ColorGradingConfig(

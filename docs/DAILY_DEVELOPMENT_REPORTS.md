@@ -283,3 +283,40 @@ This document tracks daily engineering milestones, architectural audits, test su
 - **Debug APK**: `app/build/outputs/apk/debug/app-debug.apk` (`172,224,532` bytes).
 - **Physical Hardware (Samsung Galaxy S21 5G)**: **NOT VERIFIED** (`adb devices -l` empty — live Camera2 `FLASH_STATE_FIRED`, AF/AE speed, GL viewfinder parity, and outdoor/portrait flash captures require physical hardware testing).
 - **Detailed Docs**: [OLYMPUS_MJU_II_CAMERA_IMPLEMENTATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/OLYMPUS_MJU_II_CAMERA_IMPLEMENTATION_REPORT.md) and [MJU_II_COLOR_AND_OPTICAL_SPEC.md](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/mju_ii/MJU_II_COLOR_AND_OPTICAL_SPEC.md).
+
+## November 27 — D FUNS original appearance and green-tint regression
+
+**MEASURED RESULT** — Measured four supplied sRGB photographs. The hand patch was RGB (171,100,69), and the notebook patch had Lab a* +2.80. Historical and working LUTs differ on identical inputs. No creative asset was edited during the audit.
+
+**OBSERVED FACT** — Fixed the missing per-device sensor calibration in manual WB, separated the film tint slider from hardware gains and corrected the diagnostic treatment of stored temperature offsets. Added a non-diagonal colour regression, LUT/grain integrity checks and an opt-in same-source render comparison.
+
+**NOT VERIFIED** — The S21 was absent from ADB. Current end-to-end appearance, flash and preview/export parity remain open. [Audit and evidence](DFUNS_ORIGINAL_APPEARANCE_AND_GREEN_TINT_REGRESSION_REPORT.md)
+
+**MEASURED RESULT** — All 195 unit tests passed in each build variant. All three host film-model tests passed.
+
+
+---
+
+## Entry 10 — Thermal Vision (`thermal_vision` / `THERMAL`) Experimental IR Camera
+
+**Date**: November 27, 2026  
+**Milestone**: Simulated Thermal Imaging Camera (`THERMAL`) across Live Preview, Photo Capture, Video Recording & Media Import
+
+### 1. Summary of Changes
+1. **Preset Identity, Artwork & Strict Preservation (`PresetCatalog.kt`, `CameraProfileCatalog.kt`, `CameraProfileCompatibility.kt`, `AppSettings.kt`)**:
+   - Added `CameraCategory.EXPERIMENTAL` ([`CameraPreset.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/model/CameraPreset.kt)) and registered `"thermal_vision"` (**"THERMAL"**, *"Simulated IR Vision"*, `cam_thermal`) as the 35th camera preset without modifying any existing preset, LUT, grain asset, or Golf / MJU II workflow.
+   - Mapped `thermal_vision` in [`CameraProfileCompatibility.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/color/profile/CameraProfileCompatibility.kt) with `isSupported = false`, `supportsVideo = true`, `supportsStill = true`, and empty LUT/grain asset paths in [`ShaderConstants.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/gl/shaders/ShaderConstants.kt).
+   - Generated pixel-art icon [`cam_thermal.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/res/drawable/cam_thermal.png) (`192×192`, `1,619` B), calibration metrics [`thermal_calibration_metrics.json`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/thermal/thermal_calibration_metrics.json), palette ramp, and 5 preview sample JPEGs (`sample_thermal_*.jpg`).
+2. **Smooth Palettes, GPU Shaders & Subject Guidance (`com.craftcam.app.thermal.*`, `GlThermalMaskExtractor.kt`, `ThermalGlHelper.kt`, `ShaderConstants.kt`)**:
+   - Implemented 5 smooth Catmull-Rom false-color palettes (`Rainbow Thermal`, `Ironbow`, `Red Hot`, `White Hot`, `Black Hot`) in [`ThermalPaletteEngine.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/thermal/ThermalPaletteEngine.kt) (`256×5` `GL_LINEAR` texture; measured max per-step delta `0.00483`–`0.02095`).
+   - Added bounded ~10 Hz `128×96` offscreen mask extraction (`GlThermalMaskExtractor.kt` with `AtomicBoolean` backpressure) feeding [`ThermalSubjectEstimator.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/thermal/ThermalSubjectEstimator.kt) (Camera2 face boxes + YCbCr skin/clothing concordance + P05–P96 adaptive bounds + EMA temporal smoothing) and clean GPU-only luminance/chroma fallback.
+   - Wired unified thermal shaders into live viewfinder ([`GLViewfinderRenderer.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/gl/GLViewfinderRenderer.kt)), live video recording ([`GPUVideoProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/gl/GPUVideoProcessor.kt), unlocking `CaptureMode.VIDEO` solely for `thermal_vision` in [`CameraManager.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/camera/CameraManager.kt)), still processing ([`ThermalVisionProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/thermal/ThermalVisionProcessor.kt) + [`ImageProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/processor/ImageProcessor.kt)), and imported MP4/MOV video transcoding ([`ThermalVideoTranscoder.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/thermal/ThermalVideoTranscoder.kt)).
+3. **Dedicated Thermal HUD & Darkroom Integration (`ThermalVisionUi.kt`, `ViewfinderScreen.kt`, `GalleryScreen.kt`, `CollectionScreen.kt`)**:
+   - Built [`ThermalVisionUi.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/ui/viewfinder/ThermalVisionUi.kt) and integrated it into [`ViewfinderScreen.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/ui/viewfinder/ViewfinderScreen.kt) with 5-palette switcher, `HOT/COLD` vertical gradient scale, `INVERT`, sensitivity & contrast sliders, `PHOTO | VIDEO` mode switcher, `IMPORT` picker (`ImageAndVideo`), Effects/HUD drawer (microbolometer softness, electronic noise, adaptive contrast, AI guidance, monochrome HUD, crosshair), and front/rear camera toggle. Always displays simulated status (`SIMULATED IR`); zero fabricated `°C`/`°F` values.
+   - Mapped `"THERMAL"` outputs in [`GalleryScreen.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/ui/gallery/GalleryScreen.kt) and registered all 5 samples in [`CollectionScreen.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/ui/collection/CollectionScreen.kt).
+
+### 2. Verification, Builds & Hardware Status
+- **MEASURED RESULT — Unit Tests**: Added [`ThermalVisionTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/thermal/ThermalVisionTest.kt) (5 tests) and updated preset counts (`34 -> 35`). `.\gradlew.bat :app:testDebugUnitTest assembleDebug --offline` -> **32 suites, 200 tests, 0 failures, 0 errors, 0 skipped** (`BUILD SUCCESSFUL`).
+- **MEASURED RESULT — Debug APK**: `app/build/outputs/apk/debug/app-debug.apk` (`172,225,031` bytes).
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` empty; on-device live OpenGL shader execution, `VideoCapture` / `ThermalVideoTranscoder` encoding, `ImageReader` mask frame rate, and physical portrait thermal behavior remain **NOT VERIFIED** pending connected hardware testing.
+- **Detailed Report**: [THERMAL_VISION_CAMERA_IMPLEMENTATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/THERMAL_VISION_CAMERA_IMPLEMENTATION_REPORT.md).

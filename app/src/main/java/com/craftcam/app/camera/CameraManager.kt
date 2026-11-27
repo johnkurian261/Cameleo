@@ -235,6 +235,7 @@ class CameraManager(private val context: Context) {
             )
 
             val savedMotion = AppSettingsStore.get(context).current.golfMotion
+            val savedThermal = AppSettingsStore.get(context).current.thermalVision
             _uiState.update {
                 it.copy(
                     rearLenses = discovered.rearLenses,
@@ -254,7 +255,8 @@ class CameraManager(private val context: Context) {
                         flashEffectEnabled = savedMotion.flashEffectEnabled,
                         loopPlayback = savedMotion.loopPlayback,
                         audioEnabled = savedMotion.audioEnabled
-                    )
+                    ),
+                    thermal = com.craftcam.app.thermal.ThermalUiState(config = savedThermal)
                 )
             }
             lastSelectedRearLens = defaultRear
@@ -325,6 +327,22 @@ class CameraManager(private val context: Context) {
             lastPreviewFrameTimestamp = SystemClock.elapsedRealtime()
         }
         glRenderer?.setMirrorFrontPreview(AppSettingsStore.get(context).current.mirrorFrontCamera)
+        glRenderer?.updateThermalConfig(_uiState.value.thermal.config)
+        glRenderer?.onThermalStateUpdated = { snap ->
+            if (currentPreset.id == "thermal_vision") {
+                _uiState.update { state ->
+                    state.copy(
+                        thermal = state.thermal.copy(
+                            isMaskActive = snap != null && state.thermal.config.segmentationEnabled,
+                            isHumanLockActive = (snap?.detectedSubjectCount ?: 0) > 0,
+                            detectedSubjectCount = snap?.detectedSubjectCount ?: 0,
+                            adaptiveMinLuma = snap?.adaptiveMinLuma ?: state.thermal.adaptiveMinLuma,
+                            adaptiveMaxLuma = snap?.adaptiveMaxLuma ?: state.thermal.adaptiveMaxLuma
+                        )
+                    )
+                }
+            }
+        }
         glRenderer?.updatePreset(currentPreset)
         glRenderer?.updateTuning(_uiState.value.tuning)
         glRenderer?.setNaturalMode(
@@ -643,11 +661,19 @@ class CameraManager(private val context: Context) {
 
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
+            if (activeRecording != null) stopRecording()
             val wasFisheye = isFisheyeActive()
             val wasMju2 = currentPreset.id == "analog_mju2"
             val isMju2 = preset.id == "analog_mju2"
+            val wasThermal = currentPreset.id == "thermal_vision"
+            val isThermal = preset.id == "thermal_vision"
             val changedDFuns = (currentPreset.id == "ccd_flash") != (preset.id == "ccd_flash")
+            if (isThermal != wasThermal) {
+                glRenderer?.resetThermalTemporalState()
+            }
             currentPreset = preset
+            val persistedThermal = com.craftcam.app.config.AppSettingsStore.get(context).current.thermalVision
+            glRenderer?.updateThermalConfig(persistedThermal)
             glRenderer?.updatePreset(preset)
 
             val isZero = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
@@ -661,12 +687,11 @@ class CameraManager(private val context: Context) {
             }
 
             val isD3D = preset.id == "analog_cinema_film" || preset.id == "d3d" || preset.name.equals("D3D", ignoreCase = true) || preset.name.equals("D 3D", ignoreCase = true)
-            val newCaptureMode = if (isD3D) {
-                CaptureMode.MODE_3D
-            } else if (_uiState.value.captureMode == CaptureMode.MODE_3D) {
-                CaptureMode.PHOTO
-            } else {
-                _uiState.value.captureMode
+            val newCaptureMode = when {
+                isD3D -> CaptureMode.MODE_3D
+                _uiState.value.captureMode == CaptureMode.MODE_3D -> CaptureMode.PHOTO
+                !isThermal && IS_VIDEO_FEATURE_PAUSED && _uiState.value.captureMode == CaptureMode.VIDEO -> CaptureMode.PHOTO
+                else -> _uiState.value.captureMode
             }
 
             val profile = CameraProfileCatalog.getProfileForPreset(preset)
@@ -692,6 +717,7 @@ class CameraManager(private val context: Context) {
             val savedProfileId = com.craftcam.app.config.AppSettingsStore.get(context).getColorProfileForCamera(preset.id)
             val initialColorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getById(savedProfileId)
 
+            val prevMode = _uiState.value.captureMode
             _uiState.update { state ->
                 state.copy(
                     engineMode = newEngineMode,
@@ -711,12 +737,12 @@ class CameraManager(private val context: Context) {
                         temperatureOffset = offset,
                         filmColorProfileIndex = initialColorProfile.index,
                         frameBorderEnabled = when {
-                            isMju2 -> false
+                            isMju2 || isThermal -> false
                             wasMju2 -> true
                             else -> state.tuning.frameBorderEnabled
                         },
                         dateStampEnabled = when {
-                            isMju2 -> false
+                            isMju2 || isThermal -> false
                             wasMju2 -> true
                             else -> state.tuning.dateStampEnabled
                         }
@@ -725,6 +751,12 @@ class CameraManager(private val context: Context) {
                         sizeFraction = defaultFraction,
                         normalizedCenterX = 0.5f,
                         normalizedCenterY = 0.5f
+                    ),
+                    thermal = state.thermal.copy(
+                        config = persistedThermal,
+                        isMaskActive = if (isThermal) state.thermal.isMaskActive else false,
+                        isHumanLockActive = if (isThermal) state.thermal.isHumanLockActive else false,
+                        detectedSubjectCount = if (isThermal) state.thermal.detectedSubjectCount else 0
                     )
                 )
             }
@@ -743,8 +775,8 @@ class CameraManager(private val context: Context) {
                 camera?.cameraControl?.setExposureCompensationIndex(targetIndex)
             }
 
-            // If in video mode, re-bind overlay effect for the active preset's video recording profile
-            if (_uiState.value.captureMode == CaptureMode.VIDEO || changedDFuns) {
+            // Re-bind when switching capture streams or toggling video modes
+            if (_uiState.value.captureMode == CaptureMode.VIDEO || prevMode != newCaptureMode || changedDFuns) {
                 bindCameraUseCases()
             }
             if (preset.id != "disp_classic") {
@@ -884,8 +916,8 @@ class CameraManager(private val context: Context) {
     }
 
     fun setCaptureMode(mode: CaptureMode) {
-        if (IS_VIDEO_FEATURE_PAUSED && mode == CaptureMode.VIDEO) {
-            Log.d(TAG, "Video mode is paused; keeping photo mode")
+        if (IS_VIDEO_FEATURE_PAUSED && mode == CaptureMode.VIDEO && currentPreset.id != "thermal_vision") {
+            Log.d(TAG, "Video mode is paused for non-thermal cameras; keeping photo mode")
             return
         }
         if (_uiState.value.captureMode != mode) {
@@ -894,6 +926,13 @@ class CameraManager(private val context: Context) {
             cancelGolfMotionCapture()
             syncGolfMotionArming()
         }
+    }
+
+    fun updateThermalConfig(transform: (com.craftcam.app.thermal.ThermalVisionConfig) -> com.craftcam.app.thermal.ThermalVisionConfig) {
+        val next = transform(_uiState.value.thermal.config)
+        com.craftcam.app.config.AppSettingsStore.get(context).setThermalVisionConfig(next)
+        _uiState.update { it.copy(thermal = it.thermal.copy(config = next)) }
+        glRenderer?.updateThermalConfig(next)
     }
 
     private fun bindCameraUseCases() {
@@ -1011,6 +1050,18 @@ class CameraManager(private val context: Context) {
                     val rot = if (isFront) 270 else 90
                     HardwareFaceDetector.updateFromCaptureResult(result, 4032, 3024, rot)
                     val liveFaces = HardwareFaceDetector.getDetectedFaces()
+                    if (currentPreset.id == "thermal_vision") {
+                        val mirrorThermal = isFront && AppSettingsStore.get(context).current.mirrorFrontCamera
+                        val thermalFaces = if (mirrorThermal && liveFaces.isNotEmpty()) {
+                            liveFaces.map { f ->
+                                val b = f.bounds
+                                f.copy(bounds = android.graphics.RectF(1f - b.right, b.top, 1f - b.left, b.bottom))
+                            }
+                        } else {
+                            liveFaces
+                        }
+                        glRenderer?.updateThermalFaces(thermalFaces)
+                    }
 
                     // Scene Intelligence Analysis at 5 Hz cadence
                     val now = SystemClock.elapsedRealtime()
@@ -1112,7 +1163,11 @@ class CameraManager(private val context: Context) {
                     }
                 }
 
-            val effectiveMode = if (IS_VIDEO_FEATURE_PAUSED && _uiState.value.captureMode == CaptureMode.VIDEO) CaptureMode.PHOTO else _uiState.value.captureMode
+            val effectiveMode = if (IS_VIDEO_FEATURE_PAUSED && _uiState.value.captureMode == CaptureMode.VIDEO && currentPreset.id != "thermal_vision") {
+                CaptureMode.PHOTO
+            } else {
+                _uiState.value.captureMode
+            }
             if (effectiveMode == CaptureMode.PHOTO || effectiveMode == CaptureMode.MODE_3D) {
                 // 2A. Full native sensor resolution with hardware ISP multi-frame HDR & noise reduction
                 val photoResolutionSelector = ResolutionSelector.Builder()
@@ -1185,7 +1240,7 @@ class CameraManager(private val context: Context) {
                 val ic = imageCapture
                 if (prev != null && ic != null) {
                     if (dfunsChars != null && cameraInfo != null) {
-                        for (format in dfunsCapture.formats(cameraInfo.cameraId, dfunsChars)) {
+                        for (format in dfunsCapture.formats(cameraInfo.cameraId, dfunsChars, _uiState.value.tuning.dfunsStrictExposure)) {
                             var candidate: ImageCapture? = null
                             try {
                                 candidate = imageCaptureBuilder.setBufferFormat(format).build()
@@ -1226,6 +1281,8 @@ class CameraManager(private val context: Context) {
                             context = context,
                             presetProvider = { currentPreset },
                             tuningProvider = { _uiState.value.tuning },
+                            thermalConfigProvider = { _uiState.value.thermal.config },
+                            thermalMaskProvider = { glRenderer?.getLatestThermalSnapshot() },
                             onError = { t ->
                                 Log.w(TAG, "GPU video processing issue reported", t)
                             }
@@ -1333,8 +1390,7 @@ class CameraManager(private val context: Context) {
             } else {
                 applyCamera2Wb(
                     policy = _uiState.value.whiteBalancePolicy,
-                    kelvin = _uiState.value.kelvin,
-                    tint = _uiState.value.tuning.tintOffset
+                    kelvin = _uiState.value.kelvin
                 )
             }
 
@@ -1344,6 +1400,7 @@ class CameraManager(private val context: Context) {
     }
 
     fun switchCamera() {
+        if (activeRecording != null) stopRecording()
         val currentFacing = _uiState.value.lensFacing
         val newFacing = if (currentFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
         val activeCamId = if (newFacing == CameraSelector.LENS_FACING_FRONT) "1" else "0"
@@ -1429,6 +1486,7 @@ class CameraManager(private val context: Context) {
                 )
             }
         }
+        glRenderer?.resetThermalTemporalState()
         bindCameraUseCases()
         cancelGolfMotionCapture()
         syncGolfMotionArming()
@@ -1502,8 +1560,7 @@ class CameraManager(private val context: Context) {
         }
         applyCamera2Wb(
             policy = com.craftcam.app.model.WhiteBalancePolicy.MANUAL_KELVIN,
-            kelvin = clamped,
-            tint = _uiState.value.tuning.tintOffset
+            kelvin = clamped
         )
     }
 
@@ -1525,8 +1582,7 @@ class CameraManager(private val context: Context) {
         }
         applyCamera2Wb(
             policy = policy,
-            kelvin = defaultK,
-            tint = _uiState.value.tuning.tintOffset
+            kelvin = defaultK
         )
     }
 
@@ -1556,8 +1612,7 @@ class CameraManager(private val context: Context) {
 
     private fun applyCamera2Wb(
         policy: com.craftcam.app.model.WhiteBalancePolicy,
-        kelvin: Int,
-        tint: Float = _uiState.value.tuning.tintOffset
+        kelvin: Int
     ) {
         val cam = camera ?: return
         try {
@@ -1572,7 +1627,8 @@ class CameraManager(private val context: Context) {
             val execution = com.craftcam.app.color.HardwareWhiteBalanceCalibrator.resolveExecution(
                 policy = policy,
                 requestedKelvin = kelvin,
-                tintOffset = tint,
+                // The film tint slider is applied by the preview and export renderers.
+                tintOffset = 0f,
                 supportsManualWb = supportsManual,
                 brand = brand,
                 cameraId = activeCameraId,
@@ -1643,8 +1699,7 @@ class CameraManager(private val context: Context) {
             } else {
                 applyCamera2Wb(
                     policy = _uiState.value.whiteBalancePolicy,
-                    kelvin = _uiState.value.kelvin,
-                    tint = _uiState.value.tuning.tintOffset
+                    kelvin = _uiState.value.kelvin
                 )
             }
         }
@@ -1779,6 +1834,7 @@ class CameraManager(private val context: Context) {
     }
 
     fun updateTuning(update: (UserTuningConfig) -> UserTuningConfig) {
+        val wasStrict = _uiState.value.tuning.dfunsStrictExposure
         _uiState.update {
             val updatedTuning = update(it.tuning)
             if (updatedTuning.exposureCompensation != it.tuning.exposureCompensation) {
@@ -1795,6 +1851,7 @@ class CameraManager(private val context: Context) {
                 updated
             }
         }
+        if (currentPreset.id == "ccd_flash" && wasStrict != _uiState.value.tuning.dfunsStrictExposure) bindCameraUseCases()
     }
 
     fun resetTuning() {
@@ -1809,6 +1866,7 @@ class CameraManager(private val context: Context) {
         glRenderer?.updateTuning(defaultTuning)
         camera?.cameraControl?.setExposureCompensationIndex(0)
         _uiState.update { it.copy(tuning = defaultTuning, exposureIndex = 0) }
+        if (currentPreset.id == "ccd_flash" && state.tuning.dfunsStrictExposure) bindCameraUseCases()
     }
 
     fun tapToFocus(tapX: Float, tapY: Float, viewWidth: Int = 0, viewHeight: Int = 0) {
@@ -1904,7 +1962,7 @@ class CameraManager(private val context: Context) {
                             // Application-level coroutine scope: never aborted if user navigates to gallery
                             val dfuns = preset.id == "ccd_flash" && captureState.engineMode == CameraEngineMode.FILM
                             val format = image.format
-                            val shotResult = if (dfuns) dfunsCapture.resultFor(image.imageInfo.timestamp) else null
+                            val shotResult = if (dfuns) dfunsCapture.resultFor(image.imageInfo) else null
                             processingScope.launch {
                                 try {
                                     val uri = ImageProcessor.processAndSaveImage(
@@ -2355,7 +2413,8 @@ class CameraManager(private val context: Context) {
         onError: (String) -> Unit
     ) {
         val vc = videoCapture ?: return
-        val filename = "CAMELEO_VIDEO_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.mp4"
+        val prefix = if (currentPreset.id == "thermal_vision") "CAMELEO_THERMAL_" else "CAMELEO_VIDEO_"
+        val filename = "${prefix}${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.mp4"
 
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)

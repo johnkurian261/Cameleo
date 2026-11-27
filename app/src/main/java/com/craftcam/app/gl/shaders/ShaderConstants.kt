@@ -2,6 +2,102 @@ package com.craftcam.app.gl.shaders
 
 object ShaderConstants {
 
+    private const val THERMAL_UNIFORMS_GLSL = """
+// Simulated Thermal Vision Uniforms
+uniform bool uThermalEnabled;
+uniform int uThermalPalette;
+uniform float uThermalSensitivity;
+uniform float uThermalContrast;
+uniform bool uThermalInverted;
+uniform float uThermalSoftness;
+uniform float uThermalNoiseIntensity;
+uniform bool uThermalAdaptiveContrast;
+uniform bool uThermalMaskValid;
+uniform int uThermalMaskYFlip;
+uniform float uThermalMinLuma;
+uniform float uThermalMaxLuma;
+uniform sampler2D uThermalPaletteTex;
+uniform sampler2D uThermalMaskTex;
+uniform bool uThermalHasFace;
+uniform vec4 uThermalFaceRect;
+"""
+
+    private const val THERMAL_HELPERS_GLSL = """
+float thermalSoftCompress(float v) {
+    if (v <= 0.0) return 0.0;
+    if (v >= 1.0) return 1.0;
+    if (v < 0.06) {
+        float t = v / 0.06;
+        return 0.06 * (t * (0.75 + 0.25 * t));
+    }
+    if (v > 0.94) {
+        float ex = (v - 0.94) / 0.06;
+        return 0.94 + 0.06 * (ex / (1.0 + 0.35 * (1.0 - ex)));
+    }
+    return clamp(v, 0.0, 1.0);
+}
+
+vec3 evaluateThermalVision(
+    vec3 baseRgb,
+    float lL, float lR, float lT, float lB,
+    vec2 maskUv,
+    vec2 pixelCoord,
+    float seed
+) {
+    float baseLuma = dot(baseRgb, vec3(0.2126, 0.7152, 0.0722));
+    float blurredLuma = 0.25 * (lL + lR + lT + lB);
+    float detailEdge = (baseLuma - blurredLuma) * 0.22;
+    float sharpLuma = baseLuma + detailEdge;
+    float radLuma = mix(sharpLuma, blurredLuma, clamp(uThermalSoftness, 0.0, 1.0));
+
+    float minL = uThermalAdaptiveContrast ? uThermalMinLuma : 0.0;
+    float maxL = uThermalAdaptiveContrast ? uThermalMaxLuma : 1.0;
+    float span = max(0.28, maxL - minL);
+    float normLuma = clamp((radLuma - minL) / span, 0.0, 1.0);
+    float warmBias = clamp((baseRgb.r - baseRgb.b) * 0.14, -0.06, 0.11);
+
+    float heat;
+    if (uThermalMaskValid) {
+        vec2 sampleUv = clamp(vec2(maskUv.x, uThermalMaskYFlip > 0 ? (1.0 - maskUv.y) : maskUv.y), vec2(0.002), vec2(0.998));
+        vec2 m = texture(uThermalMaskTex, sampleUv).rg;
+        float humanConf = m.r;
+        float skinConf = m.g;
+        float bgHeat = clamp(normLuma * 0.74 - 0.05 + warmBias * 0.65, 0.0, 0.92);
+        float subjInternal = mix(0.42, 0.92, normLuma);
+        float subjHeat = clamp(subjInternal + 0.14 * skinConf + warmBias * 0.45, 0.0, 0.98);
+        heat = mix(bgHeat, subjHeat, humanConf);
+    } else {
+        float skinChromaWarm = clamp((baseRgb.r - baseRgb.g) * 0.45 + (baseRgb.r - baseRgb.b) * 0.20, 0.0, 0.25) * smoothstep(0.15, 0.75, baseLuma);
+        float baseFallback = clamp(normLuma * 0.92 + warmBias + skinChromaWarm * 0.35, 0.0, 1.0);
+        if (uThermalHasFace) {
+            vec2 topUv = vec2(maskUv.x, uThermalMaskYFlip > 0 ? (1.0 - maskUv.y) : maskUv.y);
+            vec2 fd = (topUv - uThermalFaceRect.xy) / max(uThermalFaceRect.zw, vec2(0.05));
+            float faceW = exp(-dot(fd, fd) * 1.15);
+            float subjInternal = mix(0.45, 0.95, normLuma);
+            heat = mix(baseFallback * 0.85, clamp(subjInternal + warmBias * 0.4, 0.0, 0.98), clamp(faceW, 0.0, 1.0));
+        } else {
+            heat = baseFallback;
+        }
+    }
+
+    float gainShift = (uThermalSensitivity - 1.0) * 0.26;
+    heat = thermalSoftCompress((heat - 0.5) * uThermalContrast + 0.5 + gainShift);
+
+    float noiseHash = filmNoise(pixelCoord * 0.85, seed);
+    if (uThermalNoiseIntensity > 0.001) {
+        float colPattern = filmNoise(vec2(floor(pixelCoord.x * 0.5), 1.0), 0.13) * 0.18;
+        heat = clamp(heat + (noiseHash + colPattern) * uThermalNoiseIntensity, 0.0, 1.0);
+    }
+
+    float palU = (uThermalInverted ? (1.0 - heat) : heat) * (255.0 / 256.0) + (0.5 / 256.0);
+    float palV = (float(clamp(uThermalPalette, 0, 4)) + 0.5) / 5.0;
+    vec3 palRgb = texture(uThermalPaletteTex, vec2(palU, palV)).rgb;
+
+    float dither = noiseHash * (0.85 / 255.0);
+    return clamp(palRgb + vec3(dither), 0.0, 1.0);
+}
+"""
+
     const val VERTEX_SHADER_VIEWFINDER = """#version 300 es
 layout (location = 0) in vec4 aPosition;
 layout (location = 1) in vec4 aTextureCoord;
@@ -169,15 +265,8 @@ uniform bool uZebraEnabled;
 uniform float uZebraThreshold;
 uniform float uZebraTime;
 
-// Preview Pipeline Diagnostic Mode
-// 0 = Production normal
-// 1 = Passthrough (Raw Camera Feed, zero effects)
-// 2 = LUT Only (Bypasses adjustments & skin protection)
-// 3 = Profile Adjustments Only (Bypasses LUT)
-// 4 = Combined LUT + Profile (Skin protection bypassed)
-// 5 = Skin Protection Mask Visualization
-// 6 = Complete CPM 35 / Production Rendering
 uniform int uDiagnosticMode;
+$THERMAL_UNIFORMS_GLSL
 
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
@@ -249,6 +338,7 @@ vec3 sample3DLut(mediump sampler3D lut3d, vec3 rgb) {
     vec3 lutCoord = rgb * (63.0 / 64.0) + (0.5 / 64.0);
     return texture(lut3d, lutCoord).rgb;
 }
+$THERMAL_HELPERS_GLSL
 
 void main() {
     // Physical isotropic coordinates (aspect-corrected from uViewportSize)
@@ -342,6 +432,18 @@ void main() {
     // Diagnostic Mode 1: Passthrough (Raw Camera Feed, zero effects)
     if (uDiagnosticMode == 1) {
         fragColor = vec4(preGradeColor, 1.0);
+        return;
+    }
+
+    // Dedicated Simulated Thermal Vision Pipeline (bypasses film LUTs & film grain)
+    if (uThermalEnabled) {
+        vec2 tStep = 2.0 / max(uViewportSize, vec2(320.0));
+        float lL = dot(texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(tStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lR = dot(texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(tStep.x, 0.0), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lT = dot(texture(sTexture, (uTexMatrix * vec4(clamp(uv - vec2(0.0, tStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lB = dot(texture(sTexture, (uTexMatrix * vec4(clamp(uv + vec2(0.0, tStep.y), vec2(0.001), vec2(0.999)), 0.0, 1.0)).xy).rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 thermalRgb = evaluateThermalVision(preGradeColor, lL, lR, lT, lB, vQuadCoord, vQuadCoord * uViewportSize, uRandomSeed);
+        fragColor = vec4(thermalRgb, 1.0);
         return;
     }
 
@@ -923,15 +1025,8 @@ uniform bool uZebraEnabled;
 uniform float uZebraThreshold;
 uniform float uZebraTime;
 
-// Preview Pipeline Diagnostic Mode
-// 0 = Production normal
-// 1 = Passthrough (Raw Camera Feed, zero effects)
-// 2 = LUT Only (Bypasses adjustments & skin protection)
-// 3 = Profile Adjustments Only (Bypasses LUT)
-// 4 = Combined LUT + Profile (Skin protection bypassed)
-// 5 = Skin Protection Mask Visualization
-// 6 = Complete CPM 35 / Production Rendering
 uniform int uDiagnosticMode;
+$THERMAL_UNIFORMS_GLSL
 
 // Stochastic sine-free hash for authentic silver halide film grain (precision-safe)
 float filmNoise(vec2 coord, float seed) {
@@ -1000,6 +1095,7 @@ vec3 sample3DLut(mediump sampler3D lut3d, vec3 rgb) {
     vec3 lutCoord = rgb * (63.0 / 64.0) + (0.5 / 64.0);
     return texture(lut3d, lutCoord).rgb;
 }
+$THERMAL_HELPERS_GLSL
 
 void main() {
     // Physical isotropic coordinates (aspect-corrected from uViewportSize or 3:4 fallback)
@@ -1087,6 +1183,18 @@ void main() {
     // Diagnostic Mode 1: Passthrough (Raw Camera Feed, zero effects)
     if (uDiagnosticMode == 1) {
         fragColor = vec4(preGradeColor, 1.0);
+        return;
+    }
+
+    // Dedicated Simulated Thermal Vision Pipeline (bypasses film LUTs & film grain)
+    if (uThermalEnabled) {
+        vec2 tStep = 2.0 / max(uViewportSize, vec2(320.0));
+        float lL = dot(texture(sTexture, clamp(uv - vec2(tStep.x, 0.0), vec2(0.001), vec2(0.999))).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lR = dot(texture(sTexture, clamp(uv + vec2(tStep.x, 0.0), vec2(0.001), vec2(0.999))).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lT = dot(texture(sTexture, clamp(uv - vec2(0.0, tStep.y), vec2(0.001), vec2(0.999))).rgb, vec3(0.2126, 0.7152, 0.0722));
+        float lB = dot(texture(sTexture, clamp(uv + vec2(0.0, tStep.y), vec2(0.001), vec2(0.999))).rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 thermalRgb = evaluateThermalVision(preGradeColor, lL, lR, lT, lB, vTextureCoord, vTextureCoord * max(uViewportSize, vec2(1080.0)), uRandomSeed);
+        fragColor = vec4(thermalRgb, 1.0);
         return;
     }
 
@@ -1576,6 +1684,7 @@ void main() {
         "vsco_b1", "b1"        -> "lut_vsco_b1.png"
         "vsco_x1", "x1"        -> "lut_vsco_x1.png"
         "vsco_handycam", "handycam", "handycam85" -> "lut_vsco_handycam.png"
+        "thermal_vision", "thermal", "thermal_ir" -> ""
         else                   -> "lut_analog_35mm_classic.png"
     }
 
@@ -1594,7 +1703,7 @@ void main() {
         presetId in listOf("ccd_y2k_digital", "classicu") -> "grains/grain_classicu.jpg"
         presetId in listOf("ccd_retro_compact", "dqs") -> "grains/grain_dqs.jpg"
         presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
-        presetId in listOf("disp_flash", "disp_cpm35", "ccd_grd", "analog_warm_film", "grd", "gr d", "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic") -> ""
+        presetId in listOf("disp_flash", "disp_cpm35", "ccd_grd", "analog_warm_film", "grd", "gr d", "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic", "thermal_vision", "thermal", "thermal_ir") -> ""
         presetId in listOf("disp_warm", "135sr") -> "grains/grain540_01.jpg"
         presetId in listOf("inst_vintage", "inst_c") -> "grains/grain_instc.jpg"
         presetId in listOf("inst_paf", "paf") -> "grains/grain_paf.jpg"

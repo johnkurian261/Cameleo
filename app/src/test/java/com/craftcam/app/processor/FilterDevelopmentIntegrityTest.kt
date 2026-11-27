@@ -77,9 +77,9 @@ class FilterDevelopmentIntegrityTest {
     }
 
     @Test
-    fun all34Presets_haveValidProfilesAndGradingConfigurations() {
+    fun all35Presets_haveValidProfilesAndGradingConfigurations() {
         val allPresets = PresetCatalog.allPresets
-        assertEquals(34, allPresets.size)
+        assertEquals(35, allPresets.size)
 
         for (preset in allPresets) {
             assertNotNull("Preset ID should not be empty: ${preset.name}", preset.id)

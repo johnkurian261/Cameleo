@@ -1107,12 +1107,60 @@ object PresetCatalog {
                 defaultKelvin = 5500,
                 autoRecommended = true
             )
+        ),
+
+        // ─── Experimental Optical / Infrared Vision Systems ──────────────────
+        CameraPreset(
+            id = "thermal_vision",
+            iconResName = "cam_thermal",
+            name = "THERMAL",
+            subtitle = "Simulated IR Vision",
+            category = CameraCategory.EXPERIMENTAL,
+            year = "IR",
+            description = "Experimental long-wave infrared thermography simulation. Uses GPU false-color palettes, luminance-chrominance contrast, and reduced-resolution subject guidance. Simulated effect only.",
+            colorGrading = ColorGradingConfig(
+                contrast = 1.0f,
+                saturation = 1.0f,
+                temperature = 0.0f,
+                tint = 0.0f,
+                gamma = 1.0f,
+                fade = 0.0f,
+                highlightRollOff = 1.0f
+            ),
+            grain = GrainConfig(
+                enabled = false,
+                intensity = 0.0f,
+                scale = 1.0f,
+                isColorNoise = false,
+                assetPath = null,
+                sourceMode = GrainSourceMode.PROCEDURAL_ONLY
+            ),
+            lens = LensConfig(
+                vignetteIntensity = 0.0f,
+                vignetteRadius = 1.0f,
+                chromaticAberration = 0.0f,
+                barrelDistortion = 0.0f,
+                softness = 0.0f
+            ),
+            lightLeak = LightLeakConfig(enabled = false),
+            halation = HalationConfig(enabled = false),
+            dust = DustConfig(enabled = false),
+            flashOverlay = FlashOverlayConfig(enabled = false),
+            dateStamp = DateStampConfig(enabled = false),
+            border = BorderConfig(style = BorderStyle.NONE),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.AUTO,
+                defaultKelvin = 5500,
+                autoRecommended = true
+            )
         )
     )
 
     fun getPresetById(id: String): CameraPreset {
         // Fast canonical alias mappings
         when (id.lowercase()) {
+            "thermal_vision", "thermal", "thermal_ir" ->
+                return allPresets.find { it.id == "thermal_vision" } ?: allPresets.first()
             "zero" ->
                 return allPresets.find { it.id == "zero" } ?: allPresets.first()
             "analog_fxn_r", "fxnr", "fxn_r" ->

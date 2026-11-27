@@ -2557,6 +2557,17 @@ object ImageProcessor {
                 savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
             }
 
+            if (preset.id == "thermal_vision" || preset.id == "thermal" || preset.id == "thermal_ir") {
+                val appThermal = AppSettingsStore.get(context).current.thermalVision
+                workingBitmap = com.craftcam.app.thermal.ThermalVisionProcessor.developBitmapInPlace(
+                    bitmap = workingBitmap,
+                    config = appThermal,
+                    faces = faces
+                )
+                val uri = saveToGallery(context, workingBitmap, preset.name, negativeBitmap = savedNegativeBitmap)
+                return workingBitmap to uri
+            }
+
             workingBitmap = applyPresetEffects(
                 context = context,
                 source = workingBitmap,

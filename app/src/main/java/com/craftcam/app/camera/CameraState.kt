@@ -128,7 +128,8 @@ data class CameraUIState(
     val deviceSensorProfile: com.craftcam.app.color.DeviceSensorProfile? = null,
     val focusTelemetry: com.craftcam.app.camera.focus.FocusTelemetry = com.craftcam.app.camera.focus.FocusTelemetry(),
     val showFocusInspector: Boolean = false,
-    val golfMotion: com.craftcam.app.motion.GolfMotionUiState = com.craftcam.app.motion.GolfMotionUiState()
+    val golfMotion: com.craftcam.app.motion.GolfMotionUiState = com.craftcam.app.motion.GolfMotionUiState(),
+    val thermal: com.craftcam.app.thermal.ThermalUiState = com.craftcam.app.thermal.ThermalUiState()
 ) {
     val availableLenses: List<CameraLens>
         get() = if (lensFacing == CameraSelector.LENS_FACING_FRONT) frontLenses else rearLenses

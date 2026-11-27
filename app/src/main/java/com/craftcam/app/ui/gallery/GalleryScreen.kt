@@ -1187,6 +1187,7 @@ private fun resolveFilterName(name: String?, cameraModel: String?): String {
         fileName.contains(preset.id, ignoreCase = true)
     }
     return matched?.name ?: when {
+        fileName.contains("THERMAL", ignoreCase = true) -> "THERMAL"
         fileName.contains("FXNR", ignoreCase = true) -> "FXNR"
         fileName.contains("CLASSIC", ignoreCase = true) -> "D Classic"
         fileName.contains("MJU", ignoreCase = true) -> "MJU II"
@@ -1240,7 +1241,7 @@ private fun sharePhotos(context: Context, items: List<GalleryItem>) {
     context.startActivity(Intent.createChooser(shareIntent, "Share ${items.size} Photographs"))
 }
 
-private suspend fun decodeOrientedMutableBitmap(
+internal suspend fun decodeOrientedMutableBitmap(
     context: Context,
     openStream: () -> java.io.InputStream?
 ): Bitmap? {

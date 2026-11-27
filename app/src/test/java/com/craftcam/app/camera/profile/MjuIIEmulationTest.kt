@@ -144,7 +144,7 @@ class MjuIIEmulationTest {
         assertTrue(mju2.opticalProfile.chromaticAberration < 0.002f)
 
         // Existing preset regression sanity
-        assertEquals(34, PresetCatalog.allPresets.size)
+        assertEquals(35, PresetCatalog.allPresets.size)
         assertEquals("lut_disp_classic.png", CameraProfileCatalog.DISPOSABLE_FUNS.filmProfile.lutAssetPath)
         assertEquals("lut_dfuns_v1.png", CameraProfileCatalog.D_FUNS.filmProfile.lutAssetPath)
         assertEquals("lut_ccd_retro_compact.png", dqs.filmProfile.lutAssetPath)

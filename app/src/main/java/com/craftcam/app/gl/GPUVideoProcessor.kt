@@ -17,8 +17,12 @@ import androidx.core.util.Consumer
 import com.craftcam.app.gl.shaders.ShaderConstants
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
+import com.craftcam.app.model.GrainBlendMode
 import com.craftcam.app.camera.UserTuningConfig
-import com.craftcam.app.config.filmColorProfileAdjustment
+import com.craftcam.app.camera.profile.CameraProfileCatalog
+import com.craftcam.app.camera.profile.LutInputSpace
+import com.craftcam.app.color.profile.CameraProfileCompatibility
+import com.craftcam.app.processor.GrainStage
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -34,7 +38,9 @@ import java.util.concurrent.Executor
 class GPUVideoProcessor(
     private val context: Context,
     private val presetProvider: () -> CameraPreset,
-    private val tuningProvider: () -> UserTuningConfig = { UserTuningConfig() }
+    private val tuningProvider: () -> UserTuningConfig = { UserTuningConfig() },
+    private val thermalConfigProvider: () -> com.craftcam.app.thermal.ThermalVisionConfig = { com.craftcam.app.thermal.ThermalVisionConfig() },
+    private val thermalMaskProvider: () -> com.craftcam.app.thermal.ThermalMaskSnapshot? = { null }
 ) : SurfaceProcessor {
 
     companion object {
@@ -44,9 +50,13 @@ class GPUVideoProcessor(
             context: Context,
             presetProvider: () -> CameraPreset,
             tuningProvider: () -> UserTuningConfig = { UserTuningConfig() },
+            thermalConfigProvider: () -> com.craftcam.app.thermal.ThermalVisionConfig = { com.craftcam.app.thermal.ThermalVisionConfig() },
+            thermalMaskProvider: () -> com.craftcam.app.thermal.ThermalMaskSnapshot? = { null },
             onError: ((Throwable) -> Unit)? = null
         ): CameraEffect {
-            val processor = GPUVideoProcessor(context, presetProvider, tuningProvider)
+            val processor = GPUVideoProcessor(
+                context, presetProvider, tuningProvider, thermalConfigProvider, thermalMaskProvider
+            )
             val errorConsumer = Consumer<Throwable> { t ->
                 Log.e(TAG, "CameraEffect video processing error", t)
                 onError?.invoke(t)
@@ -168,11 +178,17 @@ class GPUVideoProcessor(
     private var uZebraEnabledLoc = -1
     private var uZebraThresholdLoc = -1
     private var uZebraTimeLoc = -1
+    private var uThermalEnabledLoc = -1
+    private var thermalLocs = ThermalGlHelper.UniformLocs.UNSET
+    private var lastThermalUploadBuffer: java.nio.ByteBuffer? = null
 
-    // 3D Hald LUT Cache + Dummy Safe Textures
+    // 3D Hald LUT Cache, Grain Cache + Dummy Safe Textures
     private val lutTextureCache = mutableMapOf<String, Int>()
+    private val grainTextureCache = mutableMapOf<String, Int>()
     private var dummy2DTextureId = 0
     private var dummy3DTextureId = 0
+    private var thermalPaletteTexId = 0
+    private var thermalMaskTexId = 0
 
     // Geometry Buffers
     private val vertexBuffer: FloatBuffer
@@ -372,6 +388,8 @@ class GPUVideoProcessor(
         uZebraEnabledLoc = GLES30.glGetUniformLocation(programId, "uZebraEnabled")
         uZebraThresholdLoc = GLES30.glGetUniformLocation(programId, "uZebraThreshold")
         uZebraTimeLoc = GLES30.glGetUniformLocation(programId, "uZebraTime")
+        thermalLocs = ThermalGlHelper.UniformLocs.UNSET.locate(programId)
+        uThermalEnabledLoc = thermalLocs.enabled
 
         initDummyTextures()
 
@@ -501,11 +519,52 @@ class GPUVideoProcessor(
             // Assign dedicated non-overlapping units to 2D/3D LUT and grain samplers
             val preset = presetProvider()
             val tuning = tuningProvider()
+            if (preset.id == "thermal_vision") {
+                val thermalCfg = thermalConfigProvider()
+                val snap = thermalMaskProvider()
+                val upload = snap != null && snap.rgbaBuffer !== lastThermalUploadBuffer
+                if (upload) lastThermalUploadBuffer = snap?.rgbaBuffer
+                GLES30.glUniformMatrix4fv(uTexMatrixLoc, 1, false, finalTexMatrix, 0)
+                GLES30.glUniform2f(uViewportSizeLoc, outputSize.width.toFloat(), outputSize.height.toFloat())
+                videoFrameCount++
+                val frameSeed = ((videoFrameCount / 2) % 60).toFloat() / 60.0f
+                ThermalGlHelper.bindActiveStage(
+                    locs = thermalLocs,
+                    config = thermalCfg,
+                    paletteTexId = thermalPaletteTexId,
+                    maskTexId = thermalMaskTexId,
+                    dummy2DTexId = dummy2DTextureId,
+                    snapshot = snap,
+                    uploadSnapshotToTex = upload,
+                    faces = emptyList(),
+                    randomSeedLoc = uRandomSeedLoc,
+                    randomSeed = frameSeed
+                )
+                GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+                GLES30.glDisableVertexAttribArray(0)
+                GLES30.glDisableVertexAttribArray(1)
+                EGLExt.eglPresentationTimeANDROID(eglDisplay, eglOutputSurface, timestampNs)
+                EGL14.eglSwapBuffers(eglDisplay, eglOutputSurface)
+                return
+            }
+            ThermalGlHelper.bindInactive(thermalLocs, dummy2DTextureId)
             val intensity = tuning.filterIntensity.coerceIn(0.0f, 1.0f)
-            val isProfileCompatible = com.craftcam.app.color.profile.CameraProfileCompatibility.isProfileSupported(preset.id)
-            val colorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(tuning.filmColorProfileIndex)
-            val lutAsset = if (isProfileCompatible) colorProfile.lutAssetPath else ShaderConstants.getLutAssetForPreset(preset.id)
-            val lutId = getOrLoadLutTexture(lutAsset)
+            val unifiedProfile = CameraProfileCatalog.getUnifiedProfile(preset)
+            val film = unifiedProfile.filmProfile
+            val lutPlan = CameraProfileCompatibility.resolveLutPlan(
+                presetId = preset.id,
+                colorProfileIndex = tuning.filmColorProfileIndex,
+                cameraLutAsset = film.lutAssetPath?.ifEmpty { null }
+                    ?: ShaderConstants.getLutAssetForPreset(preset.id),
+                cameraSecondaryLutAsset = film.secondaryLutAssetPath,
+                cameraDualLutMix = film.dualLutBlendFactor
+            )
+            val lutId = getOrLoadLutTexture(lutPlan.primaryLutAsset)
+            val secLutAsset = lutPlan.secondaryLutAsset
+            val secLutId = if (!secLutAsset.isNullOrEmpty() && lutPlan.dualLutMix > 0.001f) {
+                getOrLoadLutTexture(secLutAsset)
+            } else 0
+            val primaryLutIsProfile = lutPlan.isMonochrome && lutPlan.isCustomProfile
 
             GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
@@ -518,33 +577,54 @@ class GPUVideoProcessor(
             if (uLutEnabledLoc != -1) GLES30.glUniform1i(uLutEnabledLoc, if (lutActive) 1 else 0)
             if (uUseLut3DLoc != -1) GLES30.glUniform1i(uUseLut3DLoc, 0)
 
+            val resolvedGrain = GrainStage.resolve(preset, unifiedProfile.grainProfile, tuning, intensity)
+            val grainTexId = if (resolvedGrain.useScannedTexture && !resolvedGrain.assetPath.isNullOrEmpty()) {
+                getOrLoadGrainTexture(resolvedGrain.assetPath)
+            } else 0
             GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (grainTexId != 0) grainTexId else dummy2DTextureId)
             if (sGrainTextureLoc != -1) GLES30.glUniform1i(sGrainTextureLoc, 3)
+            if (uHasGrainTextureLoc != -1) GLES30.glUniform1i(uHasGrainTextureLoc, if (grainTexId != 0) 1 else 0)
 
             GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
             if (sLut3D_BLoc != -1) GLES30.glUniform1i(sLut3D_BLoc, 4)
 
+            val secLutActive = secLutId != 0 && uLutTextureBLoc != -1 && lutPlan.dualLutMix > 0.001f
             GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (secLutActive) secLutId else dummy2DTextureId)
             if (uLutTextureBLoc != -1) GLES30.glUniform1i(uLutTextureBLoc, 5)
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
 
-            if (uHasSecondaryLutLoc != -1) GLES30.glUniform1i(uHasSecondaryLutLoc, 0)
-            if (uDualLutMixLoc != -1) GLES30.glUniform1f(uDualLutMixLoc, 0f)
-            if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, 0)
-            if (uPreLinearizationEnabledLoc != -1) GLES30.glUniform1i(uPreLinearizationEnabledLoc, if (tuning.preLinearizationEnabled) 1 else 0)
+            if (uHasSecondaryLutLoc != -1) GLES30.glUniform1i(uHasSecondaryLutLoc, if (secLutActive) 1 else 0)
+            if (uDualLutMixLoc != -1) GLES30.glUniform1f(uDualLutMixLoc, if (secLutActive) lutPlan.dualLutMix else 0f)
+            val spaceInt = if (primaryLutIsProfile) {
+                0
+            } else {
+                when (film.lutInputSpace) {
+                    LutInputSpace.SRGB -> 0
+                    LutInputSpace.LINEAR -> 1
+                    LutInputSpace.CUSTOM_PRETRANSFORM -> 2
+                }
+            }
+            if (uLutInputSpaceLoc != -1) GLES30.glUniform1i(uLutInputSpaceLoc, spaceInt)
+            if (uPreLinearizationEnabledLoc != -1) {
+                val preLinActive = !primaryLutIsProfile &&
+                    tuning.preLinearizationEnabled &&
+                    film.lutInputSpace == LutInputSpace.CUSTOM_PRETRANSFORM
+                GLES30.glUniform1i(uPreLinearizationEnabledLoc, if (preLinActive) 1 else 0)
+            }
             if (uPreLinearizationStrengthLoc != -1) GLES30.glUniform1f(uPreLinearizationStrengthLoc, tuning.preLinearizationStrength)
             if (uFilterIntensityLoc != -1) GLES30.glUniform1f(uFilterIntensityLoc, intensity)
-            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
-            GLES30.glUniform1f(uLowerMidtoneStrengthLoc, unifiedProfile.filmProfile.lowerMidtoneStrength * intensity)
-            if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, unifiedProfile.filmProfile.clarityStrength * intensity)
-            if (uSkinProtectionLoc != -1) GLES30.glUniform1f(uSkinProtectionLoc, unifiedProfile.filmProfile.skinProtection)
+            GLES30.glUniform1f(uLowerMidtoneStrengthLoc, film.lowerMidtoneStrength * intensity)
+            if (uClarityStrengthLoc != -1) GLES30.glUniform1f(uClarityStrengthLoc, film.clarityStrength * intensity)
+            if (uSkinProtectionLoc != -1) {
+                GLES30.glUniform1f(uSkinProtectionLoc, if (lutPlan.isMonochrome) 0f else film.skinProtection)
+            }
             if (uDiagnosticModeLoc != -1) GLES30.glUniform1i(uDiagnosticModeLoc, 0)
-            if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, unifiedProfile.filmProfile.toeLift * intensity)
+            if (uToeLiftLoc != -1) GLES30.glUniform1f(uToeLiftLoc, film.toeLift * intensity)
             if (uShoulderClipLoc != -1) {
-                val clip = 1.0f - (1.0f - unifiedProfile.filmProfile.shoulderClip) * intensity
+                val clip = 1.0f - (1.0f - film.shoulderClip) * intensity
                 GLES30.glUniform1f(uShoulderClipLoc, clip)
             }
 
@@ -565,13 +645,20 @@ class GPUVideoProcessor(
             if (uD3DRgbSeparationLoc != -1) GLES30.glUniform1f(uD3DRgbSeparationLoc, 0f)
             if (uD3DAnaglyphLoc != -1) GLES30.glUniform1f(uD3DAnaglyphLoc, 0f)
 
-            if (uHasGrainTextureLoc != -1) GLES30.glUniform1i(uHasGrainTextureLoc, 0)
-            if (uGrainBlendModeLoc != -1) GLES30.glUniform1i(uGrainBlendModeLoc, 0)
-            if (uGrainOffsetLoc != -1) GLES30.glUniform2f(uGrainOffsetLoc, 0f, 0f)
-            if (uGrainShadowStrengthLoc != -1) GLES30.glUniform1f(uGrainShadowStrengthLoc, preset.grain.shadowStrength)
-            if (uGrainHighlightStrengthLoc != -1) GLES30.glUniform1f(uGrainHighlightStrengthLoc, preset.grain.highlightStrength)
-            if (uGrainLumaWeightEnabledLoc != -1) GLES30.glUniform1i(uGrainLumaWeightEnabledLoc, 0)
-            if (uGrainLumaWeightPowerLoc != -1) GLES30.glUniform1f(uGrainLumaWeightPowerLoc, 1f)
+            val blendModeInt = when (resolvedGrain.blendMode) {
+                GrainBlendMode.OVERLAY -> 0
+                GrainBlendMode.SCREEN -> 1
+                GrainBlendMode.MULTIPLY -> 2
+                GrainBlendMode.NORMAL -> 3
+                else -> 0
+            }
+            if (uGrainBlendModeLoc != -1) GLES30.glUniform1i(uGrainBlendModeLoc, blendModeInt)
+            if (uGrainShadowStrengthLoc != -1) GLES30.glUniform1f(uGrainShadowStrengthLoc, resolvedGrain.shadowStrength)
+            if (uGrainHighlightStrengthLoc != -1) GLES30.glUniform1f(uGrainHighlightStrengthLoc, resolvedGrain.highlightStrength)
+            if (uGrainLumaWeightEnabledLoc != -1) {
+                GLES30.glUniform1i(uGrainLumaWeightEnabledLoc, if (resolvedGrain.luminanceWeightingEnabled) 1 else 0)
+            }
+            if (uGrainLumaWeightPowerLoc != -1) GLES30.glUniform1f(uGrainLumaWeightPowerLoc, resolvedGrain.luminanceWeightingPower)
 
             if (uDebugStagePreLinearizationLoc != -1) GLES30.glUniform1i(uDebugStagePreLinearizationLoc, 1)
             if (uDebugStageLutLoc != -1) GLES30.glUniform1i(uDebugStageLutLoc, 1)
@@ -595,60 +682,82 @@ class GPUVideoProcessor(
             GLES30.glUniform2f(uViewportSizeLoc, outputSize.width.toFloat(), outputSize.height.toFloat())
 
             val color = preset.colorGrading
-            val isMono = isProfileCompatible && colorProfile.isMonochrome
-            val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
-            val contrast = (color.contrast * colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
-            val saturation = if (isMono) 0.0f else (color.saturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
-            val temperature = if (isMono) 0.0f else (color.temperature + colorProfileAdj.tempDelta + tuning.temperatureOffset).coerceIn(-1.0f, 1.0f)
-            val tint = if (isMono) 0.0f else (color.tint + colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
+            val baseContrast = if (film.contrast != 1.0f) film.contrast else color.contrast
+            val baseSaturation = if (film.saturation != 1.0f) film.saturation else color.saturation
+            val baseTemp = if (film.temperature != 0.0f) film.temperature else color.temperature
+            val baseTint = if (film.tint != 0.0f) film.tint else color.tint
+            val baseShadowR = if (film.shadowTintR != 0.0f) film.shadowTintR else color.shadowTintR
+            val baseShadowG = if (film.shadowTintG != 0.0f) film.shadowTintG else color.shadowTintG
+            val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else color.shadowTintB
+
+            val isMono = lutPlan.isMonochrome
+            val colorProfileAdj = lutPlan.effectiveAdjustment
+            val rawContrast = (baseContrast * colorProfileAdj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
+            val contrast = 1.0f + (rawContrast - 1.0f) * intensity
+            val rawSat = if (isMono) 0.0f else (baseSaturation * colorProfileAdj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+            val saturation = if (isMono) 0.0f else (1.0f + (rawSat - 1.0f) * intensity)
+            val userTempOffset = if (tuning.isHardwareWbActive) 0.0f else tuning.temperatureOffset
+            val temperature = if (isMono) 0.0f else ((baseTemp + colorProfileAdj.tempDelta + userTempOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val tint = if (isMono) 0.0f else ((baseTint + colorProfileAdj.tintDelta + tuning.tintOffset) * intensity).coerceIn(-1.0f, 1.0f)
+            val gamma = 1.0f + (color.gamma - 1.0f) * intensity
+            val fade = film.fadeAtIntensity(color.fade, colorProfileAdj.fadeDelta, intensity)
+            val highlightRollOff = film.shoulderAtIntensity(intensity)
 
             GLES30.glUniform1f(uContrastLoc, contrast)
             GLES30.glUniform1f(uSaturationLoc, saturation)
             GLES30.glUniform1f(uTemperatureLoc, temperature)
             GLES30.glUniform1f(uTintLoc, tint)
-            GLES30.glUniform1f(uGammaLoc, color.gamma)
-            GLES30.glUniform1f(uFadeLoc, (color.fade + colorProfileAdj.fadeDelta).coerceAtLeast(0f))
-            GLES30.glUniform1f(uHighlightRollOffLoc, color.highlightRollOff)
-            GLES30.glUniform3f(uShadowTintLoc, if (isMono) 0f else color.shadowTintR, if (isMono) 0f else color.shadowTintG, if (isMono) 0f else color.shadowTintB)
+            GLES30.glUniform1f(uGammaLoc, gamma)
+            GLES30.glUniform1f(uFadeLoc, fade)
+            GLES30.glUniform1f(uHighlightRollOffLoc, highlightRollOff)
+            GLES30.glUniform3f(uShadowTintLoc, if (isMono) 0f else baseShadowR * intensity, if (isMono) 0f else baseShadowG * intensity, if (isMono) 0f else baseShadowB * intensity)
 
             val lens = preset.lens
-            val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost).coerceIn(0f, 1f)
+            val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0f, 1f)
             GLES30.glUniform1f(uVignetteIntensityLoc, vigIntensity)
             GLES30.glUniform1f(uVignetteRadiusLoc, lens.vignetteRadius)
-            GLES30.glUniform1f(uChromaticAberrationLoc, lens.chromaticAberration)
-            GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion)
-            GLES30.glUniform1f(uSoftnessLoc, lens.softness)
+            val nativeDetail = film.lowerMidtoneStrength > 0f
+            GLES30.glUniform1f(uChromaticAberrationLoc, if (nativeDetail) 0f else lens.chromaticAberration * intensity)
+            GLES30.glUniform1f(uBarrelDistortionLoc, lens.barrelDistortion * intensity)
+            GLES30.glUniform1f(uSoftnessLoc, if (nativeDetail && !tuning.softLensDiffusion) 0f else lens.softness * intensity)
 
             videoFrameCount++
-            val grain = preset.grain
-            val grainIntensity = if (grain.enabled && tuning.debugStageGrain) (grain.intensity * tuning.grainBoost).coerceIn(0f, 1f) else 0f
+            val grainIntensity = if (resolvedGrain.useScannedTexture) resolvedGrain.effectiveIntensity else resolvedGrain.proceduralIntensity
             val frameSeed = ((videoFrameCount / 2) % 60).toFloat() / 60.0f
             GLES30.glUniform1f(uGrainIntensityLoc, grainIntensity)
-            GLES30.glUniform1f(uGrainScaleLoc, grain.scale)
-            GLES30.glUniform1i(uIsColorNoiseLoc, if (grain.isColorNoise) 1 else 0)
+            val videoGrainScale = if (film.id == "dfuns_negative_v1") {
+                1f / (resolvedGrain.scale * minOf(outputSize.width, outputSize.height) / 1600f).coerceIn(0.5f, 3f)
+            } else {
+                resolvedGrain.scale
+            }
+            GLES30.glUniform1f(uGrainScaleLoc, videoGrainScale)
+            GLES30.glUniform1i(uIsColorNoiseLoc, if (resolvedGrain.isColorNoise) 1 else 0)
             GLES30.glUniform1f(uRandomSeedLoc, frameSeed)
+            val seedX = ((videoFrameCount * 73) % 1000) / 1000.0f
+            val seedY = ((videoFrameCount * 157) % 1000) / 1000.0f
+            if (uGrainOffsetLoc != -1) GLES30.glUniform2f(uGrainOffsetLoc, seedX, seedY)
 
             val halation = preset.halation
-            val halationActive = tuning.halationEnabled && halation?.enabled == true
+            val halationActive = tuning.halationEnabled && (halation?.enabled == true || film.halationThreshold < 0.99f) && intensity > 0.01f
             GLES30.glUniform1i(uHalationEnabledLoc, if (halationActive) 1 else 0)
-            GLES30.glUniform1f(uHalationThresholdLoc, halation?.threshold ?: 0.85f)
-            GLES30.glUniform1f(uHalationIntensityLoc, halation?.intensity ?: 0f)
+            GLES30.glUniform1f(uHalationThresholdLoc, halation?.threshold ?: film.halationThreshold)
+            GLES30.glUniform1f(uHalationIntensityLoc, (halation?.intensity ?: film.halationIntensity) * intensity)
             if (uHalationColorTintLoc != -1) {
                 GLES30.glUniform3f(
                     uHalationColorTintLoc,
-                    halation?.haloRed ?: 1.0f,
-                    halation?.haloGreen ?: 0.35f,
-                    halation?.haloBlue ?: 0.1f
+                    film.halationColorTintR,
+                    film.halationColorTintG,
+                    film.halationColorTintB
                 )
             }
 
             val leak = preset.lightLeak
-            val leakActive = tuning.lightLeakEnabled && leak?.enabled == true
+            val leakActive = tuning.lightLeakEnabled && leak?.enabled == true && intensity > 0.01f
             GLES30.glUniform1i(uLightLeakEnabledLoc, if (leakActive) 1 else 0)
-            GLES30.glUniform1f(uLightLeakIntensityLoc, leak?.intensity ?: 0f)
+            GLES30.glUniform1f(uLightLeakIntensityLoc, (leak?.intensity ?: 0f) * intensity)
 
             val isCamcorder = preset.category == CameraCategory.CAMCORDER
-            GLES30.glUniform1f(uScanlineIntensityLoc, if (isCamcorder) 0.6f else 0f)
+            GLES30.glUniform1f(uScanlineIntensityLoc, if (isCamcorder) 0.6f * intensity else 0f)
 
             // Draw quad
             GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
@@ -695,6 +804,8 @@ class GPUVideoProcessor(
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
         }
+        if (thermalPaletteTexId == 0) thermalPaletteTexId = ThermalGlHelper.createPaletteTexture()
+        if (thermalMaskTexId == 0) thermalMaskTexId = ThermalGlHelper.createMaskTexture()
     }
 
     private fun getOrLoadLutTexture(lutAsset: String): Int {
@@ -722,6 +833,36 @@ class GPUVideoProcessor(
         }
     }
 
+    private fun getOrLoadGrainTexture(asset: String): Int {
+        grainTextureCache[asset]?.let { return it }
+        val resolvedAsset = if (asset.startsWith("grains/")) asset else "grains/$asset"
+        val bmp = try {
+            context.assets.open(resolvedAsset).use { BitmapFactory.decodeStream(it) }
+        } catch (_: Exception) {
+            try {
+                context.assets.open(asset).use { BitmapFactory.decodeStream(it) }
+            } catch (_: Exception) {
+                null
+            }
+        } ?: return 0
+
+        val texIds = IntArray(1)
+        GLES30.glGenTextures(1, texIds, 0)
+        val texId = texIds[0]
+        if (texId != 0) {
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texId)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_REPEAT)
+            GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bmp, 0)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+            grainTextureCache[asset] = texId
+        }
+        bmp.recycle()
+        return texId
+    }
+
     fun release() {
         if (isReleased) return
         isReleased = true
@@ -737,6 +878,11 @@ class GPUVideoProcessor(
             }
             lutTextureCache.clear()
 
+            for ((_, texId) in grainTextureCache) {
+                GLES30.glDeleteTextures(1, intArrayOf(texId), 0)
+            }
+            grainTextureCache.clear()
+
             if (inputTextureId != 0) {
                 GLES30.glDeleteTextures(1, intArrayOf(inputTextureId), 0)
                 inputTextureId = 0
@@ -748,6 +894,14 @@ class GPUVideoProcessor(
             if (dummy3DTextureId != 0) {
                 GLES30.glDeleteTextures(1, intArrayOf(dummy3DTextureId), 0)
                 dummy3DTextureId = 0
+            }
+            if (thermalPaletteTexId != 0) {
+                GLES30.glDeleteTextures(1, intArrayOf(thermalPaletteTexId), 0)
+                thermalPaletteTexId = 0
+            }
+            if (thermalMaskTexId != 0) {
+                GLES30.glDeleteTextures(1, intArrayOf(thermalMaskTexId), 0)
+                thermalMaskTexId = 0
             }
 
             if (programId != 0) {

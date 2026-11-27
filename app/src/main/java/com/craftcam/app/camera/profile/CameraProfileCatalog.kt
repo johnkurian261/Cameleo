@@ -1593,6 +1593,60 @@ object CameraProfileCatalog {
         )
     )
 
+    val THERMAL_VISION = CameleoCameraProfile(
+        id = "thermal_vision",
+        name = "THERMAL",
+        subtitle = "Simulated IR Vision",
+        presetId = "thermal_vision",
+        focalLengths = listOf(
+            FocalLengthOption("28mm", 28f)
+        ),
+        defaultFocalLengthMm = 28f,
+        supportedLenses = listOf(
+            LensType.NORMAL
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
+        filmProfile = FilmProfile(
+            id = "thermal_bypass",
+            name = "Simulated IR False-Color",
+            lutAssetPath = null,
+            lutInputSpace = LutInputSpace.SRGB,
+            contrast = 1.0f,
+            saturation = 1.0f,
+            temperature = 0.0f,
+            tint = 0.0f,
+            fade = 0.0f,
+            toeLift = 0.0f,
+            shoulderClip = 1.0f,
+            highlightRollOff = 1.0f,
+            clarityStrength = 0.0f,
+            skinProtection = 0.0f,
+            halationThreshold = 1.0f,
+            halationIntensity = 0.0f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_thermal_none",
+            mode = GrainMode.PROCEDURAL,
+            assetPath = "",
+            intensity = 0.0f,
+            scale = 1.0f,
+            blendMode = GrainBlendMode.OVERLAY,
+            shadowStrength = 0.0f,
+            highlightStrength = 0.0f,
+            isColorNoise = false,
+            luminanceWeightingEnabled = false
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_thermal_lwir",
+            distortionStrength = 0.0f,
+            chromaticAberration = 0.0f,
+            vignetteStrength = 0.0f,
+            vignetteRadius = 1.0f,
+            edgeSoftness = 0.0f
+        )
+    )
+
     val allProfiles = listOf(
         FXN_R,
         D_CLASSIC,
@@ -1628,7 +1682,8 @@ object CameraProfileCatalog {
         VSCO_HB1,
         VSCO_B1,
         VSCO_X1,
-        VSCO_HANDYCAM
+        VSCO_HANDYCAM,
+        THERMAL_VISION
     )
 
     /**
@@ -1637,6 +1692,7 @@ object CameraProfileCatalog {
      */
     fun getProfileForPreset(preset: CameraPreset): CameleoCameraProfile {
         when (preset.id) {
+            "thermal_vision", "thermal", "thermal_ir" -> return THERMAL_VISION
             "zero" -> return ZERO_CAMERA
             "analog_fxn_r", "fxnr", "fxn_r" -> return FXN_R
             "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> return D_CLASSIC

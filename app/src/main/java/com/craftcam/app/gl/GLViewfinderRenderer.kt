@@ -217,6 +217,44 @@ class GLViewfinderRenderer(
     private var dummy3DTextureId = 0
     private var fallbackGrainTextureId = 0
 
+    // Simulated Thermal Vision GPU & Mask State
+    private val thermalMaskExtractor = GlThermalMaskExtractor()
+    private var thermalPaletteTexId = 0
+    private var thermalMaskTexId = 0
+    private var lastUploadedMaskSeq = -1L
+
+    @Volatile
+    private var thermalConfig = com.craftcam.app.thermal.ThermalVisionConfig()
+
+    @Volatile
+    private var thermalFaces: List<com.craftcam.app.portrait.FaceRegion> = emptyList()
+
+    var onThermalStateUpdated: ((com.craftcam.app.thermal.ThermalMaskSnapshot?) -> Unit)? = null
+
+    private var thermalLocs = ThermalGlHelper.UniformLocs.UNSET
+
+    fun updateThermalConfig(config: com.craftcam.app.thermal.ThermalVisionConfig) {
+        thermalConfig = config
+        thermalMaskExtractor.configure(
+            enabled = activePreset.id == "thermal_vision",
+            segmentationEnabled = config.segmentationEnabled
+        )
+        requestRenderSafe()
+    }
+
+    fun updateThermalFaces(faces: List<com.craftcam.app.portrait.FaceRegion>) {
+        thermalFaces = faces
+        thermalMaskExtractor.updateFaces(faces)
+    }
+
+    fun resetThermalTemporalState() {
+        thermalMaskExtractor.resetTemporalHistory()
+        lastUploadedMaskSeq = -1L
+    }
+
+    fun getLatestThermalSnapshot(): com.craftcam.app.thermal.ThermalMaskSnapshot? =
+        thermalMaskExtractor.getLatestSnapshot()
+
     private fun initDummyTextures() {
         if (dummy2DTextureId == 0) {
             val tex = IntArray(1)
@@ -499,6 +537,24 @@ class GLViewfinderRenderer(
 
     fun updatePreset(preset: CameraPreset) {
         pendingPreset = preset
+        val isThermal = preset.id == "thermal_vision"
+        thermalMaskExtractor.configure(
+            enabled = isThermal,
+            segmentationEnabled = thermalConfig.segmentationEnabled
+        )
+        if (isThermal) {
+            thermalMaskExtractor.resetTemporalHistory()
+            lastUploadedMaskSeq = -1L
+            val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
+            activePreset = preset
+            activeUnifiedProfile = unifiedProfile
+            activeLutTexId = 0
+            activeSecLutTexId = 0
+            activeHasGrainTexture = false
+            activeResolvedGrain = null
+            requestRenderSafe()
+            return
+        }
         val unifiedProfile = com.craftcam.app.camera.profile.CameraProfileCatalog.getUnifiedProfile(preset)
         activeUnifiedProfile = unifiedProfile
         val lutPlan = resolveActiveLutPlan(preset, unifiedProfile, currentTuning)
@@ -657,6 +713,12 @@ class GLViewfinderRenderer(
     }
 
     fun updateTuning(tuning: UserTuningConfig) {
+        if (activePreset.id == "thermal_vision") {
+            currentTuning = tuning
+            isHardwareWbActive = tuning.isHardwareWbActive
+            requestRenderSafe()
+            return
+        }
         val oldPlan = resolveActiveLutPlan(activePreset, activeUnifiedProfile, currentTuning)
         val newPlan = resolveActiveLutPlan(activePreset, activeUnifiedProfile, tuning)
         currentTuning = tuning
@@ -799,6 +861,9 @@ class GLViewfinderRenderer(
         dummy2DTextureId = 0
         dummy3DTextureId = 0
         fallbackGrainTextureId = 0
+        thermalPaletteTexId = 0
+        thermalMaskTexId = 0
+        lastUploadedMaskSeq = -1L
         activeLutTexId = 0
         activeSecLutTexId = 0
         activeGrainTexId = 0
@@ -960,6 +1025,9 @@ class GLViewfinderRenderer(
         uD3DAnaglyphLoc = GLES30.glGetUniformLocation(programId, "uD3DAnaglyph")
 
         initDummyTextures()
+        thermalLocs = ThermalGlHelper.UniformLocs.UNSET.locate(programId)
+        thermalPaletteTexId = ThermalGlHelper.createPaletteTexture()
+        thermalMaskTexId = ThermalGlHelper.createMaskTexture()
         updatePreset(activePreset)
         preloadCommonPresets()
 
@@ -983,7 +1051,7 @@ class GLViewfinderRenderer(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
-        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        ThermalGlHelper.bindSamplerUnits(thermalLocs, thermalPaletteTexId, thermalMaskTexId, dummy2DTextureId)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -1075,6 +1143,15 @@ class GLViewfinderRenderer(
                 uprightSensorH = rotH,
                 flipHorizontal = isFront && !mirrorFrontPreview
             )
+        } else if (activePreset.id == "thermal_vision" && !isProMode && !isNaturalMode) {
+            thermalMaskExtractor.maybeSampleFrame(
+                oesTextureId = textureId,
+                passthroughProgramId = fallbackProgramId,
+                passthroughTextureLoc = fallbackTextureLoc,
+                passthroughTexMatrixLoc = fallbackTexMatrixLoc,
+                texMatrix = texMatrix,
+                flipHorizontal = false
+            )
         }
 
         val durationNs = System.nanoTime() - startNs
@@ -1117,6 +1194,7 @@ class GLViewfinderRenderer(
         }
 
         if (isProMode) {
+            ThermalGlHelper.bindInactive(thermalLocs, dummy2DTextureId)
             // Pro Camera Mode: 100% clean, neutral preview, 0 film simulation
             GLES30.glUniform1i(uNaturalModeEnabledLoc, 0)
             GLES30.glUniform1f(uNaturalShadowLiftLoc, 0f)
@@ -1204,6 +1282,7 @@ class GLViewfinderRenderer(
                 GLES30.glUniform1i(uZebraEnabledLoc, 0)
             }
         } else if (isNaturalMode) {
+            ThermalGlHelper.bindInactive(thermalLocs, dummy2DTextureId)
             if (uFocusPeakingEnabledLoc != -1) GLES30.glUniform1i(uFocusPeakingEnabledLoc, 0)
             if (uZebraEnabledLoc != -1) GLES30.glUniform1i(uZebraEnabledLoc, 0)
 
@@ -1312,7 +1391,45 @@ class GLViewfinderRenderer(
             if (uDebugStageHalationLoc != -1) GLES30.glUniform1i(uDebugStageHalationLoc, 1)
             if (uDebugStageOpticsLoc != -1) GLES30.glUniform1i(uDebugStageOpticsLoc, 1)
             if (uDebugStageVignetteLoc != -1) GLES30.glUniform1i(uDebugStageVignetteLoc, 1)
+        } else if (activePreset.id == "thermal_vision") {
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE3)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE4)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3DTextureId)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE5)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, dummy2DTextureId)
+            if (uLutEnabledLoc != -1) GLES30.glUniform1i(uLutEnabledLoc, 0)
+            if (uNaturalModeEnabledLoc != -1) GLES30.glUniform1i(uNaturalModeEnabledLoc, 0)
+            if (uFocusPeakingEnabledLoc != -1) GLES30.glUniform1i(uFocusPeakingEnabledLoc, 0)
+            if (uZebraEnabledLoc != -1) GLES30.glUniform1i(uZebraEnabledLoc, 0)
+            if (uDiagnosticModeLoc != -1) GLES30.glUniform1i(uDiagnosticModeLoc, diagnosticMode)
+
+            val snap = thermalMaskExtractor.getLatestSnapshot()
+            val seq = thermalMaskExtractor.getSnapshotSequence()
+            val uploadMask = snap != null && seq != lastUploadedMaskSeq
+            if (uploadMask) {
+                lastUploadedMaskSeq = seq
+                onThermalStateUpdated?.invoke(snap)
+            }
+            val frameSeed = ((frameCount / 2) % 60).toFloat() / 60.0f
+            ThermalGlHelper.bindActiveStage(
+                locs = thermalLocs,
+                config = thermalConfig,
+                paletteTexId = thermalPaletteTexId,
+                maskTexId = thermalMaskTexId,
+                dummy2DTexId = dummy2DTextureId,
+                snapshot = snap,
+                uploadSnapshotToTex = uploadMask,
+                faces = thermalFaces,
+                randomSeedLoc = uRandomSeedLoc,
+                randomSeed = frameSeed
+            )
         } else {
+            ThermalGlHelper.bindInactive(thermalLocs, dummy2DTextureId)
             if (uFocusPeakingEnabledLoc != -1) GLES30.glUniform1i(uFocusPeakingEnabledLoc, 0)
             if (uZebraEnabledLoc != -1) GLES30.glUniform1i(uZebraEnabledLoc, 0)
 
@@ -1651,6 +1768,7 @@ class GLViewfinderRenderer(
 
     fun release() {
         motionFrameExtractor.release()
+        thermalMaskExtractor.release()
         frameCallbackThread?.quitSafely()
         frameCallbackThread = null
         surfaceTexture?.setOnFrameAvailableListener(null)
@@ -1665,6 +1783,7 @@ class GLViewfinderRenderer(
      */
     fun releaseGLResources() {
         motionFrameExtractor.teardownGlSurface()
+        thermalMaskExtractor.teardownGlSurface()
         if (programId != 0) {
             GLES30.glDeleteProgram(programId)
             programId = 0
@@ -1684,6 +1803,14 @@ class GLViewfinderRenderer(
         if (dummy3DTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(dummy3DTextureId), 0)
             dummy3DTextureId = 0
+        }
+        if (thermalPaletteTexId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(thermalPaletteTexId), 0)
+            thermalPaletteTexId = 0
+        }
+        if (thermalMaskTexId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(thermalMaskTexId), 0)
+            thermalMaskTexId = 0
         }
         if (fallbackGrainTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(fallbackGrainTextureId), 0)

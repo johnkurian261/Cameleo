@@ -28,7 +28,8 @@ data class AppSettingsState(
     val highResolutionExport: Boolean = true,
     val tactileHaptics: Boolean = true,
     val preserveExif: Boolean = true,
-    val golfMotion: com.craftcam.app.motion.GolfMotionConfig = com.craftcam.app.motion.GolfMotionConfig()
+    val golfMotion: com.craftcam.app.motion.GolfMotionConfig = com.craftcam.app.motion.GolfMotionConfig(),
+    val thermalVision: com.craftcam.app.thermal.ThermalVisionConfig = com.craftcam.app.thermal.ThermalVisionConfig()
 )
 
 class AppSettingsStore private constructor(context: Context) {
@@ -62,6 +63,21 @@ class AppSettingsStore private constructor(context: Context) {
                 flashEffectEnabled = prefs.getBoolean(KEY_GOLF_MOTION_FLASH, true),
                 loopPlayback = prefs.getBoolean(KEY_GOLF_MOTION_LOOP, true),
                 audioEnabled = prefs.getBoolean(KEY_GOLF_MOTION_AUDIO, true)
+            ),
+            thermalVision = com.craftcam.app.thermal.ThermalVisionConfig(
+                palette = com.craftcam.app.thermal.ThermalPalette.fromId(
+                    prefs.getString(KEY_THERMAL_PALETTE, com.craftcam.app.thermal.ThermalPalette.RAINBOW_THERMAL.id)
+                ),
+                sensitivity = prefs.getFloat(KEY_THERMAL_SENSITIVITY, 1.0f),
+                contrast = prefs.getFloat(KEY_THERMAL_CONTRAST, 1.15f),
+                inverted = prefs.getBoolean(KEY_THERMAL_INVERTED, false),
+                sensorSoftness = prefs.getFloat(KEY_THERMAL_SOFTNESS, 0.30f),
+                noiseIntensity = prefs.getFloat(KEY_THERMAL_NOISE, 0.045f),
+                adaptiveContrastEnabled = prefs.getBoolean(KEY_THERMAL_ADAPTIVE, true),
+                hudEnabled = prefs.getBoolean(KEY_THERMAL_HUD, true),
+                monochromeHud = prefs.getBoolean(KEY_THERMAL_MONO_HUD, false),
+                crosshairEnabled = prefs.getBoolean(KEY_THERMAL_CROSSHAIR, true),
+                segmentationEnabled = prefs.getBoolean(KEY_THERMAL_SEGMENTATION, true)
             )
         )
     )
@@ -177,6 +193,23 @@ class AppSettingsStore private constructor(context: Context) {
         _state.update { it.copy(golfMotion = it.golfMotion.copy(audioEnabled = enabled)) }
     }
 
+    fun setThermalVisionConfig(config: com.craftcam.app.thermal.ThermalVisionConfig) {
+        prefs.edit()
+            .putString(KEY_THERMAL_PALETTE, config.palette.id)
+            .putFloat(KEY_THERMAL_SENSITIVITY, config.sensitivity)
+            .putFloat(KEY_THERMAL_CONTRAST, config.contrast)
+            .putBoolean(KEY_THERMAL_INVERTED, config.inverted)
+            .putFloat(KEY_THERMAL_SOFTNESS, config.sensorSoftness)
+            .putFloat(KEY_THERMAL_NOISE, config.noiseIntensity)
+            .putBoolean(KEY_THERMAL_ADAPTIVE, config.adaptiveContrastEnabled)
+            .putBoolean(KEY_THERMAL_HUD, config.hudEnabled)
+            .putBoolean(KEY_THERMAL_MONO_HUD, config.monochromeHud)
+            .putBoolean(KEY_THERMAL_CROSSHAIR, config.crosshairEnabled)
+            .putBoolean(KEY_THERMAL_SEGMENTATION, config.segmentationEnabled)
+            .apply()
+        _state.update { it.copy(thermalVision = config) }
+    }
+
     companion object {
         private const val PREFS_NAME = "cameleo_settings"
         private const val KEY_EXPORT_TO_ALBUM = "export_to_album"
@@ -198,6 +231,17 @@ class AppSettingsStore private constructor(context: Context) {
         private const val KEY_GOLF_MOTION_FLASH = "golf_motion_flash"
         private const val KEY_GOLF_MOTION_LOOP = "golf_motion_loop"
         private const val KEY_GOLF_MOTION_AUDIO = "golf_motion_audio"
+        private const val KEY_THERMAL_PALETTE = "thermal_palette"
+        private const val KEY_THERMAL_SENSITIVITY = "thermal_sensitivity"
+        private const val KEY_THERMAL_CONTRAST = "thermal_contrast"
+        private const val KEY_THERMAL_INVERTED = "thermal_inverted"
+        private const val KEY_THERMAL_SOFTNESS = "thermal_softness"
+        private const val KEY_THERMAL_NOISE = "thermal_noise"
+        private const val KEY_THERMAL_ADAPTIVE = "thermal_adaptive"
+        private const val KEY_THERMAL_HUD = "thermal_hud"
+        private const val KEY_THERMAL_MONO_HUD = "thermal_mono_hud"
+        private const val KEY_THERMAL_CROSSHAIR = "thermal_crosshair"
+        private const val KEY_THERMAL_SEGMENTATION = "thermal_segmentation"
 
         @Volatile
         private var instance: AppSettingsStore? = null

@@ -1487,6 +1487,13 @@ private fun resolveSampleResIds(context: android.content.Context, preset: Camera
         "cam_retro_vhs", "vhs" -> listOf("sample_cam_retro_vhs", "sample_cam_analog_video", "sample_cam_90s_camcorder")
         "cam_analog_video" -> listOf("sample_cam_analog_video", "sample_cam_retro_vhs", "sample_cam_90s_camcorder")
         "cam_90s_camcorder" -> listOf("sample_cam_90s_camcorder", "sample_cam_analog_video", "sample_cam_retro_vhs")
+        "thermal_vision", "thermal", "thermal_ir" -> listOf(
+            "sample_thermal_vision",
+            "sample_thermal_ironbow",
+            "sample_thermal_redhot",
+            "sample_thermal_whitehot",
+            "sample_thermal_blackhot"
+        )
         else -> listOf("sample_${preset.id}", "sample_analog_35mm_classic", "sample_analog_fxn_r_2")
     }
 

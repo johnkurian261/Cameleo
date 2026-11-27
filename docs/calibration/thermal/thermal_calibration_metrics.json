@@ -1,0 +1,94 @@
+{
+  "palettes": {
+    "rainbow_thermal": {
+      "cold_rgb_8bit": [
+        18,
+        5,
+        44
+      ],
+      "mid_rgb_8bit": [
+        8,
+        194,
+        118
+      ],
+      "hot_rgb_8bit": [
+        217,
+        24,
+        24
+      ],
+      "max_per_step_delta_norm": 0.02095
+    },
+    "ironbow": {
+      "cold_rgb_8bit": [
+        6,
+        3,
+        14
+      ],
+      "mid_rgb_8bit": [
+        176,
+        38,
+        80
+      ],
+      "hot_rgb_8bit": [
+        255,
+        247,
+        156
+      ],
+      "max_per_step_delta_norm": 0.01783
+    },
+    "red_hot": {
+      "cold_rgb_8bit": [
+        7,
+        21,
+        56
+      ],
+      "mid_rgb_8bit": [
+        62,
+        90,
+        146
+      ],
+      "hot_rgb_8bit": [
+        255,
+        106,
+        69
+      ],
+      "max_per_step_delta_norm": 0.00936
+    },
+    "white_hot": {
+      "cold_rgb_8bit": [
+        7,
+        8,
+        10
+      ],
+      "mid_rgb_8bit": [
+        110,
+        115,
+        123
+      ],
+      "hot_rgb_8bit": [
+        248,
+        250,
+        252
+      ],
+      "max_per_step_delta_norm": 0.00483
+    },
+    "black_hot": {
+      "cold_rgb_8bit": [
+        248,
+        250,
+        252
+      ],
+      "mid_rgb_8bit": [
+        109,
+        114,
+        122
+      ],
+      "hot_rgb_8bit": [
+        7,
+        8,
+        10
+      ],
+      "max_per_step_delta_norm": 0.00483
+    }
+  }
+}

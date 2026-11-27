@@ -66,7 +66,14 @@ import com.craftcam.app.camera.IS_VIDEO_FEATURE_PAUSED
 import com.craftcam.app.captureframe.CaptureFrameOverlay
 import com.craftcam.app.gl.GLViewfinderRenderer
 import com.craftcam.app.model.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import com.craftcam.app.presets.PresetCatalog
+import com.craftcam.app.processor.ImageProcessor
+import com.craftcam.app.thermal.ThermalVideoTranscoder
+import com.craftcam.app.thermal.ThermalVisionConfig
+import com.craftcam.app.ui.gallery.decodeOrientedMutableBitmap
 import com.craftcam.app.ui.components.*
 import com.craftcam.app.ui.theme.*
 import com.craftcam.app.util.SoundManager
@@ -102,7 +109,7 @@ fun ViewfinderScreen(
     }
 
     LaunchedEffect(Unit) {
-        if (IS_VIDEO_FEATURE_PAUSED) {
+        if (IS_VIDEO_FEATURE_PAUSED && selectedPreset.id != "thermal_vision") {
             cameraManager.setCaptureMode(CaptureMode.PHOTO)
         }
         withContext(Dispatchers.IO) {
@@ -123,13 +130,76 @@ fun ViewfinderScreen(
     var showLensSheet by remember { mutableStateOf(false) }
     var showGolfMotionDrawer by remember { mutableStateOf(false) }
     var showGolfWheel by remember { mutableStateOf(true) }
+    var showThermalEffectsDrawer by remember { mutableStateOf(false) }
+    var showThermalWheel by remember { mutableStateOf(false) }
+    var isThermalImporting by remember { mutableStateOf(false) }
     var activeQuickControlMode by remember { mutableStateOf(QuickControlMode.COMPACT) }
     var latestThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
 
     val isGolfPreset = selectedPreset.id == "disp_classic"
+    val isThermalPreset = selectedPreset.id == "thermal_vision"
     val wheelPresets = remember {
         PresetCatalog.allPresets.filter { !IS_VIDEO_FEATURE_PAUSED || it.category != CameraCategory.CAMCORDER }
+    }
+
+    val thermalMediaPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isThermalImporting = true
+                try {
+                    val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+                    val isVideo = mime.startsWith("video/")
+                    val thermalCfg = uiState.thermal.config
+                    if (isVideo) {
+                        val savedUri = withContext(Dispatchers.Default) {
+                            ThermalVideoTranscoder.transcodeVideoUri(
+                                context = context,
+                                sourceUri = uri,
+                                config = thermalCfg
+                            )
+                        }
+                        if (savedUri != null) {
+                            GalleryCache.invalidate()
+                            Toast.makeText(context, "Saved Thermal video to Cameleo album", Toast.LENGTH_SHORT).show()
+                            latestThumbnail = loadThumbnailForUri(context, savedUri) ?: loadLatestCameleoThumbnail(context)
+                        } else {
+                            Toast.makeText(context, "Failed to transcode thermal video", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        val bitmap = withContext(Dispatchers.IO) {
+                            decodeOrientedMutableBitmap(context) {
+                                context.contentResolver.openInputStream(uri)
+                            }
+                        }
+                        if (bitmap != null) {
+                            val savedUri = ImageProcessor.developBitmap(
+                                context = context,
+                                sourceBitmap = bitmap,
+                                preset = selectedPreset,
+                                tuning = uiState.tuning,
+                                isFlashActive = false
+                            )
+                            if (savedUri != null) {
+                                GalleryCache.invalidate()
+                                Toast.makeText(context, "Saved Thermal image to Cameleo album", Toast.LENGTH_SHORT).show()
+                                latestThumbnail = loadThumbnailForUri(context, savedUri) ?: loadLatestCameleoThumbnail(context)
+                            } else {
+                                Toast.makeText(context, "Failed to process thermal image", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Unable to decode selected image", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Thermal import failed: ${t.message}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    isThermalImporting = false
+                }
+            }
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -182,8 +252,25 @@ fun ViewfinderScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            // ── 1. Top Toolbar (Dedicated Golf Bar when disp_classic active) ──────────
-            if (isGolfPreset) {
+            // ── 1. Top Toolbar (Dedicated Thermal / Golf Bar when active) ──────────
+            if (isThermalPreset) {
+                ThermalTopToolbar(
+                    thermalState = uiState.thermal,
+                    isRecording = uiState.isRecording,
+                    switchRotationDeg = animatedRotation,
+                    onSwitchCamera = {
+                        if (!uiState.isRecording) {
+                            switchRotation += 180f
+                            cameraManager.switchCamera()
+                        }
+                    },
+                    onToggleInvert = {
+                        cameraManager.updateThermalConfig { it.copy(inverted = !it.inverted) }
+                    },
+                    onOpenDrawer = { showThermalEffectsDrawer = true },
+                    onOpenSettingsMenu = { showControlMenu = !showControlMenu }
+                )
+            } else if (isGolfPreset) {
                 GolfTopToolbar(
                     golfState = uiState.golfMotion,
                     flashMode = uiState.flashMode,
@@ -388,6 +475,46 @@ fun ViewfinderScreen(
                         )
                     }
 
+                    // Thermal Vision overlay (heat scale, honest HUD, crosshair, REC timer)
+                    if (isThermalPreset) {
+                        ThermalViewfinderOverlay(
+                            thermalState = uiState.thermal,
+                            isRecording = uiState.isRecording,
+                            recordingSeconds = uiState.recordingSeconds,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Importing Thermal Media progress pill
+                    if (isThermalPreset && isThermalImporting) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xD80A0C10))
+                                .border(1.dp, Color(0x88FF6D2E), RoundedCornerShape(16.dp))
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFFFF6D2E)
+                                )
+                                Text(
+                                    text = "DEVELOPING THERMAL...",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
                     // Golf Motion unobtrusive status & hairline progress overlay
                     if (isGolfPreset) {
                         GolfViewfinderOverlay(
@@ -438,6 +565,7 @@ fun ViewfinderScreen(
                     .padding(bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                if (!isThermalPreset) {
                 // ── Expanded temperature and brightness controls ───────
                 CameraExposureTemperatureControls(
                     modifier = Modifier.fillMaxWidth(),
@@ -528,10 +656,127 @@ fun ViewfinderScreen(
                         }
                     }
                 )
+                }
 
-                Spacer(modifier = Modifier.height(if (isGolfPreset) 6.dp else 14.dp))
+                Spacer(modifier = Modifier.height(if (isThermalPreset) 4.dp else if (isGolfPreset) 6.dp else 14.dp))
 
-                if (isGolfPreset) {
+                if (isThermalPreset) {
+                    ThermalControlsDeck(
+                        thermalState = uiState.thermal,
+                        captureMode = uiState.captureMode,
+                        isWheelExpanded = showThermalWheel,
+                        isRecording = uiState.isRecording,
+                        onSelectPalette = { palette ->
+                            cameraManager.updateThermalConfig { it.copy(palette = palette) }
+                        },
+                        onUpdateSensitivity = { sens ->
+                            cameraManager.updateThermalConfig { it.copy(sensitivity = sens) }
+                        },
+                        onUpdateContrast = { contrast ->
+                            cameraManager.updateThermalConfig { it.copy(contrast = contrast) }
+                        },
+                        onSelectMode = { mode ->
+                            if (!uiState.isRecording) {
+                                cameraManager.setCaptureMode(mode)
+                            }
+                        },
+                        onOpenDrawer = { showThermalEffectsDrawer = true },
+                        onImportMedia = {
+                            if (!isThermalImporting && !uiState.isRecording) {
+                                thermalMediaPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            }
+                        },
+                        onToggleWheel = { showThermalWheel = !showThermalWheel }
+                    )
+
+                    AnimatedVisibility(visible = showThermalWheel) {
+                        CameraWheelSelector(
+                            presets = wheelPresets,
+                            selectedPreset = selectedPreset,
+                            onPresetSelected = onPresetChange,
+                            onOpenCollection = onNavigateToCollection
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    ThermalBottomControlRow(
+                        selectedPreset = selectedPreset,
+                        latestThumbnail = latestThumbnail,
+                        captureMode = uiState.captureMode,
+                        isCapturing = uiState.isCapturing || countdown != null,
+                        isRecording = uiState.isRecording,
+                        onGalleryClick = {
+                            if (!uiState.isRecording) onNavigateToGallery()
+                        },
+                        onOpenCollection = {
+                            if (!uiState.isRecording) onNavigateToCollection()
+                        },
+                        onShutterClick = {
+                            if (uiState.captureMode == CaptureMode.VIDEO) {
+                                if (uiState.isRecording) {
+                                    cameraManager.stopRecording()
+                                } else {
+                                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    cameraManager.startRecording(
+                                        onVideoSaved = { uri ->
+                                            GalleryCache.invalidate()
+                                            Toast.makeText(context, "Saved Thermal video to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+                                            val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
+                                            if (prewarmed != null) {
+                                                latestThumbnail = prewarmed
+                                            } else {
+                                                scope.launch {
+                                                    latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                }
+                                            }
+                                        },
+                                        onError = { err ->
+                                            Toast.makeText(context, "Thermal video failed: $err", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            } else {
+                                scope.launch {
+                                    if (uiState.timerSeconds > 0) {
+                                        for (i in uiState.timerSeconds downTo 1) {
+                                            countdown = i
+                                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                            delay(1000)
+                                        }
+                                        countdown = null
+                                    }
+                                    val mirrorFront = (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) &&
+                                        AppSettingsStore.get(context).current.mirrorFrontCamera
+                                    cameraManager.captureAndProcessPhoto(
+                                        preset = selectedPreset,
+                                        aspectRatio = uiState.aspectRatio,
+                                        mirrorFrontCamera = mirrorFront,
+                                        onPhotoSaved = { uri ->
+                                            GalleryCache.invalidate()
+                                            Toast.makeText(context, "Saved Thermal image to Cameleo album", Toast.LENGTH_SHORT).show()
+                                            val id = try { ContentUris.parseId(uri) } catch (_: Exception) { 0L }
+                                            val prewarmed = if (id > 0L) GalleryCache.getThumbnail(id) else null
+                                            if (prewarmed != null) {
+                                                latestThumbnail = prewarmed
+                                            } else {
+                                                scope.launch {
+                                                    latestThumbnail = loadThumbnailForUri(context, uri) ?: loadLatestCameleoThumbnail(context)
+                                                }
+                                            }
+                                        },
+                                        onError = { exc ->
+                                            Toast.makeText(context, "Thermal capture failed: $exc", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    )
+                } else if (isGolfPreset) {
                     GolfModeAndSettingsStrip(
                         golfState = uiState.golfMotion,
                         isWheelExpanded = showGolfWheel,
@@ -917,6 +1162,28 @@ fun ViewfinderScreen(
                 onLoopChange = { cameraManager.setGolfMotionLoop(it) },
                 onAudioChange = { cameraManager.setGolfMotionAudio(it) },
                 onDismiss = { showGolfMotionDrawer = false }
+            )
+        }
+
+        // ── 14. Thermal Vision Effects & HUD Drawer (when thermal_vision is active) ──
+        if (isThermalPreset) {
+            ThermalEffectsDrawer(
+                visible = showThermalEffectsDrawer,
+                config = uiState.thermal.config,
+                onConfigChange = { transform ->
+                    cameraManager.updateThermalConfig(transform)
+                },
+                onImportMedia = {
+                    if (!isThermalImporting && !uiState.isRecording) {
+                        thermalMediaPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        )
+                    }
+                },
+                onReset = {
+                    cameraManager.updateThermalConfig { ThermalVisionConfig() }
+                },
+                onDismiss = { showThermalEffectsDrawer = false }
             )
         }
     }

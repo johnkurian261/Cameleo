@@ -13,10 +13,27 @@ import org.junit.Test
 class WhiteBalanceCalibrationTest {
 
     @Test
+    fun perDeviceCalibrationPreservesOffAxisColorAfterManualBalance() {
+        val identity = ColorMatrix3x3.IDENTITY.toFloatArray()
+        val calibration = floatArrayOf(.88f,.04f,0f, .02f,1f,.03f, 0f,.02f,.98f)
+        val device = ColorMatrix3x3.fromArray(calibration)
+        val referenceWhite = floatArrayOf(.95046f,1f,1.08906f)
+        val referenceColor = floatArrayOf(.4f,.3f,.2f)
+        val white = device.apply(referenceWhite[0],referenceWhite[1],referenceWhite[2])
+        val color = device.apply(referenceColor[0],referenceColor[1],referenceColor[2])
+        val expected = ColorMatrix3x3.fromArray(HardwareWhiteBalanceCalibrator.deviceCcm(
+            identity, identity, identity, .3127f, .329f)).apply(
+                referenceColor[0]/referenceWhite[0], referenceColor[1], referenceColor[2]/referenceWhite[2])
+        val actual = ColorMatrix3x3.fromArray(HardwareWhiteBalanceCalibrator.deviceCcm(
+            identity, identity, calibration, .3127f, .329f)).apply(color[0]/white[0],color[1]/white[1],color[2]/white[2])
+        assertArrayEquals(expected, actual, .0001f)
+    }
+
+    @Test
     fun testAllPresetsHaveValidWhiteBalancePolicy() {
         val presets = PresetCatalog.allPresets
         assertTrue("Preset catalog must not be empty", presets.isNotEmpty())
-        assertEquals("Expected 34 authentic camera presets", 34, presets.size)
+        assertEquals("Expected 35 authentic camera presets", 35, presets.size)
 
         for (preset in presets) {
             val wb = preset.whiteBalance

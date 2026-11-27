@@ -128,7 +128,10 @@ object CameraProfileCompatibility {
         "dblack" to ProfilePolicy(isSupported = false, defaultProfileId = "22M"),
         "cam_retro_vhs" to ProfilePolicy(isSupported = false), // Fixed analog VHS tape
         "cam_analog_video" to ProfilePolicy(isSupported = false), // Fixed CRT video
-        "cam_90s_camcorder" to ProfilePolicy(isSupported = false) // Fixed Hi8 camcorder
+        "cam_90s_camcorder" to ProfilePolicy(isSupported = false), // Fixed Hi8 camcorder
+        "thermal_vision" to ProfilePolicy(isSupported = false, supportsVideo = true, supportsStill = true),
+        "thermal" to ProfilePolicy(isSupported = false, supportsVideo = true, supportsStill = true),
+        "thermal_ir" to ProfilePolicy(isSupported = false, supportsVideo = true, supportsStill = true)
     )
 
     fun getPolicy(presetId: String): ProfilePolicy =
