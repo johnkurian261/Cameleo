@@ -43,8 +43,8 @@ class DqsFilterTransferTest {
         val dfunsProfile = CameraProfileCatalog.getProfileForPreset(dfunsPreset)
 
         // 1. Film Profile (3D LUT, input space, tone curves, roll-off)
-        assertEquals(dfunsProfile.filmProfile.lutAssetPath, dqsProfile.filmProfile.lutAssetPath)
-        assertEquals("lut_dfuns_v1.png", dqsProfile.filmProfile.lutAssetPath)
+        assertEquals("lut_dqs_preserved.png", dqsProfile.filmProfile.lutAssetPath)
+        assertEquals("lut_dfuns_v1.png", dfunsProfile.filmProfile.lutAssetPath)
         assertEquals(dfunsProfile.filmProfile.lutInputSpace, dqsProfile.filmProfile.lutInputSpace)
         assertEquals(LutInputSpace.SRGB, dqsProfile.filmProfile.lutInputSpace)
         assertEquals(dfunsProfile.filmProfile.highlightRollOff, dqsProfile.filmProfile.highlightRollOff, 1e-4f)
@@ -95,10 +95,9 @@ class DqsFilterTransferTest {
         val dqsAliasSkin = SkinToneProfileCatalog.getProfileForPreset("dqs")
         val dfunsSkin = SkinToneProfileCatalog.getProfileForPreset("ccd_flash")
 
-        assertSame("DQS must use D FUNS skin tone profile", SkinToneProfileCatalog.D_FUNS, dqsSkin)
-        assertSame("dqs alias must use D FUNS skin tone profile", SkinToneProfileCatalog.D_FUNS, dqsAliasSkin)
-        assertEquals(dfunsSkin.id, dqsSkin.id)
-        assertEquals("skin_dfuns", dqsSkin.id)
+        assertSame("DQS must use dedicated DQS skin tone profile", SkinToneProfileCatalog.DQS, dqsSkin)
+        assertSame("dqs alias must use dedicated DQS skin tone profile", SkinToneProfileCatalog.DQS, dqsAliasSkin)
+        assertEquals("skin_dqs", dqsSkin.id)
         assertEquals(dfunsSkin.targetHueBias, dqsSkin.targetHueBias, 1e-4f)
         assertEquals(dfunsSkin.skinHighlightKnee, dqsSkin.skinHighlightKnee, 1e-4f)
         assertArrayEquals(dfunsSkin.skinGains, dqsSkin.skinGains, 1e-4f)
@@ -106,8 +105,8 @@ class DqsFilterTransferTest {
 
     @Test
     fun testShaderConstantsAssetRoutingParity() {
-        assertEquals("lut_dfuns_v1.png", ShaderConstants.getLutAssetForPreset("ccd_retro_compact"))
-        assertEquals("lut_dfuns_v1.png", ShaderConstants.getLutAssetForPreset("dqs"))
+        assertEquals("lut_dqs_preserved.png", ShaderConstants.getLutAssetForPreset("ccd_retro_compact"))
+        assertEquals("lut_dqs_preserved.png", ShaderConstants.getLutAssetForPreset("dqs"))
         assertEquals("lut_dfuns_v1.png", ShaderConstants.getLutAssetForPreset("ccd_flash"))
 
         assertEquals("grains/grain_dfuns.jpg", ShaderConstants.getGrainAssetForPreset("ccd_retro_compact", false))
@@ -132,7 +131,7 @@ class DqsFilterTransferTest {
             cameraDualLutMix = dqsProfile.filmProfile.dualLutBlendFactor
         )
 
-        assertEquals("lut_dfuns_v1.png", plan.primaryLutAsset)
+        assertEquals("lut_dqs_preserved.png", plan.primaryLutAsset)
         assertNull("Default profile must have zero secondary LUT", plan.secondaryLutAsset)
         assertEquals(0.0f, plan.dualLutMix, 1e-4f)
         assertFalse("Default profile must not be marked as custom", plan.isCustomProfile)

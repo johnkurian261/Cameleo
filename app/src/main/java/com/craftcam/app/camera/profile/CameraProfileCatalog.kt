@@ -256,8 +256,8 @@ object CameraProfileCatalog {
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
-            id = "dfuns_negative_v1", name = "D Funs colour negative",
-            lutAssetPath = "lut_dfuns_v1.png", lutInputSpace = LutInputSpace.SRGB,
+            id = "dqs_preserved_v1", name = "DQS Preserved colour negative",
+            lutAssetPath = "lut_dqs_preserved.png", lutInputSpace = LutInputSpace.SRGB,
             highlightRollOff = 1f, halationThreshold = 1f, halationIntensity = 0f
         ),
         grainProfile = GrainProfile(

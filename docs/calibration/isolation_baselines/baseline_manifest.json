@@ -1,0 +1,247 @@
+{
+  "lut_hashes": {
+    "lut_zero.png": "285ff3d5624c2efc5438a3ae45a03f832228158c1cd2a2c7a04083d00f055b5a",
+    "lut_analog_35mm_classic.png": "cd16d025c0286246edc76d1e31f4494b7277b90904ff368f0cbfdbda1ee7325c",
+    "lut_fxn_r.png": "9f1c882eee19d3cbaa72daf0938b26043d9dd6f19c4dfc8fa1d5463b3e26917a",
+    "lut_d3d.png": "17c7759f9ec0bb41518dc11ff1f410276b0b8878e97e7e787744b970f50767e9",
+    "lut_135ne.png": "be1be5882c78aa947162cca834b0b617548f5e827010b60521753148341fb381",
+    "lut_ct2f.png": "b53010d639a7f26db64c0c28af9f6c5e43765ef132f7d2a17297e68eaf8bdf78",
+    "lut_mju2.png": "98fe13523673916a781a861e346dca91547c168ef6cce92be8a44023ef9e20f2",
+    "lut_disp_warm.png": "5dd60c33be94d4d0760bdf213fcc113a2fdfa74c053a61a48a3aba16cc291f63",
+    "lut_ccd_grd.png": "5e2556f658a4d143328c66695930f6ab81088b3d01cd3d4e9fddafb9e97a25a4",
+    "lut_ccd_r.png": "28fc1dd343ed4518adac38872acd85bd28265e219f2bd7cb4290c3e8f98c5657",
+    "lut_ccd_y2k_digital.png": "45342a0471732e70fda798f9ca3063126866e1257775433210c93c224ac8ea6d",
+    "lut_dfuns_v1.png": "ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac",
+    "lut_dqs_preserved.png": "ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac",
+    "lut_disp_flash.png": "7a89087ee1367dbe9007bd812b745157f9e29f1580d3ae7325ade1f78abf0899",
+    "lut_disp_classic.png": "a8920f58b4a9f7904df1bbdf26005378295d15a1d426dac7f997e702de7798ed",
+    "lut_inst_vintage.png": "97212cb3ddb202c7fb4e0ba350705fdf0b9fb8a271ae4231602c6b4b7b05522d",
+    "lut_dexp.png": "f386803f35ad226488a6941787339a974a8dfb47d8f2b633562551d9706d8d49",
+    "lut_bw.png": "12e7186c5d5954f7245766afa885e7ff9d1181a52628e07b5e88376bf0d1e2b6",
+    "lut_nt16.png": "23ad01e24a3fd84658fc7cbf9718c5512d314e0b55a8cd342812761d31cbc8ec",
+    "lut_vsco_a6.png": "91c9675b873d70f3aa612a9ff3ca199b0161ed3c15e28d53acdb2c23fc786030",
+    "lut_vsco_c1.png": "90ab6368bc69e7f7f7b386912c12c60c0a4d7fb25ff1d44eeec435718bd832f7",
+    "lut_vsco_f2.png": "7d3d8a2eb3668b8ec71849bdf82baff2a5e6b764cde4b4b9caf09a0196b22324",
+    "lut_vsco_g3.png": "a0df1724d4ff56dfb2229a80449cdb459b6f4dbb7703583e904ece2b83cb0d73",
+    "lut_vsco_m5.png": "26ffe714926a58abc6472209574796b8dc0e2c28b85eadb43a6d5ad67e051208",
+    "lut_vsco_hb1.png": "d1c5bf9492be20c4841b6f5cdda674b81e280df41049202c008e8ef723ce6c2e",
+    "lut_vsco_b1.png": "4b6eafcf255de59c2a5ff61f4c33e2d0256f050bb06ccb4b798defaaea680a26",
+    "lut_vsco_x1.png": "f1e169537cbf936bca79f9f50cdaa27b938bd177d4e0eaea60d9ea6087a30d7a",
+    "lut_vsco_handycam.png": "93b22ec089258bba7b6dee11a408e0fb05c5ffab60d59f12e0df02b9fac0b5c5",
+    "lut_cam_retro_vhs.png": "f6fbafaf423dc0f279509816da2949ba22bac69b6fb1474929871346da95f9ad",
+    "lut_cam_analog_video.png": "9933d8a5cc8f3cacd71f5e48d5895d766b77aa3be62e897fa9bdbd37b8ca67e9",
+    "lut_cam_90s_camcorder.png": "ec728aacd4eee0af8eed6d0ccecaf6fad0963d6b4164f3bf4267a721ed233858"
+  },
+  "presets": {
+    "zero": {
+      "lutAsset": "lut_zero.png",
+      "lutHash": "285ff3d5624c2efc5438a3ae45a03f832228158c1cd2a2c7a04083d00f055b5a",
+      "swatchSha256": "25424f9bc0a3745c9008d790bd4e1826660c82378e7423c2724f8792aeb2b029",
+      "rampSha256": "382a8cdc01d226d085346b342afca4a088c68106bfda11c24f41fbaa074a3f20"
+    },
+    "analog_35mm_classic": {
+      "lutAsset": "lut_analog_35mm_classic.png",
+      "lutHash": "cd16d025c0286246edc76d1e31f4494b7277b90904ff368f0cbfdbda1ee7325c",
+      "swatchSha256": "4355f470e877a5fb07c28d3b711a57c807cfe2b9f237502398dadc6bb5958a17",
+      "rampSha256": "6bcf69e0a8d40ffd5c71877ba2eed0cfa8bd50c759132082a8b6c6f181390681"
+    },
+    "analog_fxn_r": {
+      "lutAsset": "lut_fxn_r.png",
+      "lutHash": "9f1c882eee19d3cbaa72daf0938b26043d9dd6f19c4dfc8fa1d5463b3e26917a",
+      "swatchSha256": "a41758489496a52fc82762b11d7c3cbece8b67310c677b25304e38560d25cdf6",
+      "rampSha256": "8645a82e8a3ff19341a8c01efaaf8d3c62dc2f784dbd373750c0d5b422d3ab55"
+    },
+    "analog_cinema_film": {
+      "lutAsset": "lut_d3d.png",
+      "lutHash": "17c7759f9ec0bb41518dc11ff1f410276b0b8878e97e7e787744b970f50767e9",
+      "swatchSha256": "f6aa838ee96fbbcd5832c3d64889ca699127c9b0f08324a990165e92181be83d",
+      "rampSha256": "54a16768a38c39b59c77db0d4cdfecbdba42d10e992bb0110725a332a0a55804"
+    },
+    "analog_135ne": {
+      "lutAsset": "lut_135ne.png",
+      "lutHash": "be1be5882c78aa947162cca834b0b617548f5e827010b60521753148341fb381",
+      "swatchSha256": "b039b2c8ee7e1dd98c2a12a9dbf4665a763903fce0e86be9e4cd36cd9f9e008e",
+      "rampSha256": "b934cc2235c79d30d2e47692a4555fce15d9b7aa1199f029e18cb2bea8aabc02"
+    },
+    "analog_soft_film": {
+      "lutAsset": "lut_ct2f.png",
+      "lutHash": "b53010d639a7f26db64c0c28af9f6c5e43765ef132f7d2a17297e68eaf8bdf78",
+      "swatchSha256": "31946a40a64f1884d7fe251989fdead9202218c8e93935e3df1b4e31a11fe596",
+      "rampSha256": "ac2af51b829a0364ef8ce2c20b92f62cd0e460ee59c89fdf2cbe84b5b417c025"
+    },
+    "analog_mju2": {
+      "lutAsset": "lut_mju2.png",
+      "lutHash": "98fe13523673916a781a861e346dca91547c168ef6cce92be8a44023ef9e20f2",
+      "swatchSha256": "6d604cd8b37d7be1829c74debed8c0218e314437553447c21d2f26ae2b4bc47a",
+      "rampSha256": "d4105497e2e0291cd368c93053b1b610bda21b74a3768796e11d763cbfaee103"
+    },
+    "disp_warm": {
+      "lutAsset": "lut_disp_warm.png",
+      "lutHash": "5dd60c33be94d4d0760bdf213fcc113a2fdfa74c053a61a48a3aba16cc291f63",
+      "swatchSha256": "6103208e7489cbd5c76c301ed3a20022bd6f5c1f7df41a6cd8c4c706a0baef69",
+      "rampSha256": "3ce1e15caf075e2ab0173bfdbe8f6b484782daae10d51c74280f07f68bdb8449"
+    },
+    "ccd_grd": {
+      "lutAsset": "lut_ccd_grd.png",
+      "lutHash": "5e2556f658a4d143328c66695930f6ab81088b3d01cd3d4e9fddafb9e97a25a4",
+      "swatchSha256": "0396678d2e355a303fc15cbfa56ac78b4e755e60797a0ab99b707814b85a6332",
+      "rampSha256": "c4ad1a36e2f376c47d4790393bdabd6e5f2d10b5d76d54ed953dc79359ddd391"
+    },
+    "ccd_r": {
+      "lutAsset": "lut_ccd_r.png",
+      "lutHash": "28fc1dd343ed4518adac38872acd85bd28265e219f2bd7cb4290c3e8f98c5657",
+      "swatchSha256": "b4d46b33c95ef5cfdc44b3bda91b74ad317e108a348a262b9eed1fd0062b095b",
+      "rampSha256": "98c1cc887a73167f562442f7e62ab1217516a1f4a96d8a85d9526907b173fa13"
+    },
+    "ccd_y2k_digital": {
+      "lutAsset": "lut_ccd_y2k_digital.png",
+      "lutHash": "45342a0471732e70fda798f9ca3063126866e1257775433210c93c224ac8ea6d",
+      "swatchSha256": "9da70bc18601dc489752e0f9df3bd618ea139a8159c7493e62e840c0d0ae88ea",
+      "rampSha256": "5e0f53d17a42ecec12fb7d12f386c3a5d94b3d4e045a6229505dffba7ef28569"
+    },
+    "ccd_flash": {
+      "lutAsset": "lut_dfuns_v1.png",
+      "lutHash": "ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac",
+      "swatchSha256": "a32155a7fc1b2fa20932581cc93394db3553539a10fa06487b23bca5cf986c5f",
+      "rampSha256": "58571a6eb62e5d2996a5879b9261fe4293b2773b6be7506d89449b34a97af237"
+    },
+    "ccd_retro_compact": {
+      "lutAsset": "lut_dqs_preserved.png",
+      "lutHash": "ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac",
+      "swatchSha256": "a32155a7fc1b2fa20932581cc93394db3553539a10fa06487b23bca5cf986c5f",
+      "rampSha256": "58571a6eb62e5d2996a5879b9261fe4293b2773b6be7506d89449b34a97af237"
+    },
+    "disp_flash": {
+      "lutAsset": "lut_disp_flash.png",
+      "lutHash": "7a89087ee1367dbe9007bd812b745157f9e29f1580d3ae7325ade1f78abf0899",
+      "swatchSha256": "ee19cd2f9ebf2974eb3df1beb1c2008d7f5d14548449db0f1f4dc7bd7ab2c864",
+      "rampSha256": "f0e5174bd1b6d456155418b7a1b6b2de1712c3e97e34b606db8f1876ece9562b"
+    },
+    "disp_classic": {
+      "lutAsset": "lut_disp_classic.png",
+      "lutHash": "a8920f58b4a9f7904df1bbdf26005378295d15a1d426dac7f997e702de7798ed",
+      "swatchSha256": "da5bfc1e7d2acccc5f5195983b9a2af301e77dc850a03f231556496b9ca4c3d9",
+      "rampSha256": "27d86bd23d397da9efa44db6ba327dcf82e175c5d71f4d10d910eeb011426234"
+    },
+    "analog_fisheye_f": {
+      "lutAsset": "lut_analog_35mm_classic.png",
+      "lutHash": "cd16d025c0286246edc76d1e31f4494b7277b90904ff368f0cbfdbda1ee7325c",
+      "swatchSha256": "4355f470e877a5fb07c28d3b711a57c807cfe2b9f237502398dadc6bb5958a17",
+      "rampSha256": "6bcf69e0a8d40ffd5c71877ba2eed0cfa8bd50c759132082a8b6c6f181390681"
+    },
+    "inst_vintage": {
+      "lutAsset": "lut_inst_vintage.png",
+      "lutHash": "97212cb3ddb202c7fb4e0ba350705fdf0b9fb8a271ae4231602c6b4b7b05522d",
+      "swatchSha256": "8e94b51223047d766977785f60ac832b5f85f58e50b61017f8e46258a9cf244d",
+      "rampSha256": "6a469a58ea0a8b92580e4d9a4b31a6c36644fc7ec76ed5892e48a613fa28b3db"
+    },
+    "inst_paf": {
+      "lutAsset": "lut_inst_vintage.png",
+      "lutHash": "97212cb3ddb202c7fb4e0ba350705fdf0b9fb8a271ae4231602c6b4b7b05522d",
+      "swatchSha256": "8e94b51223047d766977785f60ac832b5f85f58e50b61017f8e46258a9cf244d",
+      "rampSha256": "6a469a58ea0a8b92580e4d9a4b31a6c36644fc7ec76ed5892e48a613fa28b3db"
+    },
+    "analog_vintage_color": {
+      "lutAsset": "lut_dexp.png",
+      "lutHash": "f386803f35ad226488a6941787339a974a8dfb47d8f2b633562551d9706d8d49",
+      "swatchSha256": "201bb053b8f5cbe6f93f4d1c535cef044150b1d77fce9df93f2c996e45156185",
+      "rampSha256": "a738d345439d2f2f287843c61cce52599dd530098fdb3edeefc1337fbbed5479"
+    },
+    "analog_s67": {
+      "lutAsset": "lut_analog_35mm_classic.png",
+      "lutHash": "cd16d025c0286246edc76d1e31f4494b7277b90904ff368f0cbfdbda1ee7325c",
+      "swatchSha256": "4355f470e877a5fb07c28d3b711a57c807cfe2b9f237502398dadc6bb5958a17",
+      "rampSha256": "6bcf69e0a8d40ffd5c71877ba2eed0cfa8bd50c759132082a8b6c6f181390681"
+    },
+    "analog_dblack": {
+      "lutAsset": "lut_bw.png",
+      "lutHash": "12e7186c5d5954f7245766afa885e7ff9d1181a52628e07b5e88376bf0d1e2b6",
+      "swatchSha256": "0557692d9b6f534fdf8b0ac1dfb7658ebbc5eddabd5663d0515e530fafdb59d0",
+      "rampSha256": "18f9e7f00e82530afca6de6d96df1ca4c23042c33234c4a1b83ad55ab9fb6387"
+    },
+    "analog_nt16": {
+      "lutAsset": "lut_nt16.png",
+      "lutHash": "23ad01e24a3fd84658fc7cbf9718c5512d314e0b55a8cd342812761d31cbc8ec",
+      "swatchSha256": "9f2023c6507923fd1b9c835c75ee4f75286a3f4917598fbd8c359e8cad6b34ef",
+      "rampSha256": "3850bbeb6a9d7aa77a0eb97efb4b6f6bc448e8738452295a613aa83747b64ec1"
+    },
+    "vsco_a6": {
+      "lutAsset": "lut_vsco_a6.png",
+      "lutHash": "91c9675b873d70f3aa612a9ff3ca199b0161ed3c15e28d53acdb2c23fc786030",
+      "swatchSha256": "f00ef1986bb3e9b2d53ae2d1a7fd36d57b18bfcf0d65a3429cde885e72cca227",
+      "rampSha256": "7a02fb3e4adb2a70c058c45bde5ca9a75b301badfeecace822223d5aa18d5008"
+    },
+    "vsco_c1": {
+      "lutAsset": "lut_vsco_c1.png",
+      "lutHash": "90ab6368bc69e7f7f7b386912c12c60c0a4d7fb25ff1d44eeec435718bd832f7",
+      "swatchSha256": "45771d6198db46ec6ec3d9eae7b21eae2fc0729ac3f9d0f5c5c100055bc1c791",
+      "rampSha256": "e9075ab0dfec0ee6295638d5f28a96d3bb6c87cf605311186261e24482a05db2"
+    },
+    "vsco_f2": {
+      "lutAsset": "lut_vsco_f2.png",
+      "lutHash": "7d3d8a2eb3668b8ec71849bdf82baff2a5e6b764cde4b4b9caf09a0196b22324",
+      "swatchSha256": "f1f7ed3026c073896aaa06d5ec6396653eac407c305ba7f61d839faa9d7f1ab7",
+      "rampSha256": "1cc9ec32d27f3c88af8e27002fcf1dae33f782a838ca38a76d37789c3e8efc0c"
+    },
+    "vsco_g3": {
+      "lutAsset": "lut_vsco_g3.png",
+      "lutHash": "a0df1724d4ff56dfb2229a80449cdb459b6f4dbb7703583e904ece2b83cb0d73",
+      "swatchSha256": "6eb22cce4a59faec0ae7cb4c4b1ece6bbf774baa6809898186f9996af6967b41",
+      "rampSha256": "570ebc67031d25c577eebaddefb38d4c2f8d2f335d73eb625a25084867b519d1"
+    },
+    "vsco_m5": {
+      "lutAsset": "lut_vsco_m5.png",
+      "lutHash": "26ffe714926a58abc6472209574796b8dc0e2c28b85eadb43a6d5ad67e051208",
+      "swatchSha256": "7acfe054aabeb6dce6a3d9f5c660ae913eb94ccb708f3739ab49159c591b9287",
+      "rampSha256": "78bc8035d71566cf0aed07e615465586007a3b342feb0cddf87392c48caaca10"
+    },
+    "vsco_hb1": {
+      "lutAsset": "lut_vsco_hb1.png",
+      "lutHash": "d1c5bf9492be20c4841b6f5cdda674b81e280df41049202c008e8ef723ce6c2e",
+      "swatchSha256": "38a520467b8ac6b8d52f0b420d5c01911261b1260da5838d2783046f13f1d5bc",
+      "rampSha256": "af29cb3f6d11edb02a0c6d6c9114e0835506a0ceeb4685930eb18dd5096470b4"
+    },
+    "vsco_b1": {
+      "lutAsset": "lut_vsco_b1.png",
+      "lutHash": "4b6eafcf255de59c2a5ff61f4c33e2d0256f050bb06ccb4b798defaaea680a26",
+      "swatchSha256": "d5d84b90eeaa4464bdace7757ce7e2d226789eea61a3e97059bdac39edf7ca06",
+      "rampSha256": "44fb03b161c64345ee552f1d78aff21c04385f880a88b1060b77c9762c0bac8f"
+    },
+    "vsco_x1": {
+      "lutAsset": "lut_vsco_x1.png",
+      "lutHash": "f1e169537cbf936bca79f9f50cdaa27b938bd177d4e0eaea60d9ea6087a30d7a",
+      "swatchSha256": "b6c595c76bcc1eb0d2f0dfa682d31c56e15c54a5afd720b261d0589cd0a6a084",
+      "rampSha256": "290bac5cf3602d9d17c1d026d5e3ce991b476249f9d0272435b095a673a0c5f7"
+    },
+    "vsco_handycam": {
+      "lutAsset": "lut_vsco_handycam.png",
+      "lutHash": "93b22ec089258bba7b6dee11a408e0fb05c5ffab60d59f12e0df02b9fac0b5c5",
+      "swatchSha256": "61d5e57a805a3bde562175cc43336538ef25c623de127528fc16198e968322f3",
+      "rampSha256": "e4995f507edab848eb39a6609211162f76940cec89dfc1e32e5713d68b76c40e"
+    },
+    "cam_retro_vhs": {
+      "lutAsset": "lut_cam_retro_vhs.png",
+      "lutHash": "f6fbafaf423dc0f279509816da2949ba22bac69b6fb1474929871346da95f9ad",
+      "swatchSha256": "2b19a9b4693f02547103efa6b68e36c026c27a560cf0ed3d08af99f90aea704c",
+      "rampSha256": "8e15e51e99c258d58b37b6a1ec1801a6499252f5e45f576c6d0de4843ea017df"
+    },
+    "cam_analog_video": {
+      "lutAsset": "lut_cam_analog_video.png",
+      "lutHash": "9933d8a5cc8f3cacd71f5e48d5895d766b77aa3be62e897fa9bdbd37b8ca67e9",
+      "swatchSha256": "4abc0c5492bf5ec65d36c889edcdc4025377a825200f5730c9ee09185a0a8525",
+      "rampSha256": "f4afe8a5c8fe86a0a41cfaa3c2dd626ad4b25aefd022ac59ee482af39acbb25e"
+    },
+    "cam_90s_camcorder": {
+      "lutAsset": "lut_cam_90s_camcorder.png",
+      "lutHash": "ec728aacd4eee0af8eed6d0ccecaf6fad0963d6b4164f3bf4267a721ed233858",
+      "swatchSha256": "8533c590cc199a2a8168045a7c0b3c2b7538a27c8326d3cc8dd836629667d161",
+      "rampSha256": "f52127c25df04e58d34a1aa16d35b7aae9f2d84f0b63fd026d3709059d76184d"
+    },
+    "thermal_vision": {
+      "lutAsset": "",
+      "lutHash": null,
+      "swatchSha256": "94e8c1e22b4eda471345b70d28fcccb750038b4abae3356b2790c3bd05e3e517",
+      "rampSha256": "799b52dd134661f335864edda86cb7c3a69c3a682c2a36972cf184fd6c7dd2e7"
+    }
+  }
+}

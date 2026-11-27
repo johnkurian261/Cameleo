@@ -2205,7 +2205,7 @@ object ImageProcessor {
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
         "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_dfuns_v1.png"
         "ccd_y2k_digital", "classic_u", "classicu" -> "lut_ccd_y2k_digital.png"
-        "ccd_retro_compact", "dqs" -> "lut_ccd_retro_compact.png"
+        "ccd_retro_compact", "dqs" -> "lut_dqs_preserved.png"
         "disp_classic", "disp_golf", "golf" -> "lut_disp_classic.png"
         "disp_flash", "disp_cpm35", "cpm35", "cpm 35" -> "lut_disp_flash.png"
         "disp_warm", "analog_135sr", "135sr", "135 sr" -> "lut_disp_warm.png"

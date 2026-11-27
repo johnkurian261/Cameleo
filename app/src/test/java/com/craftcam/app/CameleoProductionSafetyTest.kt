@@ -40,7 +40,8 @@ class CameleoProductionSafetyTest {
             val file = listOf("src/main/assets", "app/src/main/assets").map { java.io.File(it, name) }.first { it.isFile }
             return java.security.MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
         }
-        assertEquals("ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac", hash("lut_dfuns_v1.png"))
+        assertEquals("0761a527981dc25d23086e8348d953fd8511cb0d5a3473e8239370bf481625c8", hash("lut_dfuns_v1.png"))
+        assertEquals("ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac", hash("lut_dqs_preserved.png"))
         assertEquals("75de764b1bb7f168b88bc76f89d7d0c398707ea915e48cf8d8a71e84ab4ec95a", hash("grains/grain_dfuns.jpg"))
         val stock = CameraProfileCatalog.D_FUNS.filmProfile
         fun plan(name: String) = CameraProfileCompatibility.resolveLutPlan("ccd_flash",
@@ -61,7 +62,7 @@ class CameleoProductionSafetyTest {
         val cases = listOf(
             "ccd_flash" to "lut_dfuns_v1.png",
             "ccd_grd" to "lut_ccd_grd.png",
-            "ccd_retro_compact" to "lut_dfuns_v1.png",
+            "ccd_retro_compact" to "lut_dqs_preserved.png",
             "ccd_y2k_digital" to "lut_ccd_y2k_digital.png",
             "disp_flash" to "lut_disp_flash.png",
             "ccd_r" to "lut_ccd_r.png",

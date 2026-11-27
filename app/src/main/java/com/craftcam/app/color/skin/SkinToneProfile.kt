@@ -75,6 +75,31 @@ object SkinToneProfileCatalog {
     )
 
     /**
+     * DQS: Digital QuickSnap Hybrid preserved skin profile.
+     * Dedicated independent profile preserving exact existing skin rendering.
+     */
+    val DQS = SkinToneProfile(
+        id = "skin_dqs",
+        name = "DQS Preserved Portrait",
+        config = SkinToneConfig(
+            warmthStrength = 0.12f,
+            saturationProtection = 0.90f,
+            maxAllowedSkinSaturation = 0.65f,
+            highlightProtection = 0.92f,
+            shadowProtection = 0.82f,
+            maximumHueShiftDegrees = 3.5f,
+            yellowCastProtectionEnabled = true,
+            yellowCastProtectionStrength = 0.80f
+        ),
+        targetHueBias = -1.2f,
+        skinGains = floatArrayOf(1.02f, 0.99f, 0.98f),
+        skinMidtoneLift = 0.008f,
+        skinHighlightKnee = 0.88f,
+        maxSkinSaturation = 0.65f,
+        textureDampening = 0.22f
+    )
+
+    /**
      * CPM35: Golden early digital compact.
      * Calibrated against verified digicam references:
      * Golden illuminated skin, amber tungsten retention, deep contrast shadows, soft optical detail.
@@ -229,7 +254,8 @@ object SkinToneProfileCatalog {
     fun getProfileForPreset(presetId: String, category: CameraCategory? = null): SkinToneProfile {
         return when {
             presetId == "analog_cinema_film" || presetId == "d3d" || presetId == "d_3d" || presetId.equals("d 3d", ignoreCase = true) || presetId.contains("cinema", ignoreCase = true) -> D3D
-            presetId == "ccd_flash" || presetId == "d_funs" || presetId == "ccd_retro_compact" || presetId == "dqs" -> D_FUNS
+            presetId == "ccd_flash" || presetId == "d_funs" -> D_FUNS
+            presetId == "ccd_retro_compact" || presetId == "dqs" -> DQS
             presetId == "disp_flash" || presetId == "disp_cpm35" || presetId.contains("cpm", ignoreCase = true) -> CPM35
             presetId == "ccd_r" || category == CameraCategory.CCD_DIGITAL -> CCD
             presetId == "analog_mju2" || presetId == "mju2" || presetId == "mju_ii" || presetId == "mju ii" || presetId == "olympus_mju2" || presetId == "stylus_epic" -> MJU_II

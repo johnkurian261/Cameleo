@@ -1,0 +1,252 @@
+{
+  "preserved_presets": [
+    {
+      "preset": "zero",
+      "lutAsset": "lut_zero.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_35mm_classic",
+      "lutAsset": "lut_analog_35mm_classic.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_fxn_r",
+      "lutAsset": "lut_fxn_r.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_cinema_film",
+      "lutAsset": "lut_d3d.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_135ne",
+      "lutAsset": "lut_135ne.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_soft_film",
+      "lutAsset": "lut_ct2f.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_mju2",
+      "lutAsset": "lut_mju2.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "disp_warm",
+      "lutAsset": "lut_disp_warm.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "ccd_grd",
+      "lutAsset": "lut_ccd_grd.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "ccd_r",
+      "lutAsset": "lut_ccd_r.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "ccd_y2k_digital",
+      "lutAsset": "lut_ccd_y2k_digital.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "ccd_retro_compact",
+      "name": "DQS",
+      "lutAsset": "lut_dqs_preserved.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "disp_flash",
+      "lutAsset": "lut_disp_flash.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "disp_classic",
+      "lutAsset": "lut_disp_classic.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_fisheye_f",
+      "lutAsset": "lut_analog_35mm_classic.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "inst_vintage",
+      "lutAsset": "lut_inst_vintage.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "inst_paf",
+      "lutAsset": "lut_inst_vintage.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_vintage_color",
+      "lutAsset": "lut_dexp.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_s67",
+      "lutAsset": "lut_analog_35mm_classic.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_dblack",
+      "lutAsset": "lut_bw.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "analog_nt16",
+      "lutAsset": "lut_nt16.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_a6",
+      "lutAsset": "lut_vsco_a6.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_c1",
+      "lutAsset": "lut_vsco_c1.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_f2",
+      "lutAsset": "lut_vsco_f2.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_g3",
+      "lutAsset": "lut_vsco_g3.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_m5",
+      "lutAsset": "lut_vsco_m5.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_hb1",
+      "lutAsset": "lut_vsco_hb1.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_b1",
+      "lutAsset": "lut_vsco_b1.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_x1",
+      "lutAsset": "lut_vsco_x1.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "vsco_handycam",
+      "lutAsset": "lut_vsco_handycam.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "cam_retro_vhs",
+      "lutAsset": "lut_cam_retro_vhs.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "cam_analog_video",
+      "lutAsset": "lut_cam_analog_video.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "cam_90s_camcorder",
+      "lutAsset": "lut_cam_90s_camcorder.png",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    },
+    {
+      "preset": "thermal_vision",
+      "lutAsset": "",
+      "deltaE": 0.0,
+      "maxPixelDiff": 0,
+      "bitExact": true
+    }
+  ],
+  "regressions": [],
+  "dfuns_restoration": {
+    "preset": "ccd_flash",
+    "lutAsset": "lut_dfuns_v1.png",
+    "meanDeltaE": 3.8757304251306537,
+    "maxDeltaE": 7.632163053319403,
+    "maxPixelDiff": 38,
+    "status": "HISTORICAL_RESTORATION_VERIFIED"
+  }
+}

@@ -147,7 +147,7 @@ class MjuIIEmulationTest {
         assertEquals(35, PresetCatalog.allPresets.size)
         assertEquals("lut_disp_classic.png", CameraProfileCatalog.DISPOSABLE_FUNS.filmProfile.lutAssetPath)
         assertEquals("lut_dfuns_v1.png", CameraProfileCatalog.D_FUNS.filmProfile.lutAssetPath)
-        assertEquals("lut_dfuns_v1.png", dqs.filmProfile.lutAssetPath)
+        assertEquals("lut_dqs_preserved.png", dqs.filmProfile.lutAssetPath)
         assertEquals("lut_disp_flash.png", cpm35.filmProfile.lutAssetPath)
         assertNotEquals("lut_mju2.png", CameraProfileCatalog.D_CLASSIC.filmProfile.lutAssetPath)
     }

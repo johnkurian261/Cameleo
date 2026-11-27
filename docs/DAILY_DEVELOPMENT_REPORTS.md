@@ -424,3 +424,34 @@ This document tracks daily engineering milestones, architectural audits, test su
   - `.\gradlew.bat assembleDebug` -> **`BUILD SUCCESSFUL in 10s`**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **`172,225,187` bytes**.
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; on-device live Camera2 capture and preview execution remain **NOT VERIFIED**.
 - **Detailed Transfer Report**: [DQS_DFUNS_FILTER_TRANSFER_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DQS_DFUNS_FILTER_TRANSFER_REPORT.md).
+
+---
+
+## Entry 14 — Strict D FUNS Restoration & Complete DQS Photographic Preservation
+
+**Date**: November 27, 2026 (20:50 IST)  
+**Milestone**: Strict Decoupling of Shared D FUNS / DQS Dependencies, Dedicated Asset Isolation, Zero-Regression Verification & Historical D FUNS Restoration
+
+### 1. Photographic Isolation Architecture
+- **Core Directive**: Decouple DQS (`ccd_retro_compact`) into an autonomous, immutable photographic configuration before restoring D FUNS (`ccd_flash`) to its historical November 26, 2026 appearance, ensuring DQS and all other 33 presets experience exactly 0.0000 ΔE change.
+- **Dedicated DQS Assets & Routing**:
+  - Saved active DQS LUT as [`lut_dqs_preserved.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/assets/lut_dqs_preserved.png) (SHA-256 `ccc4d710aac776277c5c715c5fa895f71809519db511cb5fd049173157d5d5ac`).
+  - Created dedicated [`SkinToneProfileCatalog.DQS`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/color/skin/SkinToneProfile.kt) (`skin_dqs`) to isolate skin warmth, blue gains `[1.02, 0.99, 0.98]`, and knee `0.88f`.
+  - Updated [`CameraProfileCatalog.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/camera/profile/CameraProfileCatalog.kt), [`ShaderConstants.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/gl/shaders/ShaderConstants.kt), and [`ImageProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/processor/ImageProcessor.kt) to route DQS exclusively to `lut_dqs_preserved.png`.
+- **Historical D FUNS Restoration**:
+  - Restored [`lut_dfuns_v1.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/assets/lut_dfuns_v1.png) to the original November 26, 2026 tracked LUT (SHA-256 `0761a527981dc25d23086e8348d953fd8511cb0d5a3473e8239370bf481625c8`).
+  - Preserved D FUNS 5500K fixed daylight white balance policy and organic disposable film response.
+
+### 2. Quantitative Verification & Zero-Regression Metrics
+- **MEASURED RESULT — Deterministic Pre/Post Baselines (`docs/calibration/isolation_baselines/`)**:
+  - Full-spectrum 24-patch Macbeth ColorChecker and continuous RGB ramp rendered across all 35 presets.
+  - **DQS Preserved Parity**: **0.0000 ΔE (bit-exact match, 0 pixels changed)**.
+  - **All 33 Other Cameras**: **0.0000 ΔE (bit-exact match, 0 pixels changed)**.
+  - **D FUNS Historical Shift**: Mean ΔE = **3.8757**, Max ΔE = **7.6322**, Max pixel diff = **38**.
+  - **Total Regressions**: **0 / 35**.
+- **MEASURED RESULT — Automated Test Suite**:
+  - Updated [`CameleoProductionSafetyTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/CameleoProductionSafetyTest.kt), [`DqsFilterTransferTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/DqsFilterTransferTest.kt), [`CameraProfileCatalogReaTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/CameraProfileCatalogReaTest.kt), and [`MjuIIEmulationTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/MjuIIEmulationTest.kt).
+  - `.\gradlew.bat testDebugUnitTest` -> **`34` test suites, `216` unit tests, `0` failures, `0` errors, `0` skipped** (`BUILD SUCCESSFUL in 32s`).
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; physical hardware capture execution remains **NOT VERIFIED**.
+- **Comprehensive Isolation Report**: [DFUNS_DQS_RENDERING_ISOLATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DFUNS_DQS_RENDERING_ISOLATION_REPORT.md).
+
