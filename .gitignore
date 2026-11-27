@@ -116,6 +116,7 @@ lens_preview.png
 tools/*
 !tools/fxnr/
 !tools/digicam_calibration/
+!tools/mju_ii/
 !app/src/main/assets/grains/
 app/src/main/assets/grains/*
 !app/src/main/assets/grains/fxnr_v2_density.png

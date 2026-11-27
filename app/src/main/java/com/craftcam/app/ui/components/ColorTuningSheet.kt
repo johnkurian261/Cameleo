@@ -351,6 +351,9 @@ fun ColorTuningSheet(
                             GrainOptionPill("'98", tuning.customYear == "98") {
                                 onTuningChange { it.copy(customYear = "98") }
                             }
+                            GrainOptionPill("'97", tuning.customYear == "97") {
+                                onTuningChange { it.copy(customYear = "97") }
+                            }
                             GrainOptionPill("'94", tuning.customYear == "94") {
                                 onTuningChange { it.copy(customYear = "94") }
                             }

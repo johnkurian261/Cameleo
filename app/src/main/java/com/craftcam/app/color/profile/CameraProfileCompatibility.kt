@@ -1,5 +1,8 @@
 package com.craftcam.app.color.profile
 
+import com.craftcam.app.config.FilmColorProfileAdjustment
+import com.craftcam.app.gl.shaders.ShaderConstants
+
 /**
  * Camera Body & Color Profile Compatibility Matrix.
  * 
@@ -7,9 +10,33 @@ package com.craftcam.app.color.profile
  * vignetting, chromatic aberration, halation, grain, frame borders, shutter/flash behaviour)
  * from interchangeable creative color profiles (film emulsions & digital grades).
  * 
- * Enforces camera-specific compatibility, default profile assignments, and reset behaviour.
+ * Preserves each camera's dedicated calibrated LUT on its default profile selection and blends
+ * creative profiles when a user explicitly selects a non-default profile, ensuring consistent
+ * color routing across live preview, still capture, gallery import, redevelopment, and video.
  */
 object CameraProfileCompatibility {
+
+    private val NEUTRAL_ADJUSTMENT = FilmColorProfileAdjustment(
+        tempDelta = 0.0f,
+        tintDelta = 0.0f,
+        fadeDelta = 0.0f,
+        contrastMult = 1.0f,
+        satMult = 1.0f
+    )
+
+    private val FIXED_MONOCHROME_IDS = setOf(
+        "analog_dblack", "dblack", "d black", "vsco_b1", "b1", "vsco_x1", "x1"
+    )
+
+    data class ResolvedLutPlan(
+        val primaryLutAsset: String,
+        val secondaryLutAsset: String?,
+        val dualLutMix: Float,
+        val isMonochrome: Boolean,
+        val isCustomProfile: Boolean,
+        val effectiveAdjustment: FilmColorProfileAdjustment,
+        val activeProfile: DazzColorProfile
+    )
 
     data class ProfilePolicy(
         val isSupported: Boolean,
@@ -23,6 +50,12 @@ object CameraProfileCompatibility {
         // ── 35mm & Consumer Print Film Cameras ──
         "analog_35mm_classic" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
         "d_classic" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
+        "analog_mju2" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
+        "mju2" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
+        "mju_ii" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
+        "mju ii" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
+        "olympus_mju2" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
+        "stylus_epic" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
         "analog_135sr" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
         "135sr" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
         "analog_135ne" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
@@ -83,10 +116,13 @@ object CameraProfileCompatibility {
         "vsco_g3" to ProfilePolicy(isSupported = true, defaultProfileId = "EG200"),
         "vsco_m5" to ProfilePolicy(isSupported = true, defaultProfileId = "19M"),
         "vsco_hb1" to ProfilePolicy(isSupported = true, defaultProfileId = "C400"),
-        "vsco_b1" to ProfilePolicy(isSupported = true, defaultProfileId = "22M"),
-        "vsco_x1" to ProfilePolicy(isSupported = true, defaultProfileId = "22M"),
 
         // ── Fixed Dedicated Pipelines (Color Profiles not applicable / fixed look) ──
+        "vsco_b1" to ProfilePolicy(isSupported = false, defaultProfileId = "22M"), // Dedicated B&W negative
+        "vsco_x1" to ProfilePolicy(isSupported = false, defaultProfileId = "22M"), // Dedicated high-contrast B&W
+        "ccd_cool_digital" to ProfilePolicy(isSupported = false, defaultProfileId = "C400"), // Aerochrome IR false-color
+        "ir" to ProfilePolicy(isSupported = false, defaultProfileId = "C400"),
+        "vsco_handycam" to ProfilePolicy(isSupported = false), // Fixed 8mm handycam video emulsion
         "zero" to ProfilePolicy(isSupported = false, defaultProfileId = "C400"), // Modern natural smartphone ISP
         "analog_dblack" to ProfilePolicy(isSupported = false, defaultProfileId = "22M"), // Dedicated monochrome
         "dblack" to ProfilePolicy(isSupported = false, defaultProfileId = "22M"),
@@ -110,5 +146,78 @@ object CameraProfileCompatibility {
         val policy = getPolicy(presetId)
         if (!policy.isSupported) return emptyList()
         return policy.supportedProfileIds.map { DazzColorProfileCatalog.getById(it) }
+    }
+
+    /**
+     * Resolves the authoritative 3D LUT + adjustment plan for any preset/profile combination.
+     *
+     * Key invariant:
+     * - Fixed-pipeline cameras (`zero`, camcorders, B&W, IR) and default-profile selections preserve
+     *   100% of the camera's own calibrated LUT with zero extra profile adjustment stacking.
+     * - Custom chromatic profile selections blend the camera's native LUT (35%) with the selected
+     *   color profile LUT (65%) so the camera keeps its tonal DNA while reflecting the chosen profile.
+     * - Monochrome 22M switches cleanly to `lut_profile_22m.png` with chromatic suppression.
+     */
+    fun resolveLutPlan(
+        presetId: String,
+        colorProfileIndex: Int,
+        cameraLutAsset: String? = null,
+        cameraSecondaryLutAsset: String? = null,
+        cameraDualLutMix: Float = 0.0f
+    ): ResolvedLutPlan {
+        val policy = getPolicy(presetId)
+        val normalizedId = presetId.lowercase()
+        val resolvedCameraLut = cameraLutAsset?.ifEmpty { null }
+            ?: ShaderConstants.getLutAssetForPreset(presetId)
+        val defaultProfile = DazzColorProfileCatalog.getById(policy.defaultProfileId)
+
+        if (!policy.isSupported) {
+            return ResolvedLutPlan(
+                primaryLutAsset = resolvedCameraLut,
+                secondaryLutAsset = cameraSecondaryLutAsset?.ifEmpty { null },
+                dualLutMix = cameraDualLutMix.coerceIn(0f, 1f),
+                isMonochrome = normalizedId in FIXED_MONOCHROME_IDS,
+                isCustomProfile = false,
+                effectiveAdjustment = NEUTRAL_ADJUSTMENT,
+                activeProfile = defaultProfile
+            )
+        }
+
+        val selectedProfile = DazzColorProfileCatalog.getByIndex(colorProfileIndex)
+        val isCustom = !selectedProfile.id.equals(defaultProfile.id, ignoreCase = true)
+
+        if (!isCustom) {
+            return ResolvedLutPlan(
+                primaryLutAsset = resolvedCameraLut,
+                secondaryLutAsset = cameraSecondaryLutAsset?.ifEmpty { null },
+                dualLutMix = cameraDualLutMix.coerceIn(0f, 1f),
+                isMonochrome = selectedProfile.isMonochrome || normalizedId in FIXED_MONOCHROME_IDS,
+                isCustomProfile = false,
+                effectiveAdjustment = NEUTRAL_ADJUSTMENT,
+                activeProfile = defaultProfile
+            )
+        }
+
+        if (selectedProfile.isMonochrome) {
+            return ResolvedLutPlan(
+                primaryLutAsset = selectedProfile.lutAssetPath,
+                secondaryLutAsset = null,
+                dualLutMix = 0.0f,
+                isMonochrome = true,
+                isCustomProfile = true,
+                effectiveAdjustment = selectedProfile.adjustment,
+                activeProfile = selectedProfile
+            )
+        }
+
+        return ResolvedLutPlan(
+            primaryLutAsset = resolvedCameraLut,
+            secondaryLutAsset = selectedProfile.lutAssetPath,
+            dualLutMix = 0.65f,
+            isMonochrome = false,
+            isCustomProfile = true,
+            effectiveAdjustment = selectedProfile.adjustment,
+            activeProfile = selectedProfile
+        )
     }
 }

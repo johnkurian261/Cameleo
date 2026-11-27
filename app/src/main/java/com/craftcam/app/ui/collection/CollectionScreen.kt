@@ -1459,6 +1459,7 @@ private fun resolveSampleResIds(context: android.content.Context, preset: Camera
         "analog_cinema_film", "d3d" -> listOf("sample_analog_cinema_film", "sample_analog_fxn_r_3", "sample_analog_vintage_color")
         "analog_135ne", "135ne" -> listOf("sample_analog_warm_film", "sample_analog_35mm_classic", "sample_disp_warm")
         "analog_soft_film", "ct2f" -> listOf("sample_analog_soft_film", "sample_analog_faded_film", "sample_analog_35mm_classic")
+        "analog_mju2", "mju2", "mju_ii" -> listOf("sample_analog_mju2", "sample_analog_35mm_classic", "sample_analog_soft_film")
         "disp_warm", "d_funs" -> listOf("sample_disp_warm", "sample_disp_classic", "sample_disp_flash")
         "ccd_grd", "analog_warm_film", "grd" -> listOf("sample_analog_warm_film", "sample_ccd_retro_compact", "sample_ccd_r")
         "ccd_r" -> listOf("sample_ccd_r", "sample_ccd_classic", "sample_ccd_flash")

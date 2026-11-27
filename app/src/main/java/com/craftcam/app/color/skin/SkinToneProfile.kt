@@ -178,6 +178,32 @@ object SkinToneProfileCatalog {
     )
 
     /**
+     * MJU II: 1997 compact 35mm f/2.8 point-and-shoot film response.
+     * Balanced peach highlights, controlled bronze midtones, deep red-brown preservation,
+     * zero mustard yellow cast under daylight or xenon direct flash, and preserved skin texture.
+     */
+    val MJU_II = SkinToneProfile(
+        id = "skin_mju2",
+        name = "MJU II 35mm Compact Film",
+        config = SkinToneConfig(
+            warmthStrength = 0.06f,
+            saturationProtection = 0.90f,
+            maxAllowedSkinSaturation = 0.63f,
+            highlightProtection = 0.95f,
+            shadowProtection = 0.86f,
+            maximumHueShiftDegrees = 2.5f,
+            yellowCastProtectionEnabled = true,
+            yellowCastProtectionStrength = 0.85f
+        ),
+        targetHueBias = 0.2f,
+        skinGains = floatArrayOf(1.015f, 1.00f, 0.985f),
+        skinMidtoneLift = 0.006f,
+        skinHighlightKnee = 0.87f,
+        maxSkinSaturation = 0.63f,
+        textureDampening = 0.10f
+    )
+
+    /**
      * NATURAL: Reference flagship computational photography.
      * Strict multi-complexion neutral fidelity across all human complexions.
      */
@@ -206,6 +232,7 @@ object SkinToneProfileCatalog {
             presetId == "ccd_flash" || presetId == "d_funs" -> D_FUNS
             presetId == "disp_flash" || presetId == "disp_cpm35" || presetId.contains("cpm", ignoreCase = true) -> CPM35
             presetId == "ccd_r" || presetId == "ccd_retro_compact" || category == CameraCategory.CCD_DIGITAL -> CCD
+            presetId == "analog_mju2" || presetId == "mju2" || presetId == "mju_ii" || presetId == "mju ii" || presetId == "olympus_mju2" || presetId == "stylus_epic" -> MJU_II
             presetId == "analog_fxn_r" || presetId == "fxn_r" || category == CameraCategory.ANALOG_FILM -> FXNR
             presetId == "zero" -> NATURAL
             else -> FXNR

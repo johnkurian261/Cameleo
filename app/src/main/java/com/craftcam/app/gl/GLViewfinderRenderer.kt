@@ -631,6 +631,7 @@ class GLViewfinderRenderer(
                 "lut_zero.png",
                 "lut_fxn_r.png",
                 "lut_analog_35mm_classic.png",
+                "lut_mju2.png",
                 "lut_d3d.png",
                 "lut_ccd_r.png",
                 "lut_inst_classic.png"

@@ -259,3 +259,27 @@ This document tracks daily engineering milestones, architectural audits, test su
 - **Physical Hardware (Samsung Galaxy S21 5G)**: **NOT VERIFIED** (`adb devices -l` empty — live MediaCodec encode, AudioRecord mic capture, Samsung/Google physical Motion Photo gallery import, frame-time stability, and playback smoothness require connected device testing).
 - **Detailed Report**: [GOLF_MOTION_PHOTO_IMPLEMENTATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/GOLF_MOTION_PHOTO_IMPLEMENTATION_REPORT.md).
 - **Next Priorities**: Connect Galaxy S21 via ADB, run `adb install -r app\build\outputs\apk\debug\app-debug.apk`, test live Golf Still + 1s/2s/3s Motion captures across `Vintage` and `Smooth`, verify MediaStore export/share flows, and capture benchmark logs.
+
+---
+
+## Entry 9 — Olympus Mju II (`analog_mju2`) Authentic 35mm Compact Film Camera Emulation
+
+**Date**: November 27, 2026  
+**Milestone**: Dedicated 1997 35mm f/2.8 Compact Film Camera (`MJU II`) + Calibrated 3D LUT + Flash-Aware Highlight Roll-Off
+
+### 1. Summary of Changes
+1. **Identity, Artwork & Preservation (`PresetCatalog.kt`, `CameraProfileCatalog.kt`)**:
+   - Added `analog_mju2` (**"MJU II"**, *"1997 Compact Film"*, `CameraCategory.ANALOG_FILM`, `1997`, `35mm`, `AspectRatioMode.RATIO_3_2`, excluding fisheye and `d3dProfile`) as the 34th preset without modifying any existing camera preset or existing LUT file.
+   - Converted user-supplied wordmark-free champagne clamshell pixel-art icon with nearest-neighbor scaling into `192x192` transparent [`cam_mju2.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/res/drawable/cam_mju2.png) (`3,364` B) and generated preview sample [`sample_analog_mju2.jpg`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/res/drawable/sample_analog_mju2.jpg) (`57,667` B).
+2. **Independent 3D LUT & Film Stock Routing (`calibrate_mju_ii.py`, `generate_all_luts.py`, `CameraProfileCompatibility.kt`, `SkinToneProfile.kt`)**:
+   - Generated [`lut_mju2.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/assets/lut_mju2.png) (`512x512` Hald-8 `SRGB`, `103,288` B) with neutral gray axis `max_gray_channel_delta_norm = 0.0`, strict Hald trilinear monotonicity across all 256 steps (verified via near-neutral blend in cube corners), natural OKLCh skin preservation (`|Δh| <= 2.37°`, zero red clipping), realistic foliage/sky/red separation, and neutral shader/preset multipliers so zero contrast/saturation double-stacking occurs.
+   - Mapped `C400` default to 100% `lut_mju2.png`, `EG200`/`FXN2`/`03G` to secondary LUT blend (`0.65f`), and `22M` to monochrome `lut_profile_22m.png`. Added `SkinToneProfileCatalog.MJU_II` (`skin_mju2`).
+3. **Optics, Procedural Grain & True Flash-Aware Pipeline (`ShaderConstants.kt`, `GLViewfinderRenderer.kt`, `CameraManager.kt`, `ImageProcessor.kt`, `CollectionScreen.kt`, `ColorTuningSheet.kt`, `GalleryScreen.kt`)**:
+   - Configured crisp center / mild outer softness (`0.030f`), gentle vignette (`0.16f @ 0.88f`), restrained CA (`0.0012f`), subtle barrel (`-0.006f`), high-threshold halation (`0.88f @ 0.14f`), procedural monochrome silver-halide grain (`GrainMode.PROCEDURAL`, `0.12f @ 0.85f`, zero scanned plates), clean borderless defaults on switching into `analog_mju2`, optional `'97` date stamp pill, and hardware `FLASH_STATE` / JPEG EXIF `TAG_FLASH` confirmation triggering highlight shoulder (`0.89f`) & skin highlight knee (`0.84f`) only when flash fired.
+
+### 2. Verification, Builds & Hardware Status
+- **Python Calibration & LUT Registry**: `python tools/mju_ii/calibrate_mju_ii.py` passed (`neutral_gray_monotonic = true`, `max_gray_channel_delta_norm = 0.0`); `generate_all_luts.ALL_GRADES['lut_mju2.png']` callable verified `True`.
+- **Offline Unit Tests**: Added [`MjuIIEmulationTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/MjuIIEmulationTest.kt) (5 tests including real PNG Hald decoding/trilinear verification) and updated preset counts (`33 -> 34`). `.\gradlew.bat :app:testDebugUnitTest assembleDebug --rerun --offline` -> **193 tests total across 32 suites, 193 passed, 0 failed, 0 errors, 0 skipped** (`BUILD SUCCESSFUL`).
+- **Debug APK**: `app/build/outputs/apk/debug/app-debug.apk` (`172,224,532` bytes).
+- **Physical Hardware (Samsung Galaxy S21 5G)**: **NOT VERIFIED** (`adb devices -l` empty — live Camera2 `FLASH_STATE_FIRED`, AF/AE speed, GL viewfinder parity, and outdoor/portrait flash captures require physical hardware testing).
+- **Detailed Docs**: [OLYMPUS_MJU_II_CAMERA_IMPLEMENTATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/OLYMPUS_MJU_II_CAMERA_IMPLEMENTATION_REPORT.md) and [MJU_II_COLOR_AND_OPTICAL_SPEC.md](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/mju_ii/MJU_II_COLOR_AND_OPTICAL_SPEC.md).

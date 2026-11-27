@@ -18,7 +18,7 @@ import com.craftcam.app.camera.profile.LensType
 import com.craftcam.app.captureframe.CaptureFrameMapper
 import com.craftcam.app.captureframe.CaptureFrameSnapshot
 import com.craftcam.app.config.AppSettingsStore
-import com.craftcam.app.config.filmColorProfileAdjustment
+import com.craftcam.app.color.profile.CameraProfileCompatibility
 import com.craftcam.app.model.CameraCategory
 import com.craftcam.app.model.CameraPreset
 import com.craftcam.app.model.BorderStyle
@@ -45,22 +45,19 @@ object ImageProcessor {
     // ─── Fast Memory Caches ─────────────────────────────────────────────────
     private val lutCache = mutableMapOf<String, IntArray>()
     private val textureCache = mutableMapOf<String, Bitmap?>()
-    private val grainPixelsCache = mutableMapOf<String, Pair<IntArray, Pair<Int, Int>>>()
     private val processingSemaphore = kotlinx.coroutines.sync.Semaphore(1)
 
     /**
-     * Reclaims memory by clearing cached LUT tables and texture bitmaps.
+     * Reclaims memory by clearing cached LUT tables, textures, grain buffers, and borders.
+     * Clears bitmap map references cleanly without eagerly calling Bitmap.recycle() while an
+     * off-thread Canvas draw pass could still reference a cached overlay.
      * Called by MainActivity.onTrimMemory during memory pressure.
      */
     fun clearCaches() {
         synchronized(lutCache) { lutCache.clear() }
-        synchronized(textureCache) {
-            for (bmp in textureCache.values) {
-                try { if (bmp?.isRecycled == false) bmp.recycle() } catch (_: Throwable) {}
-            }
-            textureCache.clear()
-        }
-        synchronized(grainPixelsCache) { grainPixelsCache.clear() }
+        synchronized(textureCache) { textureCache.clear() }
+        BorderRenderer.clearCache()
+        GrainStage.clearCache()
     }
 
     // ─── Main Processing & Saving Pipeline ──────────────────────────────────
@@ -78,6 +75,7 @@ object ImageProcessor {
         captureFrameSnapshot: CaptureFrameSnapshot? = null,
         lensProfile: LensProfile = LensProfile.NORMAL,
         isFlashActive: Boolean = false,
+        isFlashAuto: Boolean = false,
         sensorIso: Int = 100,
         exposureTimeNs: Long = 10_000_000L,
         faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
@@ -88,8 +86,14 @@ object ImageProcessor {
         withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
+        val actualFlashActive: Boolean
         try {
             rotation = imageProxy.imageInfo.rotationDegrees
+            actualFlashActive = if (isFlashAuto) {
+                detectFlashFiredFromProxyOrResult(imageProxy, stillResult)
+            } else {
+                isFlashActive
+            }
             rawBitmap = if (preset.id == "ccd_flash" && imageProxy.format in DFunsRaw.formats) {
                 val metadata = requireNotNull(stillResult) { "Missing D Funs RAW metadata" }
                 val scale = com.craftcam.app.camera.DFunsCapture.exposureScale(metadata, tuning.dfunsStrictExposure)
@@ -207,39 +211,22 @@ object ImageProcessor {
                 // Film grain, halation, dust, light leaks, borders, date stamps are 100% disabled
                 uri = saveToGallery(context, workingBitmap, if (preset.id == "zero") "Pro" else preset.name)
             } else {
-                if (appSettings.saveFilmNegatives) {
-                    savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
+                finishFilmDevelopment(
+                    context = context,
+                    initialBitmap = workingBitmap,
+                    preset = preset,
+                    tuning = tuning,
+                    lensProfile = lensProfile,
+                    isFlashActive = actualFlashActive,
+                    cameraId = cameraId,
+                    sensorIso = sensorIso,
+                    faces = faces,
+                    saveNegative = appSettings.saveFilmNegatives,
+                    skipDecorationsIfBaked = false
+                ).also { (finalBitmap, resultUri) ->
+                    workingBitmap = finalBitmap
+                    uri = resultUri
                 }
-
-                // 1.5 D3D multi-frame wigglegrams are handled authoritatively via processAndSaveThreeDImage.
-                // Obsolete static 2D displacement is disabled to prevent single-frame smearing / stretching.
-
-                // 2. True Film-Science Emulsion & Optics Processing with Real Dazz Assets
-                // Executed in-place on workingBitmap using pooled IntArrays (zero new Bitmap allocations)
-                workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive, cameraId = cameraId, sensorIso = sensorIso, faces = faces)
-
-                // 3. Apply Retro Date Stamp (draws in-place onto mutable workingBitmap)
-                if (tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
-                    val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear, context)
-                    if (stamped != workingBitmap) {
-                        BitmapPool.release(workingBitmap)
-                        workingBitmap = stamped
-                    }
-                }
-
-                // 4. Apply Analog Film Border & Authentic Camera Cutout (bypassed for fisheye)
-                val isFisheyeBorder = preset.id == "analog_fisheye_f" || lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.name.contains("Fisheye", ignoreCase = true)
-                if (!isFisheyeBorder && tuning.frameBorderEnabled && preset.border != null && preset.border.style != BorderStyle.NONE) {
-                    val bordered = BorderRenderer.applyBorder(workingBitmap, preset.border, context)
-                    if (bordered != workingBitmap) {
-                        // Instantly return the photo bitmap to the pool, and retain bordered bitmap for saving
-                        BitmapPool.release(workingBitmap)
-                        workingBitmap = bordered
-                    }
-                }
-
-                // 5. Save to MediaStore (DCIM/Cameleo)
-                uri = saveToGallery(context, workingBitmap, preset.name, negativeBitmap = savedNegativeBitmap)
             }
             uri
         } catch (t: Throwable) {
@@ -267,7 +254,8 @@ object ImageProcessor {
         faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
         cameraId: String? = null,
         onProgress: ((String) -> Unit)? = null
-    ): Uri? = withContext(Dispatchers.Default) {
+    ): Uri? = processingSemaphore.withPermit {
+        withContext(Dispatchers.Default) {
         val rawBitmap: Bitmap
         val rotation: Int
         try {
@@ -375,6 +363,7 @@ object ImageProcessor {
         } finally {
             BitmapPool.release(workingBitmap)
         }
+        }
     }
 
     /**
@@ -398,7 +387,8 @@ object ImageProcessor {
         cameraId: String = "0",
         captureFrameSnapshot: CaptureFrameSnapshot? = null,
         onStatsUpdated: ((com.craftcam.app.computational.ComputationalStats) -> Unit)? = null
-    ): Uri? = withContext(Dispatchers.Default) {
+    ): Uri? = processingSemaphore.withPermit {
+        withContext(Dispatchers.Default) {
         val refFrame = sequence.referenceFrame
         val rawW = refFrame.width
         val rawH = refFrame.height
@@ -462,6 +452,7 @@ object ImageProcessor {
                 BitmapPool.release(developedBitmap)
             }
         }
+        }
     }
 
     // ─── Fast Asset & LUT Loading ───────────────────────────────────────────
@@ -511,33 +502,6 @@ object ImageProcessor {
         }
     }
 
-    private fun getOrLoadGrainPixels(context: Context, name: String): Pair<IntArray, Pair<Int, Int>>? {
-        synchronized(grainPixelsCache) {
-            grainPixelsCache[name]?.let { return it }
-            val resolvedName = if (name.startsWith("grains/")) name else {
-                try {
-                    context.assets.open(name).close()
-                    name
-                } catch (e: Exception) {
-                    "grains/$name"
-                }
-            }
-            grainPixelsCache[resolvedName]?.let {
-                grainPixelsCache[name] = it
-                return it
-            }
-            val bmp = loadTexture(context, resolvedName) ?: loadTexture(context, name) ?: return null
-            val gw = bmp.width
-            val gh = bmp.height
-            val gp = IntArray(gw * gh)
-            bmp.getPixels(gp, 0, gw, 0, 0, gw, gh)
-            val result = Pair(gp, Pair(gw, gh))
-            grainPixelsCache[name] = result
-            grainPixelsCache[resolvedName] = result
-            return result
-        }
-    }
-
     // ─── True Film Emulsion & Dazz Cam Processing Engine ─────────────────────
     internal suspend fun applyPresetEffects(
         context: Context,
@@ -570,10 +534,9 @@ object ImageProcessor {
 
             val film = stock.filmProfile
             val v2 = film.lowerMidtoneStrength > 0f
-            // Both camera surfaces already carry ISP-rendered SDR color.
-            val normMat = cameraId?.takeUnless { v2 || film.id == "dfuns_negative_v1" }?.let { com.craftcam.app.color.DeviceCalibrationManager(context).resolveProfile(it).normalizationMatrix }
-                ?: com.craftcam.app.color.ColorMatrix3x3.IDENTITY
-            val isIdentityNorm = normMat == com.craftcam.app.color.ColorMatrix3x3.IDENTITY
+            // Both viewfinder and capture ingest ISP-rendered SDR frames; keep LUT conditioning identical.
+            val normMat = com.craftcam.app.color.ColorMatrix3x3.IDENTITY
+            val isIdentityNorm = true
 
             val grading = preset.colorGrading
             val lens = preset.lens
@@ -582,6 +545,14 @@ object ImageProcessor {
             val leak = preset.lightLeak
             val isCamcorder = preset.category == CameraCategory.CAMCORDER
             val isNatural = preset.id == "zero" || preset.name.equals("Zero", ignoreCase = true)
+            val lutPlan = CameraProfileCompatibility.resolveLutPlan(
+                presetId = preset.id,
+                colorProfileIndex = tuning.filmColorProfileIndex,
+                cameraLutAsset = film.lutAssetPath?.ifEmpty { null } ?: selectLutForPreset(preset.id),
+                cameraSecondaryLutAsset = film.secondaryLutAssetPath,
+                cameraDualLutMix = film.dualLutBlendFactor
+            )
+            val isMono = lutPlan.isMonochrome
 
             val isCpm35 = preset.id == "disp_flash" || stock.id == "disposable_cpm35" || preset.id == "disp_cpm35" || preset.name.contains("CPM35", ignoreCase = true)
             val isCcd = preset.id == "ccd_r" || stock.id == "ccd_digital" || preset.name.equals("CCD R", ignoreCase = true)
@@ -633,7 +604,8 @@ object ImageProcessor {
                         profile = skinProfile,
                         isFlashActive = isFlashActive,
                         iso = sensorIso,
-                        sourcePixels = sourcePixels
+                        sourcePixels = sourcePixels,
+                        isMonochrome = isMono
                     )
                     lastSkinResult = sResult
                     if (tuning.debugSkinToneStages) {
@@ -734,8 +706,24 @@ object ImageProcessor {
                     }
                 } else null
 
+                // 6b. Apply custom color profile LUT blend / monochrome / user tuning when selected
+                applyDigicamProfileAndTuningPass(
+                    context = context,
+                    pixels = pixels,
+                    width = width,
+                    height = height,
+                    lutPlan = lutPlan,
+                    tuning = tuning,
+                    intensity = intensity
+                )
+
                 // In-place update of source bitmap
                 workingSource.setPixels(pixels, 0, width, 0, 0, width, height)
+
+                // Circular fisheye hood bezel mask if attached to Digicam
+                if (lensProfile.type == LensType.FISHEYE_F && tuning.debugStageOptics) {
+                    applyFisheyeHoodMask(Canvas(workingSource), width, height)
+                }
 
                 // 7. Developer diagnostics export if enabled
                 if (tuning.debugDigicamStages && origCopy != null) {
@@ -774,19 +762,10 @@ object ImageProcessor {
             }
 
 
-            // 1. Identify camera-specific 3D LUT (matches GLViewfinderRenderer priority)
-            val isProfileCompatible = com.craftcam.app.color.profile.CameraProfileCompatibility.isProfileSupported(preset.id)
-            val colorProfile = com.craftcam.app.color.profile.DazzColorProfileCatalog.getByIndex(tuning.filmColorProfileIndex)
-            val isMono = isProfileCompatible && colorProfile.isMonochrome
-
-            val canonicalLut = selectLutForPreset(preset.id)
-            val profileLut = if (isProfileCompatible) {
-                colorProfile.lutAssetPath
-            } else {
-                film.lutAssetPath?.ifEmpty { null } ?: canonicalLut
-            }
-            val lutFile = profileLut
+            // 1. Identify camera-specific 3D LUT + Color Profile plan (matches GLViewfinderRenderer priority)
+            val lutFile = lutPlan.primaryLutAsset
             val lut = getOrLoadLut(context, lutFile)
+            val primaryLutIsProfile = lutPlan.isMonochrome && lutPlan.isCustomProfile
 
             // Match GLViewfinderRenderer base grading resolution
             val baseContrast = if (film.contrast != 1.0f) film.contrast else grading.contrast
@@ -798,7 +777,7 @@ object ImageProcessor {
             val baseShadowB = if (film.shadowTintB != 0.0f) film.shadowTintB else grading.shadowTintB
 
             // Micro-tuning user offsets + selected film emulsion color profile
-            val colorProfileAdj = filmColorProfileAdjustment(tuning.filmColorProfileIndex)
+            val colorProfileAdj = lutPlan.effectiveAdjustment
             val userTempOffset = if (tuning.isHardwareWbActive) 0.0f else tuning.temperatureOffset
             val tempShift = if (isMono) 0.0f else (colorProfileAdj.tempDelta + userTempOffset).coerceIn(-1.0f, 1.0f)
             val tintShift = if (isMono) 0.0f else (colorProfileAdj.tintDelta + tuning.tintOffset).coerceIn(-1.0f, 1.0f)
@@ -820,7 +799,11 @@ object ImageProcessor {
             val shadowR = if (isMono) 0f else baseShadowR * intensity
             val shadowG = if (isMono) 0f else baseShadowG * intensity
             val shadowB = if (isMono) 0f else baseShadowB * intensity
-            val rollOff = film.shoulderAtIntensity(intensity)
+            val rollOff = if (isFlashActive && preset.id == "analog_mju2") {
+                1f - (1f - 0.89f) * intensity
+            } else {
+                film.shoulderAtIntensity(intensity)
+            }
 
             // ── Step 1: Pre-calculate Vignette & Film Grain Parameters for Fused Processing ──
             val vigIntensity = (lens.vignetteIntensity * tuning.vignetteBoost * intensity).coerceIn(0.0f, 1.0f)
@@ -896,11 +879,13 @@ object ImageProcessor {
             }
 
             // ── Step 2: High-Performance Fused Parallel Processing (LUT + Grading + Vignette + Grain) ──
-            val secLutAsset = film.secondaryLutAssetPath
-            val lutB = if (!secLutAsset.isNullOrEmpty() && tuning.debugStageLut) getOrLoadLut(context, secLutAsset) else null
-            val dualLutMix = film.dualLutBlendFactor.coerceIn(0f, 1f)
+            val secLutAsset = lutPlan.secondaryLutAsset
+            val lutB = if (!secLutAsset.isNullOrEmpty() && lutPlan.dualLutMix > 0.001f && tuning.debugStageLut) {
+                getOrLoadLut(context, secLutAsset)
+            } else null
+            val dualLutMix = if (lutB != null) lutPlan.dualLutMix else 0f
             val hasDualLut = lutB != null && dualLutMix > 0.001f
-            val isPreLin = tuning.preLinearizationEnabled && tuning.debugStagePreLinearization && 
+            val isPreLin = !primaryLutIsProfile && tuning.preLinearizationEnabled && tuning.debugStagePreLinearization &&
                            film.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.CUSTOM_PRETRANSFORM
             val preLinStrength = tuning.preLinearizationStrength.coerceIn(0f, 1f)
             val stageLut = tuning.debugStageLut
@@ -917,7 +902,7 @@ object ImageProcessor {
                 if (isPreLin) {
                     val linVal = if (inVal <= 0.5f) (inVal * 2.0f).pow(1.25f) * 0.5f else 1.0f - ((1.0f - inVal) * 2.0f).pow(1.25f) * 0.5f
                     (inVal * (1f - preLinStrength) + linVal.coerceIn(0f, 1f) * preLinStrength).coerceIn(0f, 1f)
-                } else if (film.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.LINEAR) {
+                } else if (!primaryLutIsProfile && film.lutInputSpace == com.craftcam.app.camera.profile.LutInputSpace.LINEAR) {
                     inVal.pow(2.2f).coerceIn(0f, 1f)
                 } else {
                     inVal
@@ -1147,7 +1132,7 @@ object ImageProcessor {
                                         val linG = curLuma + effectiveSat * (g - curLuma)
                                         val linB = curLuma + effectiveSat * (b - curLuma)
 
-                                        val skinProt = film.skinProtection.coerceIn(0f, 1f)
+                                        val skinProt = if (isMono) 0f else film.skinProtection.coerceIn(0f, 1f)
                                         r = linR * (1.0f - skinProt) + vibR * skinProt
                                         g = linG * (1.0f - skinProt) + vibG * skinProt
                                         b = linB * (1.0f - skinProt) + vibB * skinProt
@@ -1207,7 +1192,7 @@ object ImageProcessor {
 
                                 if (hasObserver) observer?.pixel("fade", i, r, g, b)
                                 // Flattering Skin Tone Radiance (Dazz Cam HighPassSkinSmoothing parity)
-                                if (!v2 && r > g && g > b && r > 0.22f && r < 0.90f) {
+                                if (!isMono && !v2 && r > g && g > b && r > 0.22f && r < 0.90f) {
                                     val skinFactor = ((r - b) * 2.2f).coerceIn(0.0f, 1.0f)
                                     val midLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b)
                                     val peachWeight = (1.0f - abs(midLuma - 0.55f) * 2.2f).coerceIn(0.0f, 1.0f) * skinFactor
@@ -1385,14 +1370,15 @@ object ImageProcessor {
                 }.awaitAll()
             }
 
-            // ── Step 2b: Optical Starburst Diffraction Rays ────
-            if (lensProfile.type == LensType.STARBURST && lensProfile.starburstStrength > 0.01f) {
-                applyStarburstDiffraction(pixels, width, height, lensProfile)
-            }
-
-            // ── Step 2c: Skin Tone Intelligence Engine for Film Presets ────
+            // ── Step 2b: Skin Tone Intelligence Engine for Film Presets ────
+            // (Starburst optical diffraction is applied once in Step 1c above)
             if (!isDigicamTarget && !isNatural && !isCamcorder && tuning.skinToneIntelligenceEnabled) {
-                val skinProfile = com.craftcam.app.color.skin.SkinToneProfileCatalog.getProfileForPreset(preset.id, preset.category)
+                val baseSkinProfile = com.craftcam.app.color.skin.SkinToneProfileCatalog.getProfileForPreset(preset.id, preset.category)
+                val skinProfile = if (preset.id == "analog_mju2" && isFlashActive) {
+                    baseSkinProfile.copy(skinHighlightKnee = 0.84f)
+                } else {
+                    baseSkinProfile
+                }
                 val skinIlluminant = if (isFlashActive) {
                     com.craftcam.app.color.digicam.DigicamIlluminant.GOLDEN_DIRECT_FLASH
                 } else if (preset.whiteBalance.policy == com.craftcam.app.model.WhiteBalancePolicy.FIXED_TUNGSTEN || (tuning.temperatureOffset < -0.25f && !tuning.isHardwareWbActive)) {
@@ -1482,12 +1468,12 @@ object ImageProcessor {
                 }
             }
 
-            // 4d. Direct Flash Illumination Overlay
+            // 4d. Direct Flash Illumination Overlay (only applied when flash actually fired)
             val flashOverlay = preset.flashOverlay
-            val flashActive = flashOverlay?.enabled == true || selectFlashForPreset(preset.id) != null
             val flashAsset = flashOverlay?.assetPath ?: selectFlashForPreset(preset.id)
-            if (flashActive && flashAsset != null) {
-                loadTexture(context, flashAsset)?.let { tex ->
+            val flashActive = isFlashActive && (flashOverlay?.enabled != false) && flashAsset != null
+            if (flashActive) {
+                loadTexture(context, flashAsset!!)?.let { tex ->
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
                         xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
                         val flashOpacity = flashOverlay?.opacity ?: 0.65f
@@ -1499,20 +1485,7 @@ object ImageProcessor {
 
             // 4e. Circular Fisheye Optical Hood Bezel Mask (enforced after grain/fade/leaks for pitch-black perimeter)
             if (!isD3D && lensProfile.type == LensType.FISHEYE_F && tuning.debugStageOptics) {
-                val hoodCx = width * 0.5f
-                val hoodCy = height * 0.5f
-                val minDim = minOf(width, height).toFloat()
-                val rInner = 0.425f * minDim
-                val rOuter = 0.440f * minDim
-                val hoodPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    shader = RadialGradient(
-                        hoodCx, hoodCy, rOuter,
-                        intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.BLACK),
-                        floatArrayOf(0f, rInner / rOuter, 1f),
-                        Shader.TileMode.CLAMP
-                    )
-                }
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), hoodPaint)
+                applyFisheyeHoodMask(canvas, width, height)
             }
 
             return workingSource
@@ -2203,6 +2176,7 @@ object ImageProcessor {
         "analog_135ne", "135ne", "135 ne" -> "lut_135ne.png"
         "ccd_grd", "analog_warm_film", "grd", "gr d" -> "lut_ccd_grd.png"
         "analog_soft_film", "analog_ct2f", "ct2f" -> "lut_ct2f.png"
+        "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" -> "lut_mju2.png"
         "analog_vintage_color", "analog_dexp", "dexp", "d exp" -> "lut_dexp.png"
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
         "ccd_flash", "ccd flash", "d_funs", "dfuns" -> "lut_dfuns_v1.png"
@@ -2247,6 +2221,7 @@ object ImageProcessor {
         presetId in listOf("ccd_retro_compact", "dqs") -> "grains/grain_dqs.jpg"
         presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
         presetId in listOf("disp_flash", "disp_cpm35") -> "grains/grain_cpm35.jpg"
+        presetId in listOf("analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic") -> ""
         presetId in listOf("disp_warm", "135sr") -> "grains/grain540_01.jpg"
         presetId in listOf("inst_vintage", "inst_c") -> "grains/grain_instc.jpg"
         presetId in listOf("inst_paf", "paf") -> "grains/grain_paf.jpg"
@@ -2282,6 +2257,7 @@ object ImageProcessor {
         "ccd_flash"            -> "dust_black.png"
         "ccd_y2k_digital", "classic_u", "classicu" -> "dust_black.png"
         "ccd_retro_compact", "dqs" -> "dust_black.png"
+        "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" -> ""
         "disp_classic"         -> "dust_135.png"
         "disp_flash"           -> "dust_135.png"
         "disp_warm"            -> "dust_135.png"
@@ -2318,6 +2294,36 @@ object ImageProcessor {
         val runtime = Runtime.getRuntime()
         val available = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
         return if (width.toLong() * height * 24L < available) longest else 4096
+    }
+
+    private fun detectFlashFiredFromProxyOrResult(
+        image: ImageProxy,
+        stillResult: android.hardware.camera2.CaptureResult?
+    ): Boolean {
+        val resultState = try {
+            stillResult?.get(android.hardware.camera2.CaptureResult.FLASH_STATE)
+        } catch (_: Throwable) {
+            null
+        }
+        if (resultState != null) {
+            return resultState == android.hardware.camera2.CaptureResult.FLASH_STATE_FIRED ||
+                resultState == android.hardware.camera2.CaptureResult.FLASH_STATE_PARTIAL
+        }
+        if (image.format == android.graphics.ImageFormat.JPEG && image.planes.isNotEmpty()) {
+            try {
+                val dup = image.planes[0].buffer.duplicate()
+                val headerSize = minOf(dup.remaining(), 65536)
+                if (headerSize > 16) {
+                    val headerBytes = ByteArray(headerSize)
+                    dup.get(headerBytes)
+                    val flashAttr = ExifInterface(java.io.ByteArrayInputStream(headerBytes))
+                        .getAttributeInt(ExifInterface.TAG_FLASH, -1)
+                    if (flashAttr >= 0) return (flashAttr and 1) != 0
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return false
     }
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
@@ -2380,47 +2386,190 @@ object ImageProcessor {
         return Bitmap.createBitmap(bitmap, startX, startY, cropW, cropH)
     }
 
-    /**
-     * Develops an existing upright Bitmap (from a saved film negative or imported photo)
-     * through D3D depth separation, preset film chemistry, date stamp, and film border,
-     * then persists it into MediaStore while preserving EXIF and negative archive preferences.
-     */
-    suspend fun developBitmap(
+    private suspend fun applyDigicamProfileAndTuningPass(
         context: Context,
-        sourceBitmap: Bitmap,
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        lutPlan: CameraProfileCompatibility.ResolvedLutPlan,
+        tuning: UserTuningConfig,
+        intensity: Float
+    ) {
+        val adj = lutPlan.effectiveAdjustment
+        val userTempOffset = if (tuning.isHardwareWbActive) 0.0f else tuning.temperatureOffset
+        val tempShift = if (lutPlan.isMonochrome) 0f else (adj.tempDelta + userTempOffset) * intensity
+        val tintShift = if (lutPlan.isMonochrome) 0f else (adj.tintDelta + tuning.tintOffset) * intensity
+        val rawContrast = (adj.contrastMult * (1.0f + tuning.contrastOffset)).coerceAtLeast(0.1f)
+        val effContrast = 1.0f + (rawContrast - 1.0f) * intensity
+        val rawSat = if (lutPlan.isMonochrome) 0.0f else (adj.satMult * (1.0f + tuning.saturationOffset)).coerceAtLeast(0.0f)
+        val effSat = if (lutPlan.isMonochrome) 0.0f else (1.0f + (rawSat - 1.0f) * intensity)
+        val effFade = (adj.fadeDelta * intensity).coerceIn(0f, 0.5f)
+
+        val profileLutAsset = when {
+            lutPlan.isMonochrome && lutPlan.isCustomProfile -> lutPlan.primaryLutAsset
+            lutPlan.isCustomProfile -> lutPlan.secondaryLutAsset
+            else -> null
+        }
+        val profileLut = if (!profileLutAsset.isNullOrEmpty() && tuning.debugStageLut) {
+            getOrLoadLut(context, profileLutAsset)
+        } else null
+        val lutMix = when {
+            profileLut == null -> 0f
+            lutPlan.isMonochrome -> intensity
+            else -> (lutPlan.dualLutMix * intensity).coerceIn(0f, 1f)
+        }
+
+        val needsPass = lutMix > 0.001f ||
+            lutPlan.isMonochrome ||
+            abs(tempShift) > 0.001f ||
+            abs(tintShift) > 0.001f ||
+            abs(effContrast - 1.0f) > 0.005f ||
+            abs(effSat - 1.0f) > 0.005f ||
+            effFade > 0.001f
+        if (!needsPass) return
+
+        val sliceOffset = if (profileLut != null) {
+            IntArray(64) { ((it shr 3) * 64 * 512) + ((it and 7) * 64) }
+        } else null
+        val lutIdx = if (profileLut != null) IntArray(256) { ((it * 63f) / 255f).toInt().coerceIn(0, 62) } else null
+        val lutFrac = if (profileLut != null) FloatArray(256) { (it * 63f) / 255f - lutIdx!![it] } else null
+
+        val numCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+        val rowsPerWorker = (height + numCores - 1) / numCores
+        coroutineScope {
+            (0 until numCores).map { coreIndex ->
+                async(Dispatchers.Default) {
+                    val startRow = coreIndex * rowsPerWorker
+                    val endRow = minOf(height, startRow + rowsPerWorker)
+                    for (y in startRow until endRow) {
+                        val rowOffset = y * width
+                        for (x in 0 until width) {
+                            val idx = rowOffset + x
+                            val p = pixels[idx]
+                            val ri = (p shr 16) and 0xFF
+                            val gi = (p shr 8) and 0xFF
+                            val bi = p and 0xFF
+                            var r = ri * (1.0f / 255.0f)
+                            var g = gi * (1.0f / 255.0f)
+                            var b = bi * (1.0f / 255.0f)
+
+                            if (profileLut != null && sliceOffset != null && lutIdx != null && lutFrac != null && lutMix > 0.001f) {
+                                val r0 = lutIdx[ri]; val r1 = r0 + 1
+                                val greenRow = lutIdx[gi] * 512
+                                val blueSlice = lutIdx[bi]
+                                val rx = lutFrac[ri]; val gy = lutFrac[gi]; val bz = lutFrac[bi]
+                                val row0_0 = sliceOffset[blueSlice] + greenRow
+                                val row0_1 = row0_0 + 512
+                                val row1_0 = sliceOffset[blueSlice + 1] + greenRow
+                                val row1_1 = row1_0 + 512
+                                val c000 = profileLut[row0_0 + r0]; val c100 = profileLut[row0_0 + r1]
+                                val c010 = profileLut[row0_1 + r0]; val c110 = profileLut[row0_1 + r1]
+                                val c001 = profileLut[row1_0 + r0]; val c101 = profileLut[row1_0 + r1]
+                                val c011 = profileLut[row1_1 + r0]; val c111 = profileLut[row1_1 + r1]
+                                val lr = ((((c000 shr 16 and 0xFF) * (1f - rx) + (c100 shr 16 and 0xFF) * rx) * (1f - gy) +
+                                    ((c010 shr 16 and 0xFF) * (1f - rx) + (c110 shr 16 and 0xFF) * rx) * gy) * (1f - bz) +
+                                    (((c001 shr 16 and 0xFF) * (1f - rx) + (c101 shr 16 and 0xFF) * rx) * (1f - gy) +
+                                        ((c011 shr 16 and 0xFF) * (1f - rx) + (c111 shr 16 and 0xFF) * rx) * gy) * bz) * (1f / 255f)
+                                val lg = ((((c000 shr 8 and 0xFF) * (1f - rx) + (c100 shr 8 and 0xFF) * rx) * (1f - gy) +
+                                    ((c010 shr 8 and 0xFF) * (1f - rx) + (c110 shr 8 and 0xFF) * rx) * gy) * (1f - bz) +
+                                    (((c001 shr 8 and 0xFF) * (1f - rx) + (c101 shr 8 and 0xFF) * rx) * (1f - gy) +
+                                        ((c011 shr 8 and 0xFF) * (1f - rx) + (c111 shr 8 and 0xFF) * rx) * gy) * bz) * (1f / 255f)
+                                val lb = ((((c000 and 0xFF) * (1f - rx) + (c100 and 0xFF) * rx) * (1f - gy) +
+                                    ((c010 and 0xFF) * (1f - rx) + (c110 and 0xFF) * rx) * gy) * (1f - bz) +
+                                    (((c001 and 0xFF) * (1f - rx) + (c101 and 0xFF) * rx) * (1f - gy) +
+                                        ((c011 and 0xFF) * (1f - rx) + (c111 and 0xFF) * rx) * gy) * bz) * (1f / 255f)
+                                r = r * (1f - lutMix) + lr * lutMix
+                                g = g * (1f - lutMix) + lg * lutMix
+                                b = b * (1f - lutMix) + lb * lutMix
+                            }
+
+                            if (abs(tempShift) > 0.001f) {
+                                r += 0.10f * tempShift
+                                b -= 0.10f * tempShift
+                            }
+                            if (abs(tintShift) > 0.001f) {
+                                g += 0.06f * tintShift
+                                r -= 0.03f * tintShift
+                                b -= 0.03f * tintShift
+                            }
+                            if (abs(effContrast - 1.0f) > 0.005f) {
+                                val pivot = 0.26f
+                                r = (r - pivot) * effContrast + pivot
+                                g = (g - pivot) * effContrast + pivot
+                                b = (b - pivot) * effContrast + pivot
+                            }
+                            if (lutPlan.isMonochrome || abs(effSat - 1.0f) > 0.005f) {
+                                val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                r = luma + effSat * (r - luma)
+                                g = luma + effSat * (g - luma)
+                                b = luma + effSat * (b - luma)
+                            }
+                            if (effFade > 0.001f) {
+                                r = r * (1.0f - effFade) + effFade
+                                g = g * (1.0f - effFade) + effFade
+                                b = b * (1.0f - effFade) + effFade
+                            }
+                            val ir = (r.coerceIn(0f, 1f) * 255f).roundToInt()
+                            val ig = (g.coerceIn(0f, 1f) * 255f).roundToInt()
+                            val ib = (b.coerceIn(0f, 1f) * 255f).roundToInt()
+                            pixels[idx] = (0xFF shl 24) or (ir shl 16) or (ig shl 8) or ib
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+    }
+
+    private fun applyFisheyeHoodMask(canvas: Canvas, width: Int, height: Int) {
+        val hoodCx = width * 0.5f
+        val hoodCy = height * 0.5f
+        val minDim = minOf(width, height).toFloat()
+        val rInner = 0.425f * minDim
+        val rOuter = 0.440f * minDim
+        val hoodPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                hoodCx, hoodCy, rOuter,
+                intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.BLACK),
+                floatArrayOf(0f, rInner / rOuter, 1f),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), hoodPaint)
+    }
+
+    private suspend fun finishFilmDevelopment(
+        context: Context,
+        initialBitmap: Bitmap,
         preset: CameraPreset,
-        tuning: UserTuningConfig = UserTuningConfig(),
-        lensProfile: LensProfile = LensProfile.NORMAL
-    ): Uri? = withContext(Dispatchers.Default) {
-        val appSettings = AppSettingsStore.get(context).current
-        val maxExportDim = photoExportLimit(appSettings.highResolutionExport, sourceBitmap.width,
-            sourceBitmap.height, preset, true)
-        val srcW = sourceBitmap.width
-        val srcH = sourceBitmap.height
-        val scale = if (srcW > maxExportDim || srcH > maxExportDim) {
-            maxExportDim.toFloat() / maxOf(srcW, srcH)
-        } else 1.0f
-        val targetW = (srcW * scale).roundToInt().coerceAtLeast(1)
-        val targetH = (srcH * scale).roundToInt().coerceAtLeast(1)
-
-        var workingBitmap = BitmapPool.acquire(targetW, targetH)
-        val canvas = Canvas(workingBitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        val destRect = Rect(0, 0, targetW, targetH)
-        canvas.drawBitmap(sourceBitmap, null, destRect, paint)
-
+        tuning: UserTuningConfig,
+        lensProfile: LensProfile,
+        isFlashActive: Boolean,
+        cameraId: String? = null,
+        sensorIso: Int = 100,
+        faces: List<com.craftcam.app.portrait.FaceRegion> = emptyList(),
+        saveNegative: Boolean = false,
+        skipDecorationsIfBaked: Boolean = false
+    ): Pair<Bitmap, Uri?> {
+        var workingBitmap = initialBitmap
         var savedNegativeBitmap: Bitmap? = null
-        try {
-            if (appSettings.saveFilmNegatives) {
+        return try {
+            if (saveNegative) {
                 savedNegativeBitmap = Bitmap.createBitmap(workingBitmap)
             }
 
-            // D3D multi-frame wigglegram is handled authoritatively via processAndSaveThreeDImage.
-            // Obsolete static 2D displacement is disabled to avoid single-frame smearing / stretching.
+            workingBitmap = applyPresetEffects(
+                context = context,
+                source = workingBitmap,
+                preset = preset,
+                tuning = tuning,
+                lensProfile = lensProfile,
+                isFlashActive = isFlashActive,
+                cameraId = cameraId,
+                sensorIso = sensorIso,
+                faces = faces
+            )
 
-            workingBitmap = applyPresetEffects(context, workingBitmap, preset, tuning, lensProfile, isFlashActive = false)
-
-            if (tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
+            if (!skipDecorationsIfBaked && tuning.dateStampEnabled && preset.dateStamp != null && preset.dateStamp.enabled) {
                 val stamped = DateStampRenderer.applyDateStamp(workingBitmap, preset.dateStamp, tuning.customYear, context)
                 if (stamped != workingBitmap) {
                     BitmapPool.release(workingBitmap)
@@ -2428,8 +2577,11 @@ object ImageProcessor {
                 }
             }
 
-            val isFisheyeBorder = preset.id == "analog_fisheye_f" || lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W || preset.name.contains("Fisheye", ignoreCase = true)
-            if (!isFisheyeBorder && tuning.frameBorderEnabled && preset.border != null && preset.border.style != BorderStyle.NONE) {
+            val isFisheyeBorder = preset.id == "analog_fisheye_f" ||
+                lensProfile.type == LensType.FISHEYE_F ||
+                lensProfile.type == LensType.FISHEYE_W ||
+                preset.name.contains("Fisheye", ignoreCase = true)
+            if (!skipDecorationsIfBaked && !isFisheyeBorder && tuning.frameBorderEnabled && preset.border != null && preset.border.style != BorderStyle.NONE) {
                 val bordered = BorderRenderer.applyBorder(workingBitmap, preset.border, context)
                 if (bordered != workingBitmap) {
                     BitmapPool.release(workingBitmap)
@@ -2437,13 +2589,76 @@ object ImageProcessor {
                 }
             }
 
-            saveToGallery(context, workingBitmap, preset.name, negativeBitmap = savedNegativeBitmap)
-        } catch (t: Throwable) {
-            Log.e(TAG, "Error developing bitmap in darkroom", t)
-            null
+            val uri = saveToGallery(context, workingBitmap, preset.name, negativeBitmap = savedNegativeBitmap)
+            workingBitmap to uri
         } finally {
             savedNegativeBitmap?.recycle()
-            BitmapPool.release(workingBitmap)
+        }
+    }
+
+    /**
+     * Develops an existing upright Bitmap (from a saved film negative or imported photo)
+     * through preset film chemistry, date stamp, and film border, then persists it into
+     * MediaStore while preserving EXIF, negative archival preferences, and non-duplicated frames.
+     */
+    suspend fun developBitmap(
+        context: Context,
+        sourceBitmap: Bitmap,
+        preset: CameraPreset,
+        tuning: UserTuningConfig = UserTuningConfig(),
+        lensProfile: LensProfile = LensProfile.NORMAL,
+        isFlashActive: Boolean = false,
+        skipDecorationsIfBaked: Boolean = false
+    ): Uri? = processingSemaphore.withPermit {
+        withContext(Dispatchers.Default) {
+            val appSettings = AppSettingsStore.get(context).current
+            val maxExportDim = photoExportLimit(
+                appSettings.highResolutionExport,
+                sourceBitmap.width,
+                sourceBitmap.height,
+                preset,
+                true
+            )
+            val srcW = sourceBitmap.width
+            val srcH = sourceBitmap.height
+            val scale = if (srcW > maxExportDim || srcH > maxExportDim) {
+                maxExportDim.toFloat() / maxOf(srcW, srcH)
+            } else 1.0f
+            val targetW = (srcW * scale).roundToInt().coerceAtLeast(1)
+            val targetH = (srcH * scale).roundToInt().coerceAtLeast(1)
+
+            val isD3DPreset = preset.id == "analog_cinema_film" || preset.id == "d3d"
+            val effectiveLensProfile = if (isD3DPreset && (lensProfile.type == LensType.FISHEYE_F || lensProfile.type == LensType.FISHEYE_W)) {
+                LensProfile.NORMAL
+            } else {
+                lensProfile
+            }
+
+            var workingBitmap = BitmapPool.acquire(targetW, targetH)
+            val canvas = Canvas(workingBitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            val destRect = Rect(0, 0, targetW, targetH)
+            canvas.drawBitmap(sourceBitmap, null, destRect, paint)
+
+            try {
+                finishFilmDevelopment(
+                    context = context,
+                    initialBitmap = workingBitmap,
+                    preset = preset,
+                    tuning = tuning,
+                    lensProfile = effectiveLensProfile,
+                    isFlashActive = isFlashActive,
+                    saveNegative = appSettings.saveFilmNegatives && !skipDecorationsIfBaked,
+                    skipDecorationsIfBaked = skipDecorationsIfBaked
+                ).also { (finalBitmap, _) ->
+                    workingBitmap = finalBitmap
+                }.second
+            } catch (t: Throwable) {
+                Log.e(TAG, "Error developing bitmap in darkroom", t)
+                null
+            } finally {
+                BitmapPool.release(workingBitmap)
+            }
         }
     }
 

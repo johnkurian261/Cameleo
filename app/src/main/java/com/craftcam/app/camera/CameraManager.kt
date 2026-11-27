@@ -644,6 +644,8 @@ class CameraManager(private val context: Context) {
     fun setPreset(preset: CameraPreset) {
         if (currentPreset.id != preset.id) {
             val wasFisheye = isFisheyeActive()
+            val wasMju2 = currentPreset.id == "analog_mju2"
+            val isMju2 = preset.id == "analog_mju2"
             val changedDFuns = (currentPreset.id == "ccd_flash") != (preset.id == "ccd_flash")
             currentPreset = preset
             glRenderer?.updatePreset(preset)
@@ -707,7 +709,17 @@ class CameraManager(private val context: Context) {
                     aspectRatio = initialRatio,
                     tuning = state.tuning.copy(
                         temperatureOffset = offset,
-                        filmColorProfileIndex = initialColorProfile.index
+                        filmColorProfileIndex = initialColorProfile.index,
+                        frameBorderEnabled = when {
+                            isMju2 -> false
+                            wasMju2 -> true
+                            else -> state.tuning.frameBorderEnabled
+                        },
+                        dateStampEnabled = when {
+                            isMju2 -> false
+                            wasMju2 -> true
+                            else -> state.tuning.dateStampEnabled
+                        }
                     ),
                     captureFrameState = state.captureFrameState.copy(
                         sizeFraction = defaultFraction,
@@ -1908,7 +1920,8 @@ class CameraManager(private val context: Context) {
                                         compareWithOriginal = captureState.debugCompareOriginal,
                                         captureFrameSnapshot = frameSnapshot,
                                         lensProfile = captureState.shootingState.selectedLens,
-                                        isFlashActive = if (dfuns && shotResult != null) shotResult.get(android.hardware.camera2.CaptureResult.FLASH_STATE) in listOf(android.hardware.camera2.CaptureResult.FLASH_STATE_FIRED, android.hardware.camera2.CaptureResult.FLASH_STATE_PARTIAL) else captureState.flashMode != ImageCapture.FLASH_MODE_OFF,
+                                        isFlashActive = if (dfuns && shotResult != null) shotResult.get(android.hardware.camera2.CaptureResult.FLASH_STATE) in listOf(android.hardware.camera2.CaptureResult.FLASH_STATE_FIRED, android.hardware.camera2.CaptureResult.FLASH_STATE_PARTIAL) else (captureState.flashMode == ImageCapture.FLASH_MODE_ON),
+                                        isFlashAuto = !dfuns && captureState.flashMode == ImageCapture.FLASH_MODE_AUTO,
                                         sensorIso = captureState.liveIso,
                                         exposureTimeNs = captureState.liveExposureNs,
                                         cameraId = cameraId,

@@ -16,7 +16,7 @@ class WhiteBalanceCalibrationTest {
     fun testAllPresetsHaveValidWhiteBalancePolicy() {
         val presets = PresetCatalog.allPresets
         assertTrue("Preset catalog must not be empty", presets.isNotEmpty())
-        assertEquals("Expected 33 authentic camera presets", 33, presets.size)
+        assertEquals("Expected 34 authentic camera presets", 34, presets.size)
 
         for (preset in presets) {
             val wb = preset.whiteBalance

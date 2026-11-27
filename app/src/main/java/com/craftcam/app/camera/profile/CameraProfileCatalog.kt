@@ -355,7 +355,7 @@ object CameraProfileCatalog {
         supportedLenses = listOf(LensType.NORMAL, LensType.FISHEYE_F, LensType.FISHEYE_W,
             LensType.COLOR_FLASH, LensType.STARBURST),
         defaultLens = LensType.NORMAL,
-        defaultRatio = AspectRatioMode.RATIO_3_2,
+        defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
             id = "dfuns_negative_v1", name = "D Funs colour negative",
             lutAssetPath = "lut_dfuns_v1.png", lutInputSpace = LutInputSpace.SRGB,
@@ -507,6 +507,69 @@ object CameraProfileCatalog {
             scale = 0.95f,
             luminanceWeightingEnabled = true,
             luminanceWeightingPower = 1.0f
+        )
+    )
+
+    val MJU_II = CameleoCameraProfile(
+        id = "mju_ii",
+        name = "MJU II",
+        subtitle = "1997 Compact Film",
+        presetId = "analog_mju2",
+        focalLengths = listOf(
+            FocalLengthOption("35mm", 35f)
+        ),
+        defaultFocalLengthMm = 35f,
+        supportedLenses = listOf(
+            LensType.NORMAL,
+            LensType.WIDE,
+            LensType.PRISM,
+            LensType.STARBURST,
+            LensType.ND,
+            LensType.COLOR_FLASH
+        ),
+        defaultLens = LensType.NORMAL,
+        defaultRatio = AspectRatioMode.RATIO_3_2,
+        filmProfile = FilmProfile(
+            id = "film_mju2_color_neg",
+            name = "Balanced 35mm Consumer Negative",
+            lutAssetPath = "lut_mju2.png",
+            lutInputSpace = LutInputSpace.SRGB,
+            contrast = 1.0f,
+            saturation = 1.0f,
+            temperature = 0.0f,
+            tint = 0.0f,
+            fade = 0.0f,
+            toeLift = 0.0f,
+            shoulderClip = 0.992f,
+            highlightRollOff = 0.94f,
+            clarityStrength = 0.0f,
+            skinProtection = 0.90f,
+            halationThreshold = 0.88f,
+            halationIntensity = 0.14f,
+            halationColorTintR = 1.0f,
+            halationColorTintG = 0.36f,
+            halationColorTintB = 0.12f
+        ),
+        grainProfile = GrainProfile(
+            id = "grain_mju2_fine_35mm",
+            mode = GrainMode.PROCEDURAL,
+            assetPath = "",
+            intensity = 0.12f,
+            scale = 0.85f,
+            blendMode = GrainBlendMode.OVERLAY,
+            shadowStrength = 0.25f,
+            highlightStrength = 0.10f,
+            isColorNoise = false,
+            luminanceWeightingEnabled = true,
+            luminanceWeightingPower = 1.0f
+        ),
+        opticalProfile = OpticalProfile(
+            id = "optical_mju2_35mm_f28",
+            distortionStrength = -0.006f,
+            chromaticAberration = 0.0012f,
+            vignetteStrength = 0.16f,
+            vignetteRadius = 0.88f,
+            edgeSoftness = 0.030f
         )
     )
 
@@ -1543,6 +1606,7 @@ object CameraProfileCatalog {
         PAF_INSTANT,
         FISHEYE_CAMERA,
         SOFT_FILM,
+        MJU_II,
         GR_D,
         WARM_FILM,
         DISPOSABLE_FUNS,
@@ -1590,6 +1654,7 @@ object CameraProfileCatalog {
             "analog_135ne", "135ne", "135 ne" -> return ONE_THREE_FIVE_NE
             "analog_fisheye_f", "fisheye" -> return FISHEYE_CAMERA
             "analog_soft_film", "ct2f" -> return SOFT_FILM
+            "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" -> return MJU_II
             "ccd_grd", "analog_warm_film", "grd", "gr d", "gr dr", "gr digital" -> return GR_D
             "analog_s67", "s67", "s_67" -> return S_67
             "analog_dblack", "dblack", "d_black" -> return D_BLACK

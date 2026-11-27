@@ -1189,6 +1189,7 @@ private fun resolveFilterName(name: String?, cameraModel: String?): String {
     return matched?.name ?: when {
         fileName.contains("FXNR", ignoreCase = true) -> "FXNR"
         fileName.contains("CLASSIC", ignoreCase = true) -> "D Classic"
+        fileName.contains("MJU", ignoreCase = true) -> "MJU II"
         fileName.contains("GR", ignoreCase = true) -> "GR Digital"
         fileName.contains("S67", ignoreCase = true) -> "S Classic"
         fileName.contains("ZERO", ignoreCase = true) -> "Zero"
@@ -1305,6 +1306,17 @@ private fun buildGalleryTuningForPreset(context: Context, preset: CameraPreset):
     )
 }
 
+private fun readExifFlashFired(openStream: () -> java.io.InputStream?): Boolean {
+    return try {
+        openStream()?.use { s ->
+            val flashAttr = ExifInterface(s).getAttributeInt(ExifInterface.TAG_FLASH, -1)
+            flashAttr > 0 && (flashAttr and 1) != 0
+        } ?: false
+    } catch (_: Throwable) {
+        false
+    }
+}
+
 private suspend fun redevelopPhoto(
     context: Context,
     item: GalleryItem,
@@ -1313,11 +1325,13 @@ private suspend fun redevelopPhoto(
     try {
         val negativeFile = java.io.File(context.filesDir, "negatives/neg_${item.id}.jpg")
         val hasNegative = item.id > 0L && negativeFile.exists() && negativeFile.length() > 0L
-        val bitmap = if (hasNegative) {
-            decodeOrientedMutableBitmap(context) { negativeFile.inputStream() }
+        val openSrc: () -> java.io.InputStream? = if (hasNegative) {
+            { negativeFile.inputStream() }
         } else {
-            decodeOrientedMutableBitmap(context) { context.contentResolver.openInputStream(item.uri) }
-        } ?: return@withContext null
+            { context.contentResolver.openInputStream(item.uri) }
+        }
+        val bitmap = decodeOrientedMutableBitmap(context, openSrc) ?: return@withContext null
+        val flashFired = readExifFlashFired(openSrc)
 
         val tuning = buildGalleryTuningForPreset(context, preset)
         try {
@@ -1326,6 +1340,7 @@ private suspend fun redevelopPhoto(
                 sourceBitmap = bitmap,
                 preset = preset,
                 tuning = tuning,
+                isFlashActive = flashFired,
                 skipDecorationsIfBaked = !hasNegative
             )
         } finally {
@@ -1346,6 +1361,9 @@ private suspend fun importAndDevelopPhoto(
         val bitmap = decodeOrientedMutableBitmap(context) {
             context.contentResolver.openInputStream(uri)
         } ?: return@withContext null
+        val flashFired = readExifFlashFired {
+            context.contentResolver.openInputStream(uri)
+        }
 
         val tuning = buildGalleryTuningForPreset(context, preset)
         try {
@@ -1354,6 +1372,7 @@ private suspend fun importAndDevelopPhoto(
                 sourceBitmap = bitmap,
                 preset = preset,
                 tuning = tuning,
+                isFlashActive = flashFired,
                 skipDecorationsIfBaked = false
             )
         } finally {

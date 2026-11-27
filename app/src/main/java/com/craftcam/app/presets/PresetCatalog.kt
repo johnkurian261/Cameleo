@@ -227,6 +227,62 @@ object PresetCatalog {
         ),
 
         CameraPreset(
+            id = "analog_mju2",
+            iconResName = "cam_mju2",
+            name = "MJU II",
+            subtitle = "1997 Compact Film",
+            category = CameraCategory.ANALOG_FILM,
+            year = "1997",
+            description = "1997 compact 35mm f/2.8 4-element glass lens camera. Balanced consumer negative color science, luminous skin fidelity, crisp center resolution, mild natural corner falloff, and flash-aware highlight roll-off.",
+            colorGrading = ColorGradingConfig(
+                contrast = 1.0f,
+                saturation = 1.0f,
+                temperature = 0.0f,
+                tint = 0.0f,
+                gamma = 1.0f,
+                fade = 0.0f,
+                highlightRollOff = 0.94f
+            ),
+            grain = GrainConfig(
+                enabled = true,
+                intensity = 0.12f,
+                scale = 0.85f,
+                isColorNoise = false,
+                assetPath = null,
+                blendMode = GrainBlendMode.OVERLAY,
+                shadowStrength = 0.25f,
+                highlightStrength = 0.10f,
+                sourceMode = GrainSourceMode.PROCEDURAL_ONLY
+            ),
+            lens = LensConfig(
+                vignetteIntensity = 0.16f,
+                vignetteRadius = 0.88f,
+                chromaticAberration = 0.0012f,
+                barrelDistortion = -0.006f,
+                softness = 0.030f
+            ),
+            halation = HalationConfig(
+                enabled = true,
+                threshold = 0.88f,
+                intensity = 0.14f,
+                radius = 12f,
+                haloRed = 1.0f,
+                haloGreen = 0.36f,
+                haloBlue = 0.12f
+            ),
+            dust = DustConfig(enabled = false),
+            lightLeak = LightLeakConfig(enabled = false),
+            flashOverlay = FlashOverlayConfig(enabled = false),
+            dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -29),
+            border = BorderConfig(style = BorderStyle.CLASSIC_35MM_BLACK),
+            whiteBalance = WhiteBalanceConfig(
+                policy = WhiteBalancePolicy.FIXED_DAYLIGHT,
+                defaultKelvin = 5500,
+                autoRecommended = false
+            )
+        ),
+
+        CameraPreset(
             id = "disp_warm",
             iconResName = "cam_135sr",
             name = "135 SR",
@@ -375,12 +431,12 @@ object PresetCatalog {
             year = "1995",
             description = "Iconic 35mm single-use disposable camera. Organic colour negative film response, soft highlight compression, and natural flash warmth.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.08f,
-                saturation = 1.06f,
-                temperature = 0.04f,
-                tint = 0.01f,
-                fade = 0.02f,
-                highlightRollOff = 0.90f
+                contrast = 1.0f,
+                saturation = 1.0f,
+                temperature = 0.0f,
+                tint = 0.0f,
+                fade = 0.0f,
+                highlightRollOff = 1.0f
             ),
             grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.34f, highlightStrength = 0.15f),
             lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.82f, chromaticAberration = 0.004f),
@@ -1069,9 +1125,11 @@ object PresetCatalog {
                 return allPresets.find { it.id == "analog_135ne" } ?: allPresets.first()
             "analog_soft_film", "ct2f" ->
                 return allPresets.find { it.id == "analog_soft_film" } ?: allPresets.first()
+            "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" ->
+                return allPresets.find { it.id == "analog_mju2" } ?: allPresets.first()
             "disp_warm", "135sr", "135 sr" ->
                 return allPresets.find { it.id == "disp_warm" } ?: allPresets.first()
-            "ccd_grd", "analog_warm_film", "grd", "gr dr", "gr digital", "gr d" ->
+            "ccd_grd", "gr_d", "analog_warm_film", "grd", "gr dr", "gr digital", "gr d" ->
                 return allPresets.find { it.id == "ccd_grd" || it.id == "analog_warm_film" } ?: allPresets.first()
             "ccd_r", "ccdr", "ccd r", "ccd-r", "ccd_classic" ->
                 return allPresets.find { it.id == "ccd_r" } ?: allPresets.first()
