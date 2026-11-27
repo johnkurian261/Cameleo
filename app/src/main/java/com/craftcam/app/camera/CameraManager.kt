@@ -381,7 +381,7 @@ class CameraManager(private val context: Context) {
     fun setEngineMode(mode: CameraEngineMode) {
         if (_uiState.value.engineMode != mode) {
             _uiState.update { it.copy(engineMode = mode) }
-            if (currentPreset.id == "ccd_flash") bindCameraUseCases()
+            if (currentPreset.id == "ccd_flash" || currentPreset.id == "ccd_retro_compact") bindCameraUseCases()
             val isNatural = mode == CameraEngineMode.NATURAL
             val isPro = mode == CameraEngineMode.PRO
 
@@ -672,7 +672,7 @@ class CameraManager(private val context: Context) {
             val isMju2 = preset.id == "analog_mju2"
             val wasThermal = currentPreset.id == "thermal_vision"
             val isThermal = preset.id == "thermal_vision"
-            val changedDFuns = (currentPreset.id == "ccd_flash") != (preset.id == "ccd_flash")
+            val changedDFuns = (currentPreset.id == "ccd_flash" || currentPreset.id == "ccd_retro_compact") != (preset.id == "ccd_flash" || preset.id == "ccd_retro_compact")
             if (isThermal != wasThermal) {
                 glRenderer?.resetThermalTemporalState()
             }
@@ -992,7 +992,7 @@ class CameraManager(private val context: Context) {
             fun supports(key: CameraCharacteristics.Key<IntArray>, mode: Int): Boolean =
                 cameraInfo?.getCameraCharacteristic(key)?.contains(mode) == true
 
-            val dfuns = currentPreset.id == "ccd_flash" && _uiState.value.engineMode == CameraEngineMode.FILM
+            val dfuns = (currentPreset.id == "ccd_flash" || currentPreset.id == "ccd_retro_compact") && _uiState.value.engineMode == CameraEngineMode.FILM
             val dfunsChars = if (dfuns && cameraInfo != null)
                 context.getSystemService(android.hardware.camera2.CameraManager::class.java).getCameraCharacteristics(cameraInfo.cameraId)
             else null
@@ -1202,8 +1202,9 @@ class CameraManager(private val context: Context) {
                         CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
                     )
                 }
-                val isDigicamPreset = currentPreset.id in listOf("ccd_r", "disp_flash", "disp_cpm35", "ccd_retro_compact") ||
-                    currentPreset.category == com.craftcam.app.model.CameraCategory.CCD_DIGITAL
+                val isDigicamPreset = (currentPreset.id in listOf("ccd_r", "disp_flash", "disp_cpm35") ||
+                    currentPreset.category == com.craftcam.app.model.CameraCategory.CCD_DIGITAL) &&
+                    currentPreset.id != "ccd_retro_compact"
                 if (dfunsChars != null) {
                     dfunsCapture.configure(captureExtender, dfunsChars)
                 } else if (isDigicamPreset && cameraInfo != null) {
@@ -2038,7 +2039,7 @@ class CameraManager(private val context: Context) {
                                     withContext(Dispatchers.Main) {
                                         if (dfuns && cameraId != null && format in com.craftcam.app.processor.DFunsRaw.formats) {
                                             dfunsCapture.reject(cameraId, format)
-                                            if (currentPreset.id == "ccd_flash") bindCameraUseCases()
+                                            if (currentPreset.id == "ccd_flash" || currentPreset.id == "ccd_retro_compact") bindCameraUseCases()
                                             onError("RAW development unavailable. Take another photo to use the fallback.")
                                         } else onError(t.message ?: "Image processing failed")
                                     }
@@ -2061,7 +2062,7 @@ class CameraManager(private val context: Context) {
                             checkPendingRebind()
                             Log.e(TAG, "Hardware photo capture failed: ${exception.message}", exception)
                             ContextCompat.getMainExecutor(context).execute {
-                                if (preset.id == "ccd_flash" && currentPreset.id == preset.id && cameraId != null &&
+                                if ((preset.id == "ccd_flash" || preset.id == "ccd_retro_compact") && currentPreset.id == preset.id && cameraId != null &&
                                     captureState.engineMode == CameraEngineMode.FILM &&
                                     exception.imageCaptureError == ImageCapture.ERROR_CAPTURE_FAILED &&
                                     camera?.cameraInfo?.cameraState?.value?.type == androidx.camera.core.CameraState.Type.OPEN &&

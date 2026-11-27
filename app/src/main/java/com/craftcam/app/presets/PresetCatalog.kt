@@ -454,15 +454,15 @@ object PresetCatalog {
             year = "2003",
             description = "Hybrid digital point-and-shoot combining early digital processing with disposable camera optical punch.",
             colorGrading = ColorGradingConfig(
-                contrast = 1.10f,
-                saturation = 1.10f,
-                temperature = 0.05f,
-                tint = 0.00f,
-                fade = 0.015f,
-                highlightRollOff = 0.88f
+                contrast = 1.0f,
+                saturation = 1.0f,
+                temperature = 0.0f,
+                tint = 0.0f,
+                fade = 0.0f,
+                highlightRollOff = 1.0f
             ),
-            grain = GrainConfig(enabled = true, intensity = 0.18f, scale = 0.90f, isColorNoise = true, assetPath = "grains/grain_dqs.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.28f, highlightStrength = 0.12f),
-            lens = LensConfig(vignetteIntensity = 0.24f, vignetteRadius = 0.84f, chromaticAberration = 0.004f),
+            grain = GrainConfig(enabled = true, intensity = 0.22f, scale = 1.00f, isColorNoise = true, assetPath = "grains/grain_dfuns.jpg", blendMode = GrainBlendMode.OVERLAY, shadowStrength = 0.34f, highlightStrength = 0.15f),
+            lens = LensConfig(vignetteIntensity = 0.26f, vignetteRadius = 0.82f, chromaticAberration = 0.004f),
             dust = DustConfig(enabled = false, assetPath = "dust_black.png", opacity = 0.35f),
             border = BorderConfig(style = BorderStyle.NONE),
             dateStamp = DateStampConfig(enabled = true, style = DateStampStyle.SEVEN_SEGMENT_ORANGE, customYearOffset = -21)

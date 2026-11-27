@@ -94,7 +94,7 @@ object ImageProcessor {
             } else {
                 isFlashActive
             }
-            rawBitmap = if (preset.id == "ccd_flash" && imageProxy.format in DFunsRaw.formats) {
+            rawBitmap = if ((preset.id == "ccd_flash" || preset.id == "ccd_retro_compact") && imageProxy.format in DFunsRaw.formats) {
                 val metadata = requireNotNull(stillResult) { "Missing D Funs RAW metadata" }
                 val scale = com.craftcam.app.camera.DFunsCapture.exposureScale(metadata, tuning.dfunsStrictExposure)
                 DFunsRaw.decode(imageProxy, requireNotNull(rawCharacteristics), metadata, scale)
@@ -2240,9 +2240,8 @@ object ImageProcessor {
         presetId in listOf("analog_vintage_color", "analog_dexp", "vsco_m5", "m5", "vsco_x1", "x1") -> "grains/grain_dexp.jpg"
         presetId in listOf("analog_cinema_film", "analog_d3d", "d3d") -> "grains/grain_d3d1.jpg"
         presetId in listOf("analog_135ne", "135ne") -> "grains/grain_135sr.jpg"
-        presetId in listOf("ccd_flash", "dfuns") -> "grains/grain_dfuns.jpg"
+        presetId in listOf("ccd_flash", "dfuns", "ccd_retro_compact", "dqs") -> "grains/grain_dfuns.jpg"
         presetId in listOf("ccd_y2k_digital", "classicu") -> "grains/grain_classicu.jpg"
-        presetId in listOf("ccd_retro_compact", "dqs") -> "grains/grain_dqs.jpg"
         presetId in listOf("disp_classic", "disp_golf") -> "grains/grain_dexp2.jpg"
         presetId in listOf("disp_flash", "disp_cpm35") -> "grains/grain_cpm35.jpg"
         presetId in listOf("analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic") -> ""
@@ -2266,7 +2265,7 @@ object ImageProcessor {
         "disp_warm", "analog_135sr", "analog_srx" -> "135sr_vig.jpg"
         "inst_vintage", "inst_c", "inst_sq", "inst_sqc", "inst_ss", "inst_paf" -> "135sr_vig.jpg"
         "analog_hoga"                          -> "blur_mask_hoga.jpg"
-        "ccd_flash", "ccd_y2k_digital", "classicu", "ccd_r", "ccdr", "ccd_dam" -> "sclassic_vintage.jpg"
+        "ccd_flash", "ccd_y2k_digital", "classicu", "ccd_r", "ccdr", "ccd_dam", "ccd_retro_compact", "dqs" -> "sclassic_vintage.jpg"
         else                                   -> null
     }
 

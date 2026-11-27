@@ -229,9 +229,9 @@ object SkinToneProfileCatalog {
     fun getProfileForPreset(presetId: String, category: CameraCategory? = null): SkinToneProfile {
         return when {
             presetId == "analog_cinema_film" || presetId == "d3d" || presetId == "d_3d" || presetId.equals("d 3d", ignoreCase = true) || presetId.contains("cinema", ignoreCase = true) -> D3D
-            presetId == "ccd_flash" || presetId == "d_funs" -> D_FUNS
+            presetId == "ccd_flash" || presetId == "d_funs" || presetId == "ccd_retro_compact" || presetId == "dqs" -> D_FUNS
             presetId == "disp_flash" || presetId == "disp_cpm35" || presetId.contains("cpm", ignoreCase = true) -> CPM35
-            presetId == "ccd_r" || presetId == "ccd_retro_compact" || category == CameraCategory.CCD_DIGITAL -> CCD
+            presetId == "ccd_r" || category == CameraCategory.CCD_DIGITAL -> CCD
             presetId == "analog_mju2" || presetId == "mju2" || presetId == "mju_ii" || presetId == "mju ii" || presetId == "olympus_mju2" || presetId == "stylus_epic" -> MJU_II
             presetId == "analog_fxn_r" || presetId == "fxn_r" || category == CameraCategory.ANALOG_FILM -> FXNR
             presetId == "zero" -> NATURAL

@@ -346,8 +346,81 @@ This document tracks daily engineering milestones, architectural audits, test su
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` empty; on-device live preview/capture/video shader execution remains **NOT VERIFIED**.
 - **Detailed Report**: [CREATIVE_TEMPERATURE_FILTER_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/CREATIVE_TEMPERATURE_FILTER_REPORT.md).
 
+---
+
+## Entry 12 — Stalled Background Task Recovery, Working-Tree Verification, Icons/Logo & D3D Subject-Convergence Calibration
+
+**Date**: November 27, 2026 (19:26 IST)  
+**Milestone**: Stalled Process Diagnostics & Termination, Working-Tree Audit, Full Debug/Release Builds & D3D Geometry Calibration Record
+
+### 1. Background Task Investigation & Safe Termination
+- **OBSERVED FACT — Stalled Task (`task-40364`, PID `28116`)**: Audited Antigravity background task `fee3dcbb-fa61-427d-99ce-2304f6de2127/task-40364` started at `2026-11-27 08:24:50 AM` (`02:54:46Z`). Process telemetry showed zero progress for `10h51m34s`, `0.640625s` total CPU time, and threads parked in `Wait:UserRequest`.
+- **Root Cause**: The command invoked `Select-String -Path app/src/main/java/com/craftcam/app/camera/profile/CameraProfileCompatibilityTest* -ErrorAction SilentlyContinue` **without `-Pattern`**, causing Windows PowerShell 5.1 to prompt interactively on stdin (`Pattern[0]:`) and block indefinitely.
+- **Resolution**: Safely terminated only `fee3dcbb-fa61-427d-99ce-2304f6de2127/task-40364` via `manage_task(Action="kill")`. Left unrelated external IDE/agent runtimes untouched (note: an unrelated external `OpenAI.CodexPrimaryRuntime` `pwsh`/`adb -t 1 logcat` pair from `11/25 19:17:34` remains on the host outside Antigravity).
+
+### 2. Git Working-Tree Completion Audit (On Top of `7d44c7c`)
+- **Committed Milestones Verified**: `f24c434` (Golf Motion), `add6c81` (MJU II), `43bb1a8` (Thermal Vision), `7d44c7c` (Creative Temperature `-100..+100`).
+- **Uncommitted Working-Tree Changes Verified**:
+  1. **Pixel Camera Icons & App Logo Replacement**: `93` modified asset files covering camera selector/menu icons (`cam_*.png`, `ic_cam_*.png`), CAMELEO brand emblem ([`cameleo_logo.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/res/drawable/cameleo_logo.png)), `ic_launcher_foreground.png`, and `mipmap-*` launcher PNGs.
+  2. **D3D Stereoscopic Wigglegram Subject-Lock & Parallax Budget (`CaptureConvergence.kt`, `ImageProcessor.kt`, `ThreeDDepthEngine.kt`, `ParallaxWarpEngine.kt`, `DepthAnythingV2Engine.kt`, `ThreeDPhotoProcessor.kt`, `RetroFrameRenderer.kt`, `ThreeDModeTest.kt`)**:
+     - Added [`CaptureConvergence.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/threed/CaptureConvergence.kt) mapping Camera2 `STATISTICS_FACES` and locked `CONTROL_AF_REGIONS` through `sensorToBufferTransformMatrix` and post-rotation/crop matrices into normalized working-buffer space.
+     - Updated [`ThreeDDepthEngine.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/threed/ThreeDDepthEngine.kt) (`primaryFace` filtering, eye-midpoint/face-window `0.18x0.12` pivot convergence, `depthSubject` 9x9 coherent surface fallback, invalid-depth guards) and [`ParallaxWarpEngine.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/threed/ParallaxWarpEngine.kt) (`baselinePixels` bounding motion by depth span, face area, `CURRENT` fallback confidence `0.65f`, and 81-point internal facial relief `width * 0.0025f / relief`).
+     - Added deterministic ONNX tensor `.use {}` cleanup & finiteness checks in [`DepthAnythingV2Engine.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/threed/DepthAnythingV2Engine.kt), coroutine cancellation & `finally` bitmap cleanup in [`ThreeDPhotoProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/threed/ThreeDPhotoProcessor.kt) and [`RetroFrameRenderer.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/threed/RetroFrameRenderer.kt), plus replay harness artifacts under [`docs/calibration/d3d/`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/d3d/).
+     - Replay CSV metrics (`1..4/replay.csv`) recorded baselines `[8.38, 9.02, 10.36, 10.61]` px, and [`replays.json`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/d3d/replays.json) vs [`originals.json`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/d3d/originals.json) reduced portrait interocular stretch `3.3 -> 1.597` px (Case 1) and `15.635 -> 5.265` px (Case 4) and face IQR `13.102 -> 2.192` px (Case 1) / `22.971 -> 7.362` px (Case 4); [`verification.json`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/d3d/verification.json) confirmed SHA-256 integrity of untouched `lut_d3d.png` and `grain_d3d1..3.jpg`.
+  3. **Architecture Audit, DFUNS Calibration & Concurrency Hardening**: `MainActivity.kt` (`onTrimMemory` per-level pool trim), `BufferPool.kt`, `DFunsCapture.kt`, `HardwareWhiteBalanceCalibrator.kt`, `lut_dfuns_v1.png`, and audit reports already recorded in Entry 7 and [DFUNS_ORIGINAL_APPEARANCE_AND_GREEN_TINT_REGRESSION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DFUNS_ORIGINAL_APPEARANCE_AND_GREEN_TINT_REGRESSION_REPORT.md).
+
+### 3. Verification, APK Builds & Hardware Status
+- **MEASURED RESULT — Unit Tests (Debug & Release)**: `.\gradlew.bat :app:testDebugUnitTest :app:testReleaseUnitTest --offline` -> **`testDebugUnitTest`: 33 suites, 210 tests, 0 failures, 0 errors, 0 skipped** (including `ThreeDModeTest`: `14` tests, `CameleoProductionSafetyTest`: `12` tests, `CreativeTemperatureTest`: `8` tests); **`testReleaseUnitTest`: 33 suites, 210 tests, 0 failures, 0 errors, 0 skipped**.
+- **MEASURED RESULT — APK Builds & Lint**:
+  - `:app:assembleDebug`: `BUILD SUCCESSFUL` -> [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) (`172,225,187` bytes).
+  - `:app:assembleRelease` (`lintVitalRelease`): `BUILD SUCCESSFUL` -> [`app-release.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/release/app-release.apk) (`161,693,491` bytes).
+  - `:app:lintDebug`: exited `1` with `10` errors and `387` warnings, all `10` errors isolated to pre-existing Camera2/Focus calls (`AutofocusController.kt:308` `[NewApi]`, `CameraManager.kt:1256` `[RestrictedApi]`, and 8 `[UnsafeOptInUsageError]` lines in `DigicamCaptureController.kt`); zero errors in modified working-tree files.
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; live Camera2 hardware capture, D3D wigglegram recording on device, icon rendering in Android launcher/UI, and `DFUNS` / `Creative Temperature` device captures remain **NOT VERIFIED**.
+
 ## November 27 — D3D subject anchoring and depth parallax
 
 **MEASURED RESULT** — Four original MP4s confirmed the 10 fps four-view bounce. Extreme-view bridge motion in the two off-centre portraits fell from 33.51 to 2.29 px and from 14.11 to 0.01 px in annotated geometry replays. The other two clips retained less background motion.
 
 **OBSERVED FACT** — D3D now uses capture-aligned convergence metadata and an adaptive virtual baseline. The complete debug and release unit suites passed, with 210 tests each. **NOT VERIFIED** — No S21 was connected for live capture. [Correction report](D3D_STEREOSCOPIC_PARALLAX_CORRECTION_REPORT.md) · [Comparison video](calibration/d3d/comparison.mp4)
+
+
+---
+
+## Entry 13 — Complete Transfer of D FUNS Photographic Filter to DQS
+
+**Date**: November 27, 2026 (20:20 IST)  
+**Milestone**: D FUNS (`ccd_flash`) to DQS (`ccd_retro_compact`) Photographic Filter Transfer, Identity Preservation & Parity Verification
+
+### 1. Photographic Filter Transfer Overview
+- **Core Objective**: Replaced the entire underlying photographic rendering configuration of DQS (`ccd_retro_compact`) with the active D FUNS (`ccd_flash`) configuration so that DQS produces bit-exact identical photographic output when given matched input, settings, and lighting conditions.
+- **Strict DQS Identity Preservation**:
+  - Maintained DQS camera identity within UI: Name `"DQS"`, preset ID `"ccd_retro_compact"`, profile ID `"ccd_dqs"`, body artwork/drawables ([`cam_dqs.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/res/drawable/cam_dqs.png), [`ic_cam_olive.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/res/drawable/ic_cam_olive.png)), category `CameraCategory.CCD_DIGITAL`, release year `2003`, description, collection placement, and authentic date stamp offset (`-21` -> 2003).
+- **Strict D FUNS Preservation**:
+  - D FUNS (`ccd_flash`) configuration, LUT (`lut_dfuns_v1.png`), grain texture (`grains/grain_dfuns.jpg`), and profile parameters remain completely unaltered.
+  - Reused immutable assets and recipes directly across the catalog to prevent asset bloat.
+
+### 2. Pipeline Routing Alignment
+1. **Viewfinder Preview (`GLViewfinderRenderer.kt` & `ShaderConstants.kt`)**:
+   - `ShaderConstants.getLutAssetForPreset("ccd_retro_compact")` and `getGrainAssetForPreset("ccd_retro_compact")` map directly to `lut_dfuns_v1.png` and `grains/grain_dfuns.jpg`.
+   - Unified profile maps DQS to `lut_dfuns_v1.png` with `LutInputSpace.SRGB`.
+2. **Still Photography Capture (`ImageProcessor.kt` & `CameraManager.kt`)**:
+   - DQS decoupled from generic digicam processing branches (`digicamCapture.configureCapture` bypassed via `isDigicamPreset` guard).
+   - DQS routed to `DFunsCapture` hardware RAW acquisition stream and single-pass rendering.
+   - Grain stage resolves `grains/grain_dfuns.jpg` at intensity `0.16f` and scale `1.00f`.
+3. **Skin Tone Intelligence Engine (`SkinToneProfile.kt`)**:
+   - Mapped `ccd_retro_compact` and `dqs` aliases to `SkinToneProfileCatalog.D_FUNS` (target hue bias `-1.2°`, preserved blue channel `[1.02, 0.99, 0.98]`, soft negative film shoulder `0.88f`).
+4. **Color Profile Compatibility (`CameraProfileCompatibility.kt`)**:
+   - Default film emulsion `C400` resolves to `lut_dfuns_v1.png` with `0.00` secondary profile distortion (`dualLutMix = 0.0f`, `secondaryLutAsset = null`, `isCustomProfile = false`).
+
+### 3. Verification, Metrics & Automated Test Suite
+- **MEASURED RESULT — Colorimetric & Bit-Exact Parity (`tools/dqs_dfuns_parity_verify.py`)**:
+  - Standard 24-patch Macbeth ColorChecker: **Max Channel Difference = `0.0000` / 255**, **MAE = `0.000000`**, **CIEDE2000 = `0.0000 ΔE`**.
+  - Continuous 256×256 RGB Gradient Ramp: **Max Difference = `0.0000`**.
+  - Generated comparison assets saved to [`docs/calibration/dqs_transfer/`](file:///c:/Users/User/Downloads/DazzProject/docs/calibration/dqs_transfer/).
+- **MEASURED RESULT — Automated Test Suite**:
+  - Added [`DqsFilterTransferTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/DqsFilterTransferTest.kt) (`6` tests verifying identity preservation, photographic parity, skin tone intelligence, ShaderConstants routing, C400 zero-distortion, and D FUNS preservation).
+  - Updated [`CameleoProductionSafetyTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/CameleoProductionSafetyTest.kt), [`CameraProfileCatalogReaTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/CameraProfileCatalogReaTest.kt), and [`MjuIIEmulationTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/MjuIIEmulationTest.kt).
+  - `.\gradlew.bat testDebugUnitTest` -> **`34` test suites, `216` unit tests, `0` failures, `0` errors, `0` skipped** (`BUILD SUCCESSFUL in 17s`).
+  - `.\gradlew.bat assembleDebug` -> **`BUILD SUCCESSFUL in 10s`**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **`172,225,187` bytes**.
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; on-device live Camera2 capture and preview execution remain **NOT VERIFIED**.
+- **Detailed Transfer Report**: [DQS_DFUNS_FILTER_TRANSFER_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DQS_DFUNS_FILTER_TRANSFER_REPORT.md).

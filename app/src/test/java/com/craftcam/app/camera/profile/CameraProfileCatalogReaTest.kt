@@ -93,15 +93,13 @@ class CameraProfileCatalogReaTest {
 
         assertEquals("DQS", profile.name)
         val film = profile.filmProfile
-        assertEquals("lut_ccd_retro_compact.png", film.lutAssetPath)
-        assertEquals(0.015f, film.toeLift, 0.001f)
-        assertEquals(0.990f, film.shoulderClip, 0.001f)
-        assertEquals(0.88f, film.highlightRollOff, 0.001f)
+        assertEquals("lut_dfuns_v1.png", film.lutAssetPath)
+        assertEquals(1.0f, film.highlightRollOff, 0.001f)
 
         val grain = profile.grainProfile
         assertEquals(GrainMode.SCANNED, grain.mode)
-        assertEquals("grains/grain_dqs.jpg", grain.assetPath)
-        assertEquals(0.18f, grain.intensity, 0.001f)
+        assertEquals("grains/grain_dfuns.jpg", grain.assetPath)
+        assertEquals(0.16f, grain.intensity, 0.001f)
     }
 
     @Test

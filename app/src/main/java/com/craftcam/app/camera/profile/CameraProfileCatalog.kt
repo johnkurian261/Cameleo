@@ -256,36 +256,19 @@ object CameraProfileCatalog {
         defaultLens = LensType.NORMAL,
         defaultRatio = AspectRatioMode.RATIO_4_3,
         filmProfile = FilmProfile(
-            id = "film_dqs",
-            name = "DQS Compact Sensor",
-            lutAssetPath = "lut_ccd_retro_compact.png",
-            contrast = 1.15f,
-            saturation = 1.12f,
-            toeLift = 0.015f,
-            shoulderClip = 0.990f,
-            highlightRollOff = 0.88f,
-            halationThreshold = 0.90f,
-            halationIntensity = 0.10f,
-            halationColorTintR = 0.85f,
-            halationColorTintG = 0.85f,
-            halationColorTintB = 1.0f
+            id = "dfuns_negative_v1", name = "D Funs colour negative",
+            lutAssetPath = "lut_dfuns_v1.png", lutInputSpace = LutInputSpace.SRGB,
+            highlightRollOff = 1f, halationThreshold = 1f, halationIntensity = 0f
         ),
         grainProfile = GrainProfile(
-            id = "grain_dqs",
-            mode = GrainMode.SCANNED,
-            assetPath = "grains/grain_dqs.jpg",
-            intensity = 0.18f,
-            scale = 0.85f,
-            isColorNoise = false,
-            luminanceWeightingEnabled = true,
-            luminanceWeightingPower = 0.5f
+            id = "dfuns_scan_v1", mode = GrainMode.SCANNED,
+            assetPath = "grains/grain_dfuns.jpg", intensity = 0.16f, scale = 1f,
+            shadowStrength = 0.38f, highlightStrength = 0.08f,
+            isColorNoise = false, luminanceWeightingEnabled = true
         ),
         opticalProfile = OpticalProfile(
-            id = "optical_dqs",
-            vignetteStrength = 0.20f,
-            vignetteRadius = 0.90f,
-            chromaticAberration = 0.002f,
-            distortionStrength = 0.0f
+            id = "dfuns_optics_v1", vignetteStrength = 0.24f, vignetteRadius = 0.90f,
+            chromaticAberration = 0.0006f
         )
     )
 
