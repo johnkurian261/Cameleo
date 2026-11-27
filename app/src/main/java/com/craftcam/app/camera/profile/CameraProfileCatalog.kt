@@ -515,7 +515,7 @@ object CameraProfileCatalog {
         filmProfile = FilmProfile(
             id = "film_mju2_color_neg",
             name = "Balanced 35mm Consumer Negative",
-            lutAssetPath = "lut_mju2.png",
+            lutAssetPath = "lut_olympus_mju2.png",
             lutInputSpace = LutInputSpace.SRGB,
             contrast = 1.0f,
             saturation = 1.0f,
@@ -524,7 +524,7 @@ object CameraProfileCatalog {
             fade = 0.0f,
             toeLift = 0.0f,
             shoulderClip = 0.992f,
-            highlightRollOff = 0.94f,
+            highlightRollOff = 0.92f,
             clarityStrength = 0.0f,
             skinProtection = 0.90f,
             halationThreshold = 0.88f,
@@ -537,10 +537,10 @@ object CameraProfileCatalog {
             id = "grain_mju2_fine_35mm",
             mode = GrainMode.PROCEDURAL,
             assetPath = "",
-            intensity = 0.12f,
+            intensity = 0.14f,
             scale = 0.85f,
             blendMode = GrainBlendMode.OVERLAY,
-            shadowStrength = 0.25f,
+            shadowStrength = 0.28f,
             highlightStrength = 0.10f,
             isColorNoise = false,
             luminanceWeightingEnabled = true,
@@ -550,9 +550,9 @@ object CameraProfileCatalog {
             id = "optical_mju2_35mm_f28",
             distortionStrength = -0.006f,
             chromaticAberration = 0.0012f,
-            vignetteStrength = 0.16f,
+            vignetteStrength = 0.14f,
             vignetteRadius = 0.88f,
-            edgeSoftness = 0.030f
+            edgeSoftness = 0.025f
         )
     )
 

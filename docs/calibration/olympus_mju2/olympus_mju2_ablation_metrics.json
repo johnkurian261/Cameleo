@@ -1,0 +1,178 @@
+{
+  "deep_shadow_black": {
+    "input_rgb": [
+      10,
+      10,
+      10
+    ],
+    "config_a_balanced": [
+      6,
+      8,
+      7
+    ],
+    "config_b_nightlife": [
+      6,
+      8,
+      6
+    ],
+    "config_c_compact": [
+      7,
+      9,
+      8
+    ]
+  },
+  "shadow_charcoal": {
+    "input_rgb": [
+      26,
+      26,
+      26
+    ],
+    "config_a_balanced": [
+      16,
+      27,
+      18
+    ],
+    "config_b_nightlife": [
+      12,
+      31,
+      15
+    ],
+    "config_c_compact": [
+      20,
+      25,
+      20
+    ]
+  },
+  "skin_creamy_fair": {
+    "input_rgb": [
+      224,
+      189,
+      168
+    ],
+    "config_a_balanced": [
+      236,
+      196,
+      174
+    ],
+    "config_b_nightlife": [
+      236,
+      197,
+      175
+    ],
+    "config_c_compact": [
+      232,
+      194,
+      172
+    ]
+  },
+  "skin_warm_peach": {
+    "input_rgb": [
+      199,
+      148,
+      122
+    ],
+    "config_a_balanced": [
+      206,
+      151,
+      125
+    ],
+    "config_b_nightlife": [
+      207,
+      152,
+      126
+    ],
+    "config_c_compact": [
+      204,
+      150,
+      124
+    ]
+  },
+  "skin_flash_highlight": {
+    "input_rgb": [
+      240,
+      209,
+      189
+    ],
+    "config_a_balanced": [
+      253,
+      225,
+      205
+    ],
+    "config_b_nightlife": [
+      253,
+      225,
+      205
+    ],
+    "config_c_compact": [
+      252,
+      224,
+      205
+    ]
+  },
+  "olive_background": {
+    "input_rgb": [
+      82,
+      92,
+      51
+    ],
+    "config_a_balanced": [
+      76,
+      88,
+      48
+    ],
+    "config_b_nightlife": [
+      74,
+      89,
+      47
+    ],
+    "config_c_compact": [
+      78,
+      89,
+      49
+    ]
+  },
+  "teal_background": {
+    "input_rgb": [
+      46,
+      82,
+      87
+    ],
+    "config_a_balanced": [
+      34,
+      83,
+      83
+    ],
+    "config_b_nightlife": [
+      30,
+      86,
+      82
+    ],
+    "config_c_compact": [
+      39,
+      81,
+      84
+    ]
+  },
+  "creamy_white_shirt": {
+    "input_rgb": [
+      242,
+      240,
+      235
+    ],
+    "config_a_balanced": [
+      245,
+      243,
+      239
+    ],
+    "config_b_nightlife": [
+      245,
+      243,
+      239
+    ],
+    "config_c_compact": [
+      244,
+      242,
+      238
+    ]
+  }
+}

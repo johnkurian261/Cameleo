@@ -1765,7 +1765,7 @@ void main() {
         "analog_35mm_classic", "d_classic", "dclassic", "d classic", "classic_35mm" -> "lut_analog_35mm_classic.png"
         "ccd_grd", "analog_warm_film", "grd", "gr d" -> "lut_ccd_grd.png"
         "analog_soft_film", "analog_ct2f", "ct2f" -> "lut_ct2f.png"
-        "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" -> "lut_mju2.png"
+        "analog_mju2", "mju2", "mju_ii", "mju ii", "olympus_mju2", "stylus_epic" -> "lut_olympus_mju2.png"
         "analog_vintage_color", "analog_dexp", "dexp", "d exp" -> "lut_dexp.png"
         "analog_cinema_film", "analog_d3d", "d3d", "d 3d" -> "lut_d3d.png"
         "analog_135ne", "135ne", "135 ne"-> "lut_135ne.png"

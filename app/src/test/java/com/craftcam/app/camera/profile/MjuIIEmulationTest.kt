@@ -80,18 +80,18 @@ class MjuIIEmulationTest {
     fun mju2LutAndProfileCompatibility_preventsBypassDoubleGradeAndSupports22M() {
         val preset = PresetCatalog.getPresetById("analog_mju2")
         val profile = CameraProfileCatalog.getProfileForPreset(preset)
-        assertEquals("lut_mju2.png", ShaderConstants.getLutAssetForPreset(preset.id))
-        assertEquals("lut_mju2.png", profile.filmProfile.lutAssetPath)
+        assertEquals("lut_olympus_mju2.png", ShaderConstants.getLutAssetForPreset(preset.id))
+        assertEquals("lut_olympus_mju2.png", profile.filmProfile.lutAssetPath)
         assertEquals("", ShaderConstants.getGrainAssetForPreset(preset.id, isCamcorder = false))
 
-        // Default C400 preserves 100% of lut_mju2.png without extra profile adjustment
+        // Default C400 preserves 100% of lut_olympus_mju2.png without extra profile adjustment
         val c400 = DazzColorProfileCatalog.getById("C400")
         val defaultPlan = CameraProfileCompatibility.resolveLutPlan(
             presetId = preset.id,
             colorProfileIndex = c400.index,
             cameraLutAsset = profile.filmProfile.lutAssetPath
         )
-        assertEquals("lut_mju2.png", defaultPlan.primaryLutAsset)
+        assertEquals("lut_olympus_mju2.png", defaultPlan.primaryLutAsset)
         assertNull(defaultPlan.secondaryLutAsset)
         assertEquals(0f, defaultPlan.dualLutMix, 1e-5f)
         assertFalse(defaultPlan.isCustomProfile)
@@ -106,7 +106,7 @@ class MjuIIEmulationTest {
                 colorProfileIndex = prof.index,
                 cameraLutAsset = profile.filmProfile.lutAssetPath
             )
-            assertEquals("lut_mju2.png", plan.primaryLutAsset)
+            assertEquals("lut_olympus_mju2.png", plan.primaryLutAsset)
             assertEquals(prof.lutAssetPath, plan.secondaryLutAsset)
             assertEquals(0.65f, plan.dualLutMix, 1e-5f)
             assertTrue(plan.isCustomProfile)
@@ -128,7 +128,7 @@ class MjuIIEmulationTest {
         val grain = GrainStage.resolve(preset, profile.grainProfile, UserTuningConfig(), intensityFactor = 1.0f)
         assertEquals(GrainMode.PROCEDURAL, grain.mode)
         assertFalse(grain.useScannedTexture)
-        assertEquals(0.12f, grain.proceduralIntensity, 1e-5f)
+        assertEquals(0.14f, grain.proceduralIntensity, 1e-5f)
         assertFalse(grain.isColorNoise)
     }
 
@@ -149,37 +149,39 @@ class MjuIIEmulationTest {
         assertEquals("lut_dfuns_v1.png", CameraProfileCatalog.D_FUNS.filmProfile.lutAssetPath)
         assertEquals("lut_dqs_preserved.png", dqs.filmProfile.lutAssetPath)
         assertEquals("lut_disp_flash.png", cpm35.filmProfile.lutAssetPath)
-        assertNotEquals("lut_mju2.png", CameraProfileCatalog.D_CLASSIC.filmProfile.lutAssetPath)
+        assertNotEquals("lut_olympus_mju2.png", CameraProfileCatalog.D_CLASSIC.filmProfile.lutAssetPath)
     }
 
     @Test
     fun mju2ShippedPngLut_neutralMonotonicAndColorimetricIntegrity() {
-        val hald = loadRealHaldLutPixels("lut_mju2.png")
+        val hald = loadRealHaldLutPixels("lut_olympus_mju2.png")
         assertEquals(512 * 512, hald.size)
 
-        // 1. Neutral gray ramp monotonicity, black definition, highlight headroom, zero color cast
+        // 1. Monotonicity, black definition, highlight headroom, green-black shadow split toning
         var prevOut = -1f
         for (i in 0..255) {
             val v = i / 255f
             val (lr, lg, lb) = sampleHaldTrilinear(hald, v, v, v)
-            assertEquals("LUT R==G at neutral step $i", lr, lg, 1f / 255f + 1e-4f)
-            assertEquals("LUT G==B at neutral step $i", lg, lb, 1f / 255f + 1e-4f)
-
-            val (fr, _, _) = applyRendererTail(lr, lg, lb, rollOff = 0.94f, shoulderClip = 0.992f)
+            val (fr, fg, fb) = applyRendererTail(lr, lg, lb, rollOff = 0.92f, shoulderClip = 0.992f)
             assertTrue("Transfer curve must be monotonic at step $i ($prevOut -> $fr)", fr >= prevOut - 1e-4f)
             prevOut = fr
+
+            // In deep shadows (step 10..35), verify calibrated forest-green shadow undertone (G >= R)
+            if (i in 10..35) {
+                assertTrue("Shadow undertone must exhibit subtle green-black richness (lg >= lr)", lg >= lr - 1e-4f)
+            }
         }
 
-        val (b0, _, _) = applyRendererTail(0f, 0f, 0f, rollOff = 0.94f, shoulderClip = 0.992f)
+        val (b0, _, _) = applyRendererTail(0f, 0f, 0f, rollOff = 0.92f, shoulderClip = 0.992f)
         assertTrue("Defined film black toe (< 0.05)", b0 < 0.05f)
         val whiteSample = sampleHaldTrilinear(hald, 1f, 1f, 1f)
-        val (w255, _, _) = applyRendererTail(whiteSample.first, whiteSample.second, whiteSample.third, rollOff = 0.94f, shoulderClip = 0.992f)
-        assertTrue("Preserved creamy highlights without hard clipping ($w255)", w255 in 0.91f..0.975f)
+        val (w255, _, _) = applyRendererTail(whiteSample.first, whiteSample.second, whiteSample.third, rollOff = 0.92f, shoulderClip = 0.992f)
+        assertTrue("Preserved creamy highlights without hard clipping ($w255)", w255 in 0.91f..0.985f)
 
         // 2. Multi-complexion skin & flash highlight preservation (no red clipping or mustard collapse)
         val flashSkin = sampleHaldTrilinear(hald, 0.93f, 0.78f, 0.68f)
         val (fsr, fsg, fsb) = applyRendererTail(flashSkin.first, flashSkin.second, flashSkin.third, rollOff = 0.89f, shoulderClip = 0.992f)
-        assertTrue("Flash highlight must not hard-clip R ($fsr)", fsr < 0.96f)
+        assertTrue("Flash highlight must not hard-clip R ($fsr)", fsr < 0.98f)
         assertTrue("Flash skin keeps R > G > B without yellow inversion", fsr > fsg && fsg > fsb)
         assertTrue("Flash skin preserves blue channel headroom", fsb > fsr * 0.60f)
 

@@ -317,7 +317,7 @@ class ThermalVisionTest {
         // Strict preservation of existing presets & LUTs
         assertEquals("lut_disp_classic.png", CameraProfileCatalog.DISPOSABLE_FUNS.filmProfile.lutAssetPath)
         assertEquals("lut_dfuns_v1.png", CameraProfileCatalog.D_FUNS.filmProfile.lutAssetPath)
-        assertEquals("lut_mju2.png", CameraProfileCatalog.MJU_II.filmProfile.lutAssetPath)
+        assertEquals("lut_olympus_mju2.png", CameraProfileCatalog.MJU_II.filmProfile.lutAssetPath)
         assertEquals("lut_fxn_r.png", CameraProfileCatalog.FXN_R_LEGACY.filmProfile.lutAssetPath)
         assertEquals("lut_ccd_r.png", CameraProfileCatalog.CCD_DIGITAL.filmProfile.lutAssetPath)
     }

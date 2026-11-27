@@ -496,3 +496,34 @@ This document tracks daily engineering milestones, architectural audits, test su
   - `.\gradlew.bat assembleDebug` -> **BUILD SUCCESSFUL in 4s**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **172,225,261 bytes**.
 - **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; physical hardware capture execution remains **NOT VERIFIED**.
 - **Comprehensive Restoration Report**: [DFUNS_ORIGINAL_FILTER_RESTORATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/DFUNS_ORIGINAL_FILTER_RESTORATION_REPORT.md).
+
+---
+
+## Entry 16 — Olympus MJU II Reference Photographic Filter Calibration
+
+**Date**: November 27, 2026 (22:20 IST)  
+**Milestone**: Calibration of Olympus MJU II (`analog_mju2`) from 4 Authoritative Direct-Flash References, Dedicated 3D LUT Generation, 34-Preset Zero-Regression Isolation & Build Verification
+
+### 1. Calibration Architecture & Sensitometry
+- **Color Science & Reference Extraction**:
+  - Sampled diagnostic color regions from 4 byte-for-byte preserved user references (`docs/calibration/olympus_mju2/originals/`).
+  - Formulated master split-tone color science: monotonic 1.15 S-curve with highlight headroom compression, shadow green-black split-toning ($G \ge R \approx B$ in toe $L < 0.22$), olive midtones ($118^\circ$), nocturnal teal separation ($192^\circ$), and source-relative multi-complexion skin protection ($15^\circ..55^\circ$, warm peach midtones, creamy beige highlights).
+- **Dedicated 3D LUT Generation**:
+  - Generated production 3D LUT [`lut_olympus_mju2.png`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/assets/lut_olympus_mju2.png) (SHA-256 `8ba7790c1c3164396463580950755fa09fbef241d60ad52ba082f9f9613a0758`).
+  - Evaluated 3-way ablations (Config A Balanced Editorial Flash, Config B Green Nightlife Film, Config C Premium Compact Film) and generated contact sheets in `docs/calibration/olympus_mju2/`.
+- **Pipeline Integration**:
+  - Updated [`CameraProfileCatalog.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/camera/profile/CameraProfileCatalog.kt), [`PresetCatalog.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/presets/PresetCatalog.kt), [`ShaderConstants.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/gl/shaders/ShaderConstants.kt), and [`ImageProcessor.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/main/java/com/craftcam/app/processor/ImageProcessor.kt) to route `analog_mju2` to `lut_olympus_mju2.png`.
+
+### 2. Quantitative Verification & Zero-Regression Metrics
+- **MEASURED RESULT — 35-Preset Isolation Regression Verification (`scratch/verify_olympus_isolation.py`)**:
+  - **All 34 Unrelated Cameras Preserved Bit-Exact (0.0000 ΔE, 0 pixels changed)**.
+  - **D FUNS (`ccd_flash`) and DQS (`ccd_retro_compact`) 100% Protected and Unaffected**.
+  - **Olympus MJU II (`analog_mju2`)**: Deliberate calibration shift verified (Mean ΔE = **3.9738**, Max ΔE = **14.6187**).
+  - **Total Regressions**: **0 / 35**.
+- **MEASURED RESULT — Automated Test Suite**:
+  - Updated [`MjuIIEmulationTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/camera/profile/MjuIIEmulationTest.kt) and [`ThermalVisionTest.kt`](file:///c:/Users/User/Downloads/DazzProject/app/src/test/java/com/craftcam/app/thermal/ThermalVisionTest.kt).
+  - `.\gradlew.bat testDebugUnitTest` -> **34 test suites, 216 unit tests, 0 failures, 0 errors, 0 skipped** (`BUILD SUCCESSFUL in 18s`).
+- **MEASURED RESULT — Build Compilation**:
+  - `.\gradlew.bat assembleDebug` -> **BUILD SUCCESSFUL in 7s**, [`app-debug.apk`](file:///c:/Users/User/Downloads/DazzProject/app/build/outputs/apk/debug/app-debug.apk) = **172,225,334 bytes (164.25 MB)** (SHA-256: `d5968341103c195eed38a8bafb45867aa6d7b3b89f1416c9f2a1605754e10bbf`).
+- **NOT VERIFIED — Physical Android Device**: `adb devices -l` returned empty; physical hardware capture execution on Samsung Galaxy S21 5G remains **NOT VERIFIED**.
+- **Comprehensive Calibration Report**: [OLYMPUS_MJU2_REFERENCE_FILTER_CALIBRATION_REPORT.md](file:///c:/Users/User/Downloads/DazzProject/docs/OLYMPUS_MJU2_REFERENCE_FILTER_CALIBRATION_REPORT.md).

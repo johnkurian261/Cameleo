@@ -241,25 +241,25 @@ object PresetCatalog {
                 tint = 0.0f,
                 gamma = 1.0f,
                 fade = 0.0f,
-                highlightRollOff = 0.94f
+                highlightRollOff = 0.92f
             ),
             grain = GrainConfig(
                 enabled = true,
-                intensity = 0.12f,
+                intensity = 0.14f,
                 scale = 0.85f,
                 isColorNoise = false,
                 assetPath = null,
                 blendMode = GrainBlendMode.OVERLAY,
-                shadowStrength = 0.25f,
+                shadowStrength = 0.28f,
                 highlightStrength = 0.10f,
                 sourceMode = GrainSourceMode.PROCEDURAL_ONLY
             ),
             lens = LensConfig(
-                vignetteIntensity = 0.16f,
+                vignetteIntensity = 0.14f,
                 vignetteRadius = 0.88f,
                 chromaticAberration = 0.0012f,
                 barrelDistortion = -0.006f,
-                softness = 0.030f
+                softness = 0.025f
             ),
             halation = HalationConfig(
                 enabled = true,
